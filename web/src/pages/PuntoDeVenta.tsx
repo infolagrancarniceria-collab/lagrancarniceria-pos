@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, formatoCLP, type MedioPago, type Producto, type Venta } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
+import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 
 export default function PuntoDeVenta() {
   const { usuario } = useUsuario();
@@ -164,7 +165,7 @@ export default function PuntoDeVenta() {
 
       <section className="tarjeta">
         <h2>Agregar producto</h2>
-        <form onSubmit={agregarItem} className="fila-inline">
+        <form onSubmit={agregarItem} onKeyDown={manejarEnterComoTab} className="fila-inline">
           <input
             type="text"
             placeholder="Buscar por PLU o nombre..."
@@ -238,7 +239,7 @@ export default function PuntoDeVenta() {
 
       <section className="tarjeta">
         <h2>Pagos</h2>
-        <form onSubmit={agregarPago} className="fila-inline">
+        <form onSubmit={agregarPago} onKeyDown={manejarEnterComoTab} className="fila-inline">
           <select value={medioPago} onChange={(e) => setMedioPago(e.target.value as MedioPago)}>
             <option value="efectivo">Efectivo</option>
             <option value="tarjeta">Tarjeta</option>

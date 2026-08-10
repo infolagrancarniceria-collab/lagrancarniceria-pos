@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, formatoCLP, type ResumenSesion } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
+import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 
 export default function CerrarCaja() {
   const { usuario } = useUsuario();
@@ -117,7 +118,7 @@ export default function CerrarCaja() {
         </div>
       )}
 
-      <form onSubmit={cerrar} className="formulario">
+      <form onSubmit={cerrar} onKeyDown={manejarEnterComoTab} className="formulario">
         <label>
           Efectivo contado al cerrar
           <input

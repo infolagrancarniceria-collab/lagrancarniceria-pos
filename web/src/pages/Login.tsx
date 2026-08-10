@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, type Usuario } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
+import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 
 export default function Login() {
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
@@ -43,7 +44,7 @@ export default function Login() {
           </button>
         ))}
       </div>
-      <form onSubmit={agregarUsuario} className="form-usuario-nuevo">
+      <form onSubmit={agregarUsuario} onKeyDown={manejarEnterComoTab} className="form-usuario-nuevo">
         <input
           type="text"
           placeholder="Agregar nuevo usuario"

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, type Producto, type Proveedor } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
+import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 
 export default function RegistrarEntrada() {
   const { usuario } = useUsuario();
@@ -62,7 +63,7 @@ export default function RegistrarEntrada() {
       {error && <p className="error">{error}</p>}
       {mensaje && <p className="exito">{mensaje}</p>}
 
-      <form onSubmit={guardar} className="formulario">
+      <form onSubmit={guardar} onKeyDown={manejarEnterComoTab} className="formulario">
         <label>
           Producto
           <select value={productoId} onChange={(e) => setProductoId(e.target.value ? Number(e.target.value) : "")} required>

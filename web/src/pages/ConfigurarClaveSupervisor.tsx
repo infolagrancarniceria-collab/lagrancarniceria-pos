@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
+import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 
 export default function ConfigurarClaveSupervisor() {
   const navigate = useNavigate();
@@ -49,7 +50,7 @@ export default function ConfigurarClaveSupervisor() {
       {error && <p className="error">{error}</p>}
       {mensaje && <p className="exito">{mensaje}</p>}
 
-      <form onSubmit={guardar} className="formulario">
+      <form onSubmit={guardar} onKeyDown={manejarEnterComoTab} className="formulario">
         {yaConfigurada && (
           <label>
             Clave actual

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
+import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 
 export default function AbrirCaja() {
   const { usuario } = useUsuario();
@@ -34,7 +35,7 @@ export default function AbrirCaja() {
     <div>
       <h1>Abrir caja</h1>
       {error && <p className="error">{error}</p>}
-      <form onSubmit={abrir} className="formulario">
+      <form onSubmit={abrir} onKeyDown={manejarEnterComoTab} className="formulario">
         <label>
           Fondo fijo inicial
           <input

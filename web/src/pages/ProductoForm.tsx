@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, formatoCLP, type Categoria, type FlagBalanza, type Producto } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
+import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 
 interface FormState {
   plu: string;
@@ -137,7 +138,8 @@ export default function ProductoForm() {
     }
   }
 
-  async function cambiarPrecio() {
+  async function cambiarPrecio(e: React.FormEvent) {
+    e.preventDefault();
     if (!productoActual || !usuario) return;
     setError(null);
     setMensaje(null);
@@ -174,7 +176,7 @@ export default function ProductoForm() {
       {!esNuevo && productoActual && (
         <div className="tarjeta cambio-precio">
           <h2>Precio actual: {formatoCLP(productoActual.precio)}</h2>
-          <div className="fila-inline">
+          <form onSubmit={cambiarPrecio} onKeyDown={manejarEnterComoTab} className="fila-inline">
             <input
               type="number"
               min="1"
@@ -182,10 +184,8 @@ export default function ProductoForm() {
               value={precioNuevo}
               onChange={(e) => setPrecioNuevo(e.target.value)}
             />
-            <button type="button" onClick={cambiarPrecio}>
-              Cambiar precio
-            </button>
-          </div>
+            <button type="submit">Cambiar precio</button>
+          </form>
         </div>
       )}
 
@@ -206,7 +206,7 @@ export default function ProductoForm() {
         </div>
       )}
 
-      <form onSubmit={guardar} className="formulario">
+      <form onSubmit={guardar} onKeyDown={manejarEnterComoTab} className="formulario">
         <label>
           PLU / Código
           <input value={form.plu} onChange={(e) => actualizarCampo("plu", e.target.value)} required />

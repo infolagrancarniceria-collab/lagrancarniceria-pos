@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, type Proveedor } from "../api";
+import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 
 export default function Proveedores() {
   const [proveedores, setProveedores] = useState<Proveedor[]>([]);
@@ -37,7 +38,7 @@ export default function Proveedores() {
 
       <section className="tarjeta">
         <h2>Nuevo proveedor</h2>
-        <form onSubmit={crear} className="formulario">
+        <form onSubmit={crear} onKeyDown={manejarEnterComoTab} className="formulario">
           <label>
             Nombre
             <input value={nombre} onChange={(e) => setNombre(e.target.value)} required />

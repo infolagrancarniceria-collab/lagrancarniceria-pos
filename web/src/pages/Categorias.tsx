@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, type Categoria } from "../api";
+import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 
 export default function Categorias() {
   const [categorias, setCategorias] = useState<Categoria[]>([]);
@@ -51,7 +52,7 @@ export default function Categorias() {
 
       <section className="tarjeta">
         <h2>Nueva categoría</h2>
-        <form onSubmit={crear} className="formulario">
+        <form onSubmit={crear} onKeyDown={manejarEnterComoTab} className="formulario">
           <label>
             Nivel
             <select value={nivel} onChange={(e) => { setNivel(Number(e.target.value) as 1 | 2 | 3); setPadreId(""); }}>

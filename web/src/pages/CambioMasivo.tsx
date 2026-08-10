@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, formatoCLP, type Categoria } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
+import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 
 interface CambioCategoria {
   productoId: number;
@@ -38,7 +39,8 @@ export default function CambioMasivo() {
     api.categorias.listar().then(setCategorias).catch((e) => setError(e.message));
   }, []);
 
-  async function previsualizarCategoria() {
+  async function previsualizarCategoria(e: React.FormEvent) {
+    e.preventDefault();
     setError(null);
     setMensaje(null);
     if (!categoriaId || !valor || !usuario) return;
@@ -76,7 +78,8 @@ export default function CambioMasivo() {
     }
   }
 
-  async function previsualizarCsv() {
+  async function previsualizarCsv(e: React.FormEvent) {
+    e.preventDefault();
     setError(null);
     setMensaje(null);
     if (!archivo || !usuario) return;
@@ -111,7 +114,7 @@ export default function CambioMasivo() {
 
       <section className="tarjeta">
         <h2>Por categoría</h2>
-        <div className="fila-inline">
+        <form onSubmit={previsualizarCategoria} onKeyDown={manejarEnterComoTab} className="fila-inline">
           <select value={categoriaId} onChange={(e) => setCategoriaId(e.target.value ? Number(e.target.value) : "")}>
             <option value="">Elegir categoría...</option>
             {categorias.map((c) => (
@@ -131,10 +134,8 @@ export default function CambioMasivo() {
             value={valor}
             onChange={(e) => setValor(e.target.value)}
           />
-          <button type="button" onClick={previsualizarCategoria}>
-            Previsualizar
-          </button>
-        </div>
+          <button type="submit">Previsualizar</button>
+        </form>
 
         {previewCategoria && (
           <>
@@ -177,12 +178,12 @@ export default function CambioMasivo() {
         <p className="ayuda">
           El archivo debe ser CSV con dos columnas: <code>plu</code> y <code>precio_nuevo</code>.
         </p>
-        <div className="fila-inline">
+        <form onSubmit={previsualizarCsv} onKeyDown={manejarEnterComoTab} className="fila-inline">
           <input type="file" accept=".csv" onChange={(e) => setArchivo(e.target.files?.[0] ?? null)} />
-          <button type="button" onClick={previsualizarCsv} disabled={!archivo}>
+          <button type="submit" disabled={!archivo}>
             Previsualizar
           </button>
-        </div>
+        </form>
 
         {previewCsv && (
           <>
