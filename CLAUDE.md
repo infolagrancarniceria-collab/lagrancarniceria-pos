@@ -160,9 +160,21 @@ Todo corre **local**, en el PC de la carnicería, sin depender de internet:
 ## Estado de módulos
 1. **Gestión de precios** — listo (productos, categorías, cambio individual/masivo, historial).
 2. **Inventario** — listo (proveedores, entradas, salidas/merma, stock actual con alerta de stock bajo, historial de movimientos).
-3. **Reportes** — parcial: listo el reporte de inventario (entradas/salidas por motivo, top productos con más merma) y de precios (cambios y mayores variaciones), ambos por rango de fechas. **Reportes de ventas queda pendiente** — no hay datos de ventas reales hasta que exista el módulo de caja (módulo 5); se decidió no diseñar ese reporte "a ciegas" para no tener que rehacerlo cuando exista el dato real.
+3. **Reportes** — parcial: listo el reporte de inventario (entradas/salidas por motivo, top productos con más merma) y de precios (cambios y mayores variaciones), ambos por rango de fechas. **Reporte de ventas pendiente** — ahora que caja existe y genera datos reales de venta, se puede construir cuando se necesite (no bloqueado, solo no se hizo todavía).
 4. Envío a balanza — no iniciado (bloqueado por documentación SDK bTwin).
-5. Caja / punto de venta — no iniciado.
+5. **Caja / punto de venta** — listo (apertura con fondo fijo, punto de venta con carrito y pagos combinados efectivo/tarjeta, anulación de ítems con clave de supervisor, cierre con reporte X/Z y diferencia de efectivo). Cuenta corriente de clientes queda fuera de esta primera versión (a pedido del usuario). Cada venta confirmada genera automáticamente movimientos de inventario (motivo "venta"), reutilizando la misma validación de stock del módulo de inventario.
+
+## Decisiones tomadas en el módulo de caja
+- Clave de supervisor: una sola clave compartida (no hay cuentas ni
+  contraseñas por persona en el sistema), guardada hasheada. Se pide solo
+  para anular un ítem de una venta en curso.
+- Cuenta corriente de clientes: fuera de esta primera versión (confirmado
+  con el usuario) — caja soporta efectivo y tarjeta, con pagos combinados.
+- El stock de cada producto se descuenta recién al **confirmar** la venta
+  (no al agregar un ítem al carrito), para no descontar stock de ventas que
+  se cancelan antes de pagar.
+- Los pagos registrados deben sumar exactamente el total de la venta para
+  poder confirmarla (no se modela "vuelto"/cambio).
 
 ## Decisiones tomadas en el módulo de inventario
 - La merma hoy no se registra formalmente (confirmado con el usuario) — este

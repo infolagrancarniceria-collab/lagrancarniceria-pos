@@ -18,6 +18,11 @@ model Usuario {
 
   cambiosPrecio        HistorialPrecio[]
   movimientosInventario MovimientoInventario[]
+
+  sesionesAbiertas SesionCaja[] @relation("SesionesAbiertasPorUsuario")
+  sesionesCerradas SesionCaja[] @relation("SesionesCerradasPorUsuario")
+  ventas           Venta[]
+  itemsAnulados    ItemVenta[]  @relation("ItemsAnuladosPorUsuario")
 }
 
 // Categorías jerárquicas de 3 niveles, ej: 01 Aves > 0101 Pollos > 010101 Trutros.
@@ -73,6 +78,7 @@ model Producto {
 
   historialPrecio       HistorialPrecio[]
   movimientosInventario MovimientoInventario[]
+  itemsVenta            ItemVenta[]
 }
 
 model HistorialPrecio {
@@ -125,4 +131,80 @@ model MovimientoInventario {
   proveedor     Proveedor? @relation(fields: [proveedorId], references: [id])
 
   fecha DateTime @default(now())
+}
+
+// Clave única compartida entre supervisores (no hay cuentas/contraseñas por
+// persona en este sistema). Siempre hay como máximo una fila; se sobrescribe
+// al cambiarla. Se guarda hasheada, nunca en texto plano.
+model ClaveSupervisor {
+  id            Int      @id @default(autoincrement())
+  hashClave     String
+  actualizadoEn DateTime @updatedAt
+}
+
+// Solo puede haber una sesión de caja "abierta" a la vez (una sola persona
+// usa el sistema a la vez, según la arquitectura del proyecto).
+model SesionCaja {
+  id Int @id @default(autoincrement())
+
+  usuarioAperturaId Int
+  usuarioApertura   Usuario @relation("SesionesAbiertasPorUsuario", fields: [usuarioAperturaId], references: [id])
+  fondoFijoInicial  Float
+  fechaApertura     DateTime @default(now())
+
+  estado String @default("abierta") // "abierta" | "cerrada"
+
+  usuarioCierreId Int?
+  usuarioCierre   Usuario?  @relation("SesionesCerradasPorUsuario", fields: [usuarioCierreId], references: [id])
+  efectivoContado Float?
+  fechaCierre     DateTime?
+
+  ventas Venta[]
+}
+
+model Venta {
+  id Int @id @default(autoincrement())
+
+  sesionCajaId Int
+  sesionCaja   SesionCaja @relation(fields: [sesionCajaId], references: [id])
+
+  usuarioId Int
+  usuario   Usuario @relation(fields: [usuarioId], references: [id])
+
+  fecha  DateTime @default(now())
+  estado String   @default("abierta") // "abierta" | "pagada" | "anulada"
+  total  Float    @default(0)
+
+  items ItemVenta[]
+  pagos PagoVenta[]
+}
+
+model ItemVenta {
+  id Int @id @default(autoincrement())
+
+  ventaId Int
+  venta   Venta @relation(fields: [ventaId], references: [id])
+
+  productoId Int
+  producto   Producto @relation(fields: [productoId], references: [id])
+
+  cantidad       Float
+  precioUnitario Float // copia del precio al momento de vender, no cambia si después se actualiza el precio del producto
+  subtotal       Float
+
+  anulado            Boolean   @default(false)
+  usuarioAnulacionId Int?
+  usuarioAnulacion   Usuario?  @relation("ItemsAnuladosPorUsuario", fields: [usuarioAnulacionId], references: [id])
+  motivoAnulacion    String?
+  fechaAnulacion     DateTime?
+}
+
+model PagoVenta {
+  id Int @id @default(autoincrement())
+
+  ventaId Int
+  venta   Venta @relation(fields: [ventaId], references: [id])
+
+  medio String // "efectivo" | "tarjeta"
+  monto Float
 }

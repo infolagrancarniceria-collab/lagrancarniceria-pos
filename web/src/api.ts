@@ -98,6 +98,63 @@ export interface HistorialEntrada {
   fecha: string;
 }
 
+export type MedioPago = "efectivo" | "tarjeta";
+
+export interface ItemVenta {
+  id: number;
+  ventaId: number;
+  productoId: number;
+  producto: Producto;
+  cantidad: number;
+  precioUnitario: number;
+  subtotal: number;
+  anulado: boolean;
+  usuarioAnulacionId: number | null;
+  motivoAnulacion: string | null;
+  fechaAnulacion: string | null;
+}
+
+export interface PagoVenta {
+  id: number;
+  ventaId: number;
+  medio: MedioPago;
+  monto: number;
+}
+
+export interface Venta {
+  id: number;
+  sesionCajaId: number;
+  usuarioId: number;
+  usuario?: Usuario;
+  fecha: string;
+  estado: "abierta" | "pagada" | "anulada";
+  total: number;
+  items: ItemVenta[];
+  pagos: PagoVenta[];
+}
+
+export interface SesionCaja {
+  id: number;
+  usuarioAperturaId: number;
+  usuarioApertura?: Usuario;
+  fondoFijoInicial: number;
+  fechaApertura: string;
+  estado: "abierta" | "cerrada";
+  usuarioCierreId: number | null;
+  usuarioCierre?: Usuario | null;
+  efectivoContado: number | null;
+  fechaCierre: string | null;
+}
+
+export interface ResumenSesion {
+  sesion: SesionCaja;
+  cantidadVentas: number;
+  totalVentas: number;
+  totalPorMedio: Record<string, number>;
+  efectivoEsperado: number;
+  diferencia: number | null;
+}
+
 class ApiError extends Error {}
 
 async function manejarRespuesta<T>(res: Response): Promise<T> {
@@ -132,6 +189,15 @@ async function post<T>(url: string, body: unknown): Promise<T> {
 async function put<T>(url: string, body: unknown): Promise<T> {
   const res = await fetch(url, {
     method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return manejarRespuesta<T>(res);
+}
+
+async function delConBody<T>(url: string, body: unknown): Promise<T> {
+  const res = await fetch(url, {
+    method: "DELETE",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
@@ -254,6 +320,37 @@ export const api = {
       const query = qs.toString();
       return get<ReportePrecios>(`/api/reportes/precios${query ? `?${query}` : ""}`);
     },
+  },
+  caja: {
+    estadoClave: () => get<{ configurada: boolean }>("/api/caja/clave-supervisor/estado"),
+    configurarClave: (data: { claveActual?: string; claveNueva: string }) =>
+      post<void>("/api/caja/clave-supervisor", data),
+    verificarClave: (clave: string) =>
+      post<{ valida: boolean }>("/api/caja/clave-supervisor/verificar", { clave }),
+    sesionActual: () => get<SesionCaja | null>("/api/caja/sesiones/actual"),
+    sesiones: () => get<SesionCaja[]>("/api/caja/sesiones"),
+    abrirSesion: (data: { fondoFijoInicial: number; usuarioId: number }) =>
+      post<SesionCaja>("/api/caja/sesiones", data),
+    resumenSesion: (id: number) => get<ResumenSesion>(`/api/caja/sesiones/${id}/resumen`),
+    cerrarSesion: (id: number, data: { efectivoContado: number; usuarioId: number }) =>
+      post<ResumenSesion>(`/api/caja/sesiones/${id}/cerrar`, data),
+    ventaAbierta: () => get<Venta | null>("/api/caja/ventas/abierta"),
+    obtenerVenta: (id: number) => get<Venta>(`/api/caja/ventas/${id}`),
+    crearVenta: (usuarioId: number) => post<Venta>("/api/caja/ventas", { usuarioId }),
+    agregarItem: (ventaId: number, data: { productoId: number; cantidad: number }) =>
+      post<Venta>(`/api/caja/ventas/${ventaId}/items`, data),
+    anularItem: (
+      ventaId: number,
+      itemId: number,
+      data: { clave: string; usuarioId: number; motivo?: string }
+    ) => delConBody<Venta>(`/api/caja/ventas/${ventaId}/items/${itemId}`, data),
+    agregarPago: (ventaId: number, data: { medio: MedioPago; monto: number }) =>
+      post<Venta>(`/api/caja/ventas/${ventaId}/pagos`, data),
+    quitarPago: (ventaId: number, pagoId: number) =>
+      del<Venta>(`/api/caja/ventas/${ventaId}/pagos/${pagoId}`),
+    confirmarVenta: (ventaId: number, usuarioId: number) =>
+      post<Venta>(`/api/caja/ventas/${ventaId}/confirmar`, { usuarioId }),
+    cancelarVenta: (ventaId: number) => post<Venta>(`/api/caja/ventas/${ventaId}/cancelar`, {}),
   },
 };
 

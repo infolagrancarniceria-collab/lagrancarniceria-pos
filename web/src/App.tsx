@@ -14,6 +14,12 @@ import RegistrarSalida from "./pages/RegistrarSalida";
 import MovimientosInventario from "./pages/MovimientosInventario";
 import Proveedores from "./pages/Proveedores";
 import Reportes from "./pages/Reportes";
+import Caja from "./pages/Caja";
+import ConfigurarClaveSupervisor from "./pages/ConfigurarClaveSupervisor";
+import AbrirCaja from "./pages/AbrirCaja";
+import PuntoDeVenta from "./pages/PuntoDeVenta";
+import CerrarCaja from "./pages/CerrarCaja";
+import SesionesCaja from "./pages/SesionesCaja";
 
 export default function App() {
   return (
@@ -34,6 +40,12 @@ export default function App() {
             <Route path="/inventario/movimientos" element={<MovimientosInventario />} />
             <Route path="/proveedores" element={<Proveedores />} />
             <Route path="/reportes" element={<Reportes />} />
+            <Route path="/caja" element={<Caja />} />
+            <Route path="/caja/configurar-clave" element={<ConfigurarClaveSupervisor />} />
+            <Route path="/caja/abrir" element={<AbrirCaja />} />
+            <Route path="/caja/venta" element={<PuntoDeVenta />} />
+            <Route path="/caja/cerrar" element={<CerrarCaja />} />
+            <Route path="/caja/sesiones" element={<SesionesCaja />} />
           </Route>
         </Route>
         <Route path="/" element={<Navigate to="/productos" replace />} />
