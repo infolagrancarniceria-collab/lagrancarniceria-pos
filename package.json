@@ -1,0 +1,48 @@
+{
+  "name": "lagrancarniceria-pos",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sistema POS para carnicería - gestión de precios, inventario, reportes de ventas y envío a balanza",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev:server": "tsx watch server/index.ts",
+    "dev:web": "vite",
+    "dev": "concurrently -n server,web -c blue,green \"npm:dev:server\" \"npm:dev:web\"",
+    "dev:electron": "wait-on tcp:5174 && cross-env ELECTRON_START_URL=http://localhost:5174 electron electron/main.js",
+    "build:web": "vite build",
+    "build:server": "tsc -p server/tsconfig.json",
+    "build": "npm run build:web && npm run build:server",
+    "start": "node dist-server/index.js",
+    "start:electron": "electron electron/main.js",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "typecheck": "tsc --noEmit -p server/tsconfig.json && tsc --noEmit -p web/tsconfig.json"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.20.0",
+    "csv-parse": "^5.5.6",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0",
+    "multer": "^2.2.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^7.18.2",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/multer": "^1.4.12",
+    "@types/node": "^22.7.4",
+    "@types/react": "^18.3.10",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^6.0.5",
+    "concurrently": "^9.0.1",
+    "cross-env": "^7.0.3",
+    "electron": "^43.3.0",
+    "prisma": "^5.20.0",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.2",
+    "vite": "^8.2.1",
+    "wait-on": "^8.0.1"
+  }
+}

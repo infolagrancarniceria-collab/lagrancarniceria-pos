@@ -1,0 +1,85 @@
+// Esquema de datos del módulo "Gestión de precios".
+// Ver /CLAUDE.md para el contexto de negocio detrás de cada campo.
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Usuario {
+  id       Int      @id @default(autoincrement())
+  nombre   String   @unique
+  activo   Boolean  @default(true)
+  creadoEn DateTime @default(now())
+
+  cambiosPrecio HistorialPrecio[]
+}
+
+// Categorías jerárquicas de 3 niveles, ej: 01 Aves > 0101 Pollos > 010101 Trutros.
+model Categoria {
+  id      Int    @id @default(autoincrement())
+  codigo  String @unique
+  nombre  String
+  nivel   Int
+
+  padreId Int?
+  padre   Categoria?  @relation("CategoriaJerarquia", fields: [padreId], references: [id])
+  hijos   Categoria[] @relation("CategoriaJerarquia")
+
+  productos Producto[]
+}
+
+// SQLite no soporta enums nativos en Prisma; el valor permitido
+// ("NORMAL" | "PESABLE" | "IMPORTE") se valida en la capa de API (zod).
+model Producto {
+  id          Int    @id @default(autoincrement())
+  plu         String @unique
+  descripcion String
+  nombreCorto String?
+  marca       String?
+
+  categoriaId Int
+  categoria   Categoria @relation(fields: [categoriaId], references: [id])
+
+  // Precio por kg si flagBalanza es PESABLE/IMPORTE, precio por unidad si es NORMAL.
+  precio Float
+
+  flagBalanza String @default("NORMAL")
+
+  // Solo aplica cuando flagBalanza = NORMAL: la balanza imprime su propio
+  // código con peso/precio embebido para productos pesables/importe.
+  codigoBarras String? @unique
+
+  contenido         String?
+  capacidadPorCaja  String?
+  envase            String?
+  impuestoAdicional Float?  @default(0)
+  duracion          String?
+  codigoProveedor   String?
+
+  activo        Boolean  @default(true)
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  historialPrecio HistorialPrecio[]
+}
+
+model HistorialPrecio {
+  id Int @id @default(autoincrement())
+
+  productoId Int
+  producto   Producto @relation(fields: [productoId], references: [id])
+
+  usuarioId Int
+  usuario   Usuario @relation(fields: [usuarioId], references: [id])
+
+  precioAnterior Float
+  precioNuevo    Float
+  tipoCambio     String // "individual" | "masivo_categoria" | "masivo_csv"
+
+  fecha DateTime @default(now())
+}

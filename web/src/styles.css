@@ -1,0 +1,216 @@
+:root {
+  --color-fondo: #f7f5f2;
+  --color-texto: #2b2420;
+  --color-primario: #8c2f1b;
+  --color-primario-hover: #6f2314;
+  --color-borde: #d8d2c9;
+  --color-error: #b3261e;
+  --color-exito: #1e7a3c;
+  font-size: 17px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--color-fondo);
+  color: var(--color-texto);
+}
+
+button {
+  font-size: 1rem;
+  padding: 0.55rem 1rem;
+  border-radius: 6px;
+  border: 1px solid var(--color-borde);
+  background: white;
+  cursor: pointer;
+}
+button:hover {
+  background: #efe9e2;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.boton-primario {
+  background: var(--color-primario);
+  color: white;
+  border-color: var(--color-primario);
+}
+.boton-primario:hover {
+  background: var(--color-primario-hover);
+}
+
+a.boton {
+  text-decoration: none;
+  display: inline-block;
+}
+
+input,
+select {
+  font-size: 1rem;
+  padding: 0.5rem;
+  border: 1px solid var(--color-borde);
+  border-radius: 6px;
+  background: white;
+  color: var(--color-texto);
+}
+
+.error {
+  color: var(--color-error);
+  font-weight: 600;
+}
+.exito {
+  color: var(--color-exito);
+  font-weight: 600;
+}
+
+/* Login */
+.pantalla-login {
+  max-width: 480px;
+  margin: 4rem auto;
+  text-align: center;
+  padding: 1rem;
+}
+.lista-usuarios {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: center;
+  margin: 1.5rem 0;
+}
+.boton-usuario {
+  font-size: 1.1rem;
+  padding: 0.75rem 1.5rem;
+}
+.form-usuario-nuevo {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+  margin-top: 1rem;
+}
+
+/* Layout */
+.layout {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+  padding: 0.75rem 1.5rem;
+  background: white;
+  border-bottom: 1px solid var(--color-borde);
+}
+.marca {
+  font-weight: 700;
+  font-size: 1.2rem;
+  color: var(--color-primario);
+}
+.topbar nav {
+  display: flex;
+  gap: 1.25rem;
+  flex: 1;
+}
+.topbar nav a {
+  color: var(--color-texto);
+  text-decoration: none;
+  padding: 0.4rem 0;
+  border-bottom: 3px solid transparent;
+}
+.topbar nav a.active {
+  border-bottom-color: var(--color-primario);
+  font-weight: 600;
+}
+.usuario-actual {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.contenido {
+  padding: 1.5rem;
+  max-width: 1100px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+/* Componentes comunes */
+.encabezado-pantalla {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+.filtros {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+.filtros input {
+  flex: 1;
+}
+.fila-inline {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+.tarjeta {
+  background: white;
+  border: 1px solid var(--color-borde);
+  border-radius: 10px;
+  padding: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+.ayuda {
+  color: #665f57;
+  font-size: 0.95rem;
+}
+
+.tabla {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+}
+.tabla th,
+.tabla td {
+  text-align: left;
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--color-borde);
+}
+.tabla th {
+  background: #efe9e2;
+}
+.fila-error {
+  background: #fbeae8;
+}
+
+.formulario {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+  background: white;
+  border: 1px solid var(--color-borde);
+  border-radius: 10px;
+  padding: 1.25rem;
+}
+.formulario label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-weight: 600;
+}
+.acciones-formulario {
+  grid-column: 1 / -1;
+}
+
+.cambio-precio h2 {
+  margin-top: 0;
+}

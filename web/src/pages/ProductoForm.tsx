@@ -1,0 +1,285 @@
+import { useEffect, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { api, formatoCLP, type Categoria, type FlagBalanza, type Producto } from "../api";
+import { useUsuario } from "../context/UsuarioContext";
+
+interface FormState {
+  plu: string;
+  descripcion: string;
+  nombreCorto: string;
+  marca: string;
+  categoriaId: number | "";
+  precio: string;
+  flagBalanza: FlagBalanza;
+  codigoBarras: string;
+  contenido: string;
+  capacidadPorCaja: string;
+  envase: string;
+  impuestoAdicional: string;
+  duracion: string;
+  codigoProveedor: string;
+}
+
+const formVacio: FormState = {
+  plu: "",
+  descripcion: "",
+  nombreCorto: "",
+  marca: "",
+  categoriaId: "",
+  precio: "",
+  flagBalanza: "NORMAL",
+  codigoBarras: "",
+  contenido: "",
+  capacidadPorCaja: "",
+  envase: "",
+  impuestoAdicional: "",
+  duracion: "",
+  codigoProveedor: "",
+};
+
+export default function ProductoForm() {
+  const { id } = useParams();
+  const esNuevo = !id;
+  const navigate = useNavigate();
+  const { usuario } = useUsuario();
+
+  const [categorias, setCategorias] = useState<Categoria[]>([]);
+  const [form, setForm] = useState<FormState>(formVacio);
+  const [productoActual, setProductoActual] = useState<Producto | null>(null);
+  const [precioNuevo, setPrecioNuevo] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [mensaje, setMensaje] = useState<string | null>(null);
+  const [guardando, setGuardando] = useState(false);
+
+  useEffect(() => {
+    api.categorias.listar().then(setCategorias).catch((e) => setError(e.message));
+  }, []);
+
+  useEffect(() => {
+    if (!id) return;
+    api.productos
+      .obtener(Number(id))
+      .then((p) => {
+        setProductoActual(p);
+        setForm({
+          plu: p.plu,
+          descripcion: p.descripcion,
+          nombreCorto: p.nombreCorto ?? "",
+          marca: p.marca ?? "",
+          categoriaId: p.categoriaId,
+          precio: String(p.precio),
+          flagBalanza: p.flagBalanza,
+          codigoBarras: p.codigoBarras ?? "",
+          contenido: p.contenido ?? "",
+          capacidadPorCaja: p.capacidadPorCaja ?? "",
+          envase: p.envase ?? "",
+          impuestoAdicional: p.impuestoAdicional != null ? String(p.impuestoAdicional) : "",
+          duracion: p.duracion ?? "",
+          codigoProveedor: p.codigoProveedor ?? "",
+        });
+      })
+      .catch((e) => setError(e.message));
+  }, [id]);
+
+  function actualizarCampo<K extends keyof FormState>(campo: K, valor: FormState[K]) {
+    setForm((f) => ({ ...f, [campo]: valor }));
+  }
+
+  async function guardar(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setMensaje(null);
+
+    if (!form.categoriaId) {
+      setError("Falta elegir una categoría");
+      return;
+    }
+
+    const datosComunes = {
+      plu: form.plu.trim(),
+      descripcion: form.descripcion.trim(),
+      nombreCorto: form.nombreCorto.trim() || null,
+      marca: form.marca.trim() || null,
+      categoriaId: Number(form.categoriaId),
+      flagBalanza: form.flagBalanza,
+      codigoBarras: form.flagBalanza === "NORMAL" ? form.codigoBarras.trim() || null : null,
+      contenido: form.contenido.trim() || null,
+      capacidadPorCaja: form.capacidadPorCaja.trim() || null,
+      envase: form.envase.trim() || null,
+      impuestoAdicional: form.impuestoAdicional ? Number(form.impuestoAdicional) : null,
+      duracion: form.duracion.trim() || null,
+      codigoProveedor: form.codigoProveedor.trim() || null,
+    };
+
+    setGuardando(true);
+    try {
+      if (esNuevo) {
+        const precio = Number(form.precio);
+        if (!precio || precio <= 0) {
+          setError("El precio debe ser mayor a 0");
+          setGuardando(false);
+          return;
+        }
+        const creado = await api.productos.crear({ ...datosComunes, precio });
+        navigate(`/productos/${creado.id}`);
+      } else {
+        await api.productos.actualizar(Number(id), datosComunes);
+        setMensaje("Datos del producto guardados");
+      }
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setGuardando(false);
+    }
+  }
+
+  async function cambiarPrecio() {
+    if (!productoActual || !usuario) return;
+    setError(null);
+    setMensaje(null);
+    const nuevo = Number(precioNuevo);
+    if (!nuevo || nuevo <= 0) {
+      setError("Ingresa un precio nuevo válido");
+      return;
+    }
+    const confirmado = window.confirm(
+      `¿Cambiar el precio de "${productoActual.descripcion}" de ${formatoCLP(productoActual.precio)} a ${formatoCLP(nuevo)}?`
+    );
+    if (!confirmado) return;
+
+    try {
+      const actualizado = await api.precios.cambiarIndividual({
+        productoId: productoActual.id,
+        precioNuevo: nuevo,
+        usuarioId: usuario.id,
+      });
+      setProductoActual({ ...productoActual, precio: actualizado.precio });
+      setPrecioNuevo("");
+      setMensaje("Precio actualizado");
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  return (
+    <div>
+      <h1>{esNuevo ? "Nuevo producto" : `Editar producto: ${productoActual?.descripcion ?? ""}`}</h1>
+      {error && <p className="error">{error}</p>}
+      {mensaje && <p className="exito">{mensaje}</p>}
+
+      {!esNuevo && productoActual && (
+        <div className="tarjeta cambio-precio">
+          <h2>Precio actual: {formatoCLP(productoActual.precio)}</h2>
+          <div className="fila-inline">
+            <input
+              type="number"
+              min="1"
+              placeholder="Precio nuevo"
+              value={precioNuevo}
+              onChange={(e) => setPrecioNuevo(e.target.value)}
+            />
+            <button type="button" onClick={cambiarPrecio}>
+              Cambiar precio
+            </button>
+          </div>
+        </div>
+      )}
+
+      <form onSubmit={guardar} className="formulario">
+        <label>
+          PLU / Código
+          <input value={form.plu} onChange={(e) => actualizarCampo("plu", e.target.value)} required />
+        </label>
+        <label>
+          Descripción
+          <input value={form.descripcion} onChange={(e) => actualizarCampo("descripcion", e.target.value)} required />
+        </label>
+        <label>
+          Nombre corto
+          <input value={form.nombreCorto} onChange={(e) => actualizarCampo("nombreCorto", e.target.value)} />
+        </label>
+        <label>
+          Marca
+          <input value={form.marca} onChange={(e) => actualizarCampo("marca", e.target.value)} />
+        </label>
+        <label>
+          Categoría
+          <select
+            value={form.categoriaId}
+            onChange={(e) => actualizarCampo("categoriaId", e.target.value ? Number(e.target.value) : "")}
+            required
+          >
+            <option value="">Elegir categoría...</option>
+            {categorias.map((c) => (
+              <option key={c.id} value={c.id}>
+                {"— ".repeat(c.nivel - 1)}
+                {c.codigo} {c.nombre}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Flag balanza
+          <select value={form.flagBalanza} onChange={(e) => actualizarCampo("flagBalanza", e.target.value as FlagBalanza)}>
+            <option value="NORMAL">Normal</option>
+            <option value="PESABLE">Pesable</option>
+            <option value="IMPORTE">Importe</option>
+          </select>
+        </label>
+        {form.flagBalanza === "NORMAL" && (
+          <label>
+            Código de barras (EAN)
+            <input value={form.codigoBarras} onChange={(e) => actualizarCampo("codigoBarras", e.target.value)} />
+          </label>
+        )}
+        {esNuevo && (
+          <label>
+            Precio inicial
+            <input
+              type="number"
+              min="1"
+              value={form.precio}
+              onChange={(e) => actualizarCampo("precio", e.target.value)}
+              required
+            />
+          </label>
+        )}
+        <label>
+          Contenido
+          <input value={form.contenido} onChange={(e) => actualizarCampo("contenido", e.target.value)} />
+        </label>
+        <label>
+          Capacidad x caja
+          <input value={form.capacidadPorCaja} onChange={(e) => actualizarCampo("capacidadPorCaja", e.target.value)} />
+        </label>
+        <label>
+          Envase
+          <input value={form.envase} onChange={(e) => actualizarCampo("envase", e.target.value)} />
+        </label>
+        <label>
+          Impuesto adicional (%)
+          <input
+            type="number"
+            min="0"
+            value={form.impuestoAdicional}
+            onChange={(e) => actualizarCampo("impuestoAdicional", e.target.value)}
+          />
+        </label>
+        <label>
+          Duración
+          <input value={form.duracion} onChange={(e) => actualizarCampo("duracion", e.target.value)} />
+        </label>
+        <label>
+          Código proveedor
+          <input value={form.codigoProveedor} onChange={(e) => actualizarCampo("codigoProveedor", e.target.value)} />
+        </label>
+
+        <div className="acciones-formulario">
+          <button type="submit" className="boton boton-primario" disabled={guardando}>
+            {guardando ? "Guardando..." : "Guardar"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
