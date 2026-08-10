@@ -14,13 +14,13 @@ for (const sufijo of ["", "-journal", "-wal", "-shm"]) {
   if (fs.existsSync(archivo)) fs.unlinkSync(archivo);
 }
 
-// En Windows, Node no encuentra "npx" directamente porque en realidad es un
-// shim de línea de comandos ("npx.cmd") — hay que darle ese nombre exacto.
-const comandoNpx = process.platform === "win32" ? "npx.cmd" : "npx";
-
-execFileSync(comandoNpx, ["prisma", "migrate", "deploy", "--schema", "prisma/schema.prisma"], {
+execFileSync("npx", ["prisma", "migrate", "deploy", "--schema", "prisma/schema.prisma"], {
   cwd: path.join(__dirname, ".."),
   stdio: "inherit",
+  // En Windows, "npx" en realidad es un archivo .cmd (no un ejecutable
+  // directo) y Node ya no permite lanzar esos archivos sin pasar por una
+  // terminal — shell:true hace justamente eso, en cualquier sistema operativo.
+  shell: true,
   env: {
     ...process.env,
     DATABASE_URL: `file:${rutaPlantilla.replace(/\\/g, "/")}`,
