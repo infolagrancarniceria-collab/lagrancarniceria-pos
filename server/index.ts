@@ -11,6 +11,8 @@ import { proveedoresRouter } from "./routes/proveedores";
 import { inventarioRouter } from "./routes/inventario";
 import { reportesRouter } from "./routes/reportes";
 import { cajaRouter } from "./routes/caja";
+import { configuracionRouter } from "./routes/configuracion";
+import { asistenteRouter } from "./routes/asistente";
 
 const app = express();
 const PORT = Number(process.env.PORT) || 5175;
@@ -26,6 +28,8 @@ app.use("/api/proveedores", proveedoresRouter);
 app.use("/api/inventario", inventarioRouter);
 app.use("/api/reportes", reportesRouter);
 app.use("/api/caja", cajaRouter);
+app.use("/api/configuracion", configuracionRouter);
+app.use("/api/asistente", asistenteRouter);
 
 // En producción, el mismo servidor sirve la interfaz web ya compilada
 // (así la tablet/celular en la red del local también puede entrar por navegador).

@@ -155,6 +155,21 @@ export interface ResumenSesion {
   diferencia: number | null;
 }
 
+export interface PropuestaAsistente {
+  tipo: "propuesta";
+  descripcion: string;
+  accion: { tipo: string; datos: Record<string, unknown> };
+  historial: unknown[];
+}
+
+export interface RespuestaTextoAsistente {
+  tipo: "respuesta";
+  texto: string;
+  historial: unknown[];
+}
+
+export type RespuestaAsistente = PropuestaAsistente | RespuestaTextoAsistente;
+
 class ApiError extends Error {}
 
 async function manejarRespuesta<T>(res: Response): Promise<T> {
@@ -351,6 +366,15 @@ export const api = {
     confirmarVenta: (ventaId: number, usuarioId: number) =>
       post<Venta>(`/api/caja/ventas/${ventaId}/confirmar`, { usuarioId }),
     cancelarVenta: (ventaId: number) => post<Venta>(`/api/caja/ventas/${ventaId}/cancelar`, {}),
+  },
+  configuracion: {
+    estadoIA: () => get<{ configurada: boolean }>("/api/configuracion/ia/estado"),
+    guardarClaveIA: (claveApiAnthropic: string) =>
+      post<void>("/api/configuracion/ia", { claveApiAnthropic }),
+  },
+  asistente: {
+    enviarMensaje: (mensaje: string, historial: unknown[]) =>
+      post<RespuestaAsistente>("/api/asistente/mensaje", { mensaje, historial }),
   },
 };
 

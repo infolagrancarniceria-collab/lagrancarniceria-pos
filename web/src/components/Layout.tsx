@@ -22,6 +22,8 @@ export default function Layout() {
           <NavLink to="/inventario">Inventario</NavLink>
           <NavLink to="/reportes">Reportes</NavLink>
           <NavLink to="/caja">Caja</NavLink>
+          <NavLink to="/asistente">Asistente</NavLink>
+          <NavLink to="/configuracion">Configuración</NavLink>
         </nav>
         <div className="usuario-actual">
           <span>{usuario?.nombre}</span>

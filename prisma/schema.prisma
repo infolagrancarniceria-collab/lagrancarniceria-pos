@@ -146,6 +146,18 @@ model ClaveSupervisor {
   actualizadoEn DateTime @updatedAt
 }
 
+// Configuración del asistente de IA. Guarda la clave de API de Anthropic tal
+// cual (no hasheada, a diferencia de ClaveSupervisor) porque hay que poder
+// volver a leerla para llamar a la API — no es una clave que solo se verifica
+// por comparación. Vive en el mismo archivo local que el resto de los datos
+// del negocio, en el PC de la carnicería; nunca se sube a git ni se muestra
+// de vuelta al frontend una vez guardada. Siempre hay como máximo una fila.
+model ConfiguracionIA {
+  id                Int      @id @default(autoincrement())
+  claveApiAnthropic String
+  actualizadoEn     DateTime @updatedAt
+}
+
 // Solo puede haber una sesión de caja "abierta" a la vez (una sola persona
 // usa el sistema a la vez, según la arquitectura del proyecto).
 model SesionCaja {

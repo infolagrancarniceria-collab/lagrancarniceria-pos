@@ -36,11 +36,16 @@
     ],
     "asar": false,
     "extraResources": [
-      { "from": "prisma/plantilla.db", "to": "plantilla.db" }
+      {
+        "from": "prisma/plantilla.db",
+        "to": "plantilla.db"
+      }
     ],
     "afterPack": "scripts/after-pack.js",
     "win": {
-      "target": ["nsis"]
+      "target": [
+        "nsis"
+      ]
     },
     "nsis": {
       "oneClick": false,
@@ -48,6 +53,7 @@
     }
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.116.0",
     "@prisma/client": "^5.20.0",
     "csv-parse": "^5.5.6",
     "dotenv": "^16.4.5",

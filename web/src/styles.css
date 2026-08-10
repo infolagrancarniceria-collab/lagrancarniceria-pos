@@ -195,6 +195,32 @@ select {
   background: #fbeae8;
 }
 
+.chat-mensajes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+.chat-burbuja {
+  padding: 0.6rem 0.85rem;
+  border-radius: 8px;
+  max-width: 80%;
+}
+.chat-burbuja-usuario {
+  align-self: flex-end;
+  background: #efe9e2;
+}
+.chat-burbuja-asistente {
+  align-self: flex-start;
+  background: #f4f1ec;
+}
+.propuesta-ia {
+  border-color: #c9a34e;
+  background: #fdf7e8;
+}
+
 .formulario {
   display: grid;
   grid-template-columns: repeat(2, 1fr);

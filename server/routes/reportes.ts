@@ -20,12 +20,16 @@ function parseFechaLocal(valor: unknown, horas: [number, number, number, number]
   return Number.isNaN(generica.getTime()) ? null : generica;
 }
 
-function rangoFechas(query: Record<string, unknown>): { desde: Date; hasta: Date } {
+export function rangoFechasDesdeTexto(desdeTexto?: unknown, hastaTexto?: unknown): { desde: Date; hasta: Date } {
   const ahora = new Date();
-  const desde = parseFechaLocal(query.desde, [0, 0, 0, 0]) ?? new Date(ahora.getTime() - TREINTA_DIAS_MS);
+  const desde = parseFechaLocal(desdeTexto, [0, 0, 0, 0]) ?? new Date(ahora.getTime() - TREINTA_DIAS_MS);
   // "hasta" se extiende al final del día para incluir todo lo ocurrido ese día.
-  const hasta = parseFechaLocal(query.hasta, [23, 59, 59, 999]) ?? ahora;
+  const hasta = parseFechaLocal(hastaTexto, [23, 59, 59, 999]) ?? ahora;
   return { desde, hasta };
+}
+
+function rangoFechas(query: Record<string, unknown>): { desde: Date; hasta: Date } {
+  return rangoFechasDesdeTexto(query.desde, query.hasta);
 }
 
 reportesRouter.get("/inventario", async (req, res) => {

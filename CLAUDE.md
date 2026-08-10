@@ -163,6 +163,7 @@ Todo corre **local**, en el PC de la carnicería, sin depender de internet:
 3. **Reportes** — parcial: listo el reporte de inventario (entradas/salidas por motivo, top productos con más merma) y de precios (cambios y mayores variaciones), ambos por rango de fechas. **Reporte de ventas pendiente** — ahora que caja existe y genera datos reales de venta, se puede construir cuando se necesite (no bloqueado, solo no se hizo todavía).
 4. Envío a balanza — no iniciado (bloqueado por documentación SDK bTwin).
 5. **Caja / punto de venta** — listo (apertura con fondo fijo, punto de venta con carrito y pagos combinados efectivo/tarjeta, anulación de ítems con clave de supervisor, cierre con reporte X/Z y diferencia de efectivo). Cuenta corriente de clientes queda fuera de esta primera versión (a pedido del usuario). Cada venta confirmada genera automáticamente movimientos de inventario (motivo "venta"), reutilizando la misma validación de stock del módulo de inventario.
+6. **Asistente de IA** — listo el backend y las pantallas; **pendiente la prueba real** con una clave de API válida (se probó todo el flujo con una clave falsa: guardar, error de clave inválida). Ver "Decisiones tomadas en el asistente de IA" más abajo.
 
 ## Instalador de Windows
 Armado con `electron-builder` (`npm run dist:win`, ver README para el
@@ -209,3 +210,30 @@ desde el programa instalado.
 - "Ajuste" por conteo físico que encuentra *más* stock del registrado se
   maneja como una entrada sin proveedor (no se creó un tercer tipo de
   movimiento que sume o reste).
+
+## Decisiones tomadas en el asistente de IA
+- **Regla central de seguridad: "la IA propone, la persona confirma"** — sin
+  excepciones, ni para cambios chicos. El asistente puede llamar dos tipos de
+  herramientas: de **lectura** (consultar productos, categorías, proveedores,
+  reportes de inventario/precios/ventas), que ejecuta directo porque no
+  cambian nada; y de **escritura** ("proponer_cambio_precio",
+  "proponer_crear_categoria", "proponer_entrada_inventario", etc.), que
+  nunca ejecuta — solo arma una propuesta con una descripción en español que
+  se le muestra a la persona. Si confirma, el frontend llama exactamente al
+  mismo endpoint que usaría a mano (mismo `usuarioId`, misma validación,
+  mismo registro en el historial); si cancela, no pasa nada. La IA nunca
+  tiene un camino propio para escribir datos.
+- Acceso: cualquiera que use el sistema puede usar el asistente, mismo
+  criterio que el resto (no hay contraseñas por persona).
+- La clave de API de Anthropic se guarda en la misma base de datos local
+  (tabla `ConfiguracionIA`), en texto plano — no tiene sentido cifrarla con
+  una clave maestra en una app de escritorio de un solo archivo local; el
+  cifrado ahí no agrega seguridad real sin un sistema de gestión de claves
+  aparte. Nunca se sube a git, nunca se le muestra de vuelta al frontend, y
+  el usuario la ingresa directo en la app (nunca por este chat, por
+  seguridad).
+- Modelo usado: Claude Sonnet — el intermedio de Anthropic, buen balance de
+  costo/calidad para este uso (consultas ocasionales de un solo local).
+- La conversación con la IA no se guarda en la base de datos — el historial
+  vive en el frontend mientras la pantalla esté abierta, y se manda de
+  vuelta en cada mensaje nuevo (patrón sin estado, más simple).

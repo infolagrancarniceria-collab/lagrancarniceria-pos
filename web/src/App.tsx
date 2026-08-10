@@ -20,6 +20,8 @@ import AbrirCaja from "./pages/AbrirCaja";
 import PuntoDeVenta from "./pages/PuntoDeVenta";
 import CerrarCaja from "./pages/CerrarCaja";
 import SesionesCaja from "./pages/SesionesCaja";
+import Configuracion from "./pages/Configuracion";
+import Asistente from "./pages/Asistente";
 
 export default function App() {
   return (
@@ -46,6 +48,8 @@ export default function App() {
             <Route path="/caja/venta" element={<PuntoDeVenta />} />
             <Route path="/caja/cerrar" element={<CerrarCaja />} />
             <Route path="/caja/sesiones" element={<SesionesCaja />} />
+            <Route path="/asistente" element={<Asistente />} />
+            <Route path="/configuracion" element={<Configuracion />} />
           </Route>
         </Route>
         <Route path="/" element={<Navigate to="/productos" replace />} />
