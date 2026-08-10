@@ -16,7 +16,39 @@
     "start:electron": "electron electron/main.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "typecheck": "tsc --noEmit -p server/tsconfig.json && tsc --noEmit -p web/tsconfig.json"
+    "typecheck": "tsc --noEmit -p server/tsconfig.json && tsc --noEmit -p web/tsconfig.json",
+    "db:plantilla": "node scripts/generar-plantilla-db.js",
+    "dist:win": "npm run build && npm run db:plantilla && electron-builder --win"
+  },
+  "build": {
+    "appId": "cl.lagrancarniceria.pos",
+    "productName": "La Gran Carnicería POS",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "electron/**/*",
+      "dist-server/**/*",
+      "web-dist/**/*",
+      "package.json",
+      "node_modules/**/*",
+      "node_modules/.prisma/**/*"
+    ],
+    "asarUnpack": [
+      "node_modules/.prisma/**/*",
+      "node_modules/@prisma/client/**/*"
+    ],
+    "extraResources": [
+      { "from": "prisma/plantilla.db", "to": "plantilla.db" }
+    ],
+    "afterPack": "scripts/after-pack.js",
+    "win": {
+      "target": ["nsis"]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
   },
   "dependencies": {
     "@prisma/client": "^5.20.0",
@@ -39,6 +71,7 @@
     "concurrently": "^9.0.1",
     "cross-env": "^7.0.3",
     "electron": "^43.3.0",
+    "electron-builder": "^26.15.3",
     "prisma": "^5.20.0",
     "tsx": "^4.19.1",
     "typescript": "^5.6.2",

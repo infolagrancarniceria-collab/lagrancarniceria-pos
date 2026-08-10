@@ -164,6 +164,18 @@ Todo corre **local**, en el PC de la carnicería, sin depender de internet:
 4. Envío a balanza — no iniciado (bloqueado por documentación SDK bTwin).
 5. **Caja / punto de venta** — listo (apertura con fondo fijo, punto de venta con carrito y pagos combinados efectivo/tarjeta, anulación de ítems con clave de supervisor, cierre con reporte X/Z y diferencia de efectivo). Cuenta corriente de clientes queda fuera de esta primera versión (a pedido del usuario). Cada venta confirmada genera automáticamente movimientos de inventario (motivo "venta"), reutilizando la misma validación de stock del módulo de inventario.
 
+## Instalador de Windows
+Armado con `electron-builder` (`npm run dist:win`, ver README para el
+detalle técnico). Produce un `.exe` instalador de verdad — se hizo antes de
+la primera prueba real con datos, a pedido del usuario, para que el sistema
+se pueda abrir con doble clic como cualquier programa de Windows, sin usar
+la terminal. Verificado: estructura del instalador correcta (motor de base
+de datos de Windows incluido, base de datos plantilla incluida) y el flujo
+de "primer arranque" (copiar la plantilla, levantar el servidor, guardar
+datos) probado de punta a punta. **Pendiente:** abrirlo en un PC con Windows
+real — este entorno de desarrollo no tiene uno disponible para confirmar que
+la ventana abre y se ve bien.
+
 ## Decisiones tomadas en el módulo de caja
 - Clave de supervisor: una sola clave compartida (no hay cuentas ni
   contraseñas por persona en el sistema), guardada hasheada. Se pide solo

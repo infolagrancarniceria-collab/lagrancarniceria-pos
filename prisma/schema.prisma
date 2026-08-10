@@ -7,7 +7,11 @@ datasource db {
 }
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  // "native" para poder seguir desarrollando en este entorno Linux;
+  // "windows" para que el motor de Prisma quede incluido en el instalador
+  // que corre en el PC de la carnicería.
+  binaryTargets = ["native", "windows"]
 }
 
 model Usuario {

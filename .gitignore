@@ -5,6 +5,9 @@ dist-electron/
 web-dist/
 prisma/dev.db
 prisma/dev.db-journal
+prisma/plantilla.db
+prisma/plantilla.db-journal
 *.log
 .DS_Store
 .env
+release/

@@ -2,6 +2,8 @@
 // porque Electron ejecuta este archivo con su propio Node.js interno, sin pasar
 // por un compilador — mantenerlo simple evita configuración adicional.
 const { app, BrowserWindow } = require("electron");
+const path = require("node:path");
+const fs = require("node:fs");
 
 const URL_DESARROLLO = process.env.ELECTRON_START_URL;
 
@@ -18,11 +20,26 @@ function crearVentana(url) {
   ventana.loadURL(url);
 }
 
+// La carpeta donde se instala el programa queda de solo lectura una vez
+// instalado en Windows, así que la base de datos real no puede vivir ahí.
+// Se guarda en la carpeta de datos del usuario (userData), que sí es
+// escribible. En el primer arranque se copia una plantilla vacía con las
+// migraciones ya aplicadas; en arranques siguientes se reutiliza tal cual
+// quedó, con todos los datos ingresados.
+function prepararBaseDeDatos() {
+  const rutaDatos = path.join(app.getPath("userData"), "datos.db");
+  if (!fs.existsSync(rutaDatos)) {
+    const rutaPlantilla = path.join(process.resourcesPath, "plantilla.db");
+    fs.copyFileSync(rutaPlantilla, rutaDatos);
+  }
+  process.env.DATABASE_URL = `file:${rutaDatos.replace(/\\/g, "/")}`;
+}
+
 async function obtenerUrlInicio() {
   if (URL_DESARROLLO) return URL_DESARROLLO;
 
   // Producción: el servidor local corre embebido en este mismo proceso.
-  const path = require("node:path");
+  prepararBaseDeDatos();
   const { iniciarServidor } = require(path.join(__dirname, "../dist-server/index.js"));
   await iniciarServidor();
   const PORT = process.env.PORT || 5175;
