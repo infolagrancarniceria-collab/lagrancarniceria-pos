@@ -20,6 +20,7 @@ export default function Layout() {
           <NavLink to="/historial">Historial</NavLink>
           <NavLink to="/categorias">Categorías</NavLink>
           <NavLink to="/inventario">Inventario</NavLink>
+          <NavLink to="/reportes">Reportes</NavLink>
         </nav>
         <div className="usuario-actual">
           <span>{usuario?.nombre}</span>

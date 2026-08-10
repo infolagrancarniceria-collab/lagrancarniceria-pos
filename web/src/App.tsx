@@ -13,6 +13,7 @@ import RegistrarEntrada from "./pages/RegistrarEntrada";
 import RegistrarSalida from "./pages/RegistrarSalida";
 import MovimientosInventario from "./pages/MovimientosInventario";
 import Proveedores from "./pages/Proveedores";
+import Reportes from "./pages/Reportes";
 
 export default function App() {
   return (
@@ -32,6 +33,7 @@ export default function App() {
             <Route path="/inventario/salida" element={<RegistrarSalida />} />
             <Route path="/inventario/movimientos" element={<MovimientosInventario />} />
             <Route path="/proveedores" element={<Proveedores />} />
+            <Route path="/reportes" element={<Reportes />} />
           </Route>
         </Route>
         <Route path="/" element={<Navigate to="/productos" replace />} />

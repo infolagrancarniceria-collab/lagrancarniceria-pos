@@ -62,6 +62,30 @@ export interface MovimientoInventario {
   fecha: string;
 }
 
+export interface ReporteInventario {
+  desde: string;
+  hasta: string;
+  entradasTotal: number;
+  salidasPorMotivo: Record<string, number>;
+  topMerma: { productoId: number; plu: string; descripcion: string; cantidad: number }[];
+}
+
+export interface ReportePrecios {
+  desde: string;
+  hasta: string;
+  totalCambios: number;
+  porTipo: Record<string, number>;
+  mayoresCambios: {
+    productoId: number;
+    plu: string;
+    descripcion: string;
+    precioAnterior: number;
+    precioNuevo: number;
+    variacionPorcentual: number;
+    fecha: string;
+  }[];
+}
+
 export interface HistorialEntrada {
   id: number;
   productoId: number;
@@ -213,6 +237,22 @@ export const api = {
       if (params.tipo) qs.set("tipo", params.tipo);
       const query = qs.toString();
       return get<MovimientoInventario[]>(`/api/inventario/movimientos${query ? `?${query}` : ""}`);
+    },
+  },
+  reportes: {
+    inventario: (desde?: string, hasta?: string) => {
+      const qs = new URLSearchParams();
+      if (desde) qs.set("desde", desde);
+      if (hasta) qs.set("hasta", hasta);
+      const query = qs.toString();
+      return get<ReporteInventario>(`/api/reportes/inventario${query ? `?${query}` : ""}`);
+    },
+    precios: (desde?: string, hasta?: string) => {
+      const qs = new URLSearchParams();
+      if (desde) qs.set("desde", desde);
+      if (hasta) qs.set("hasta", hasta);
+      const query = qs.toString();
+      return get<ReportePrecios>(`/api/reportes/precios${query ? `?${query}` : ""}`);
     },
   },
 };
