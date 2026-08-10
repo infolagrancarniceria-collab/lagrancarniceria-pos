@@ -16,7 +16,8 @@ model Usuario {
   activo   Boolean  @default(true)
   creadoEn DateTime @default(now())
 
-  cambiosPrecio HistorialPrecio[]
+  cambiosPrecio        HistorialPrecio[]
+  movimientosInventario MovimientoInventario[]
 }
 
 // Categorías jerárquicas de 3 niveles, ej: 01 Aves > 0101 Pollos > 010101 Trutros.
@@ -65,7 +66,13 @@ model Producto {
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
 
-  historialPrecio HistorialPrecio[]
+  // Se actualiza solo con cada movimiento de inventario (entrada/salida);
+  // no se edita a mano desde la ficha del producto.
+  stockActual      Float  @default(0)
+  umbralStockBajo  Float?
+
+  historialPrecio       HistorialPrecio[]
+  movimientosInventario MovimientoInventario[]
 }
 
 model HistorialPrecio {
@@ -80,6 +87,42 @@ model HistorialPrecio {
   precioAnterior Float
   precioNuevo    Float
   tipoCambio     String // "individual" | "masivo_categoria" | "masivo_csv"
+
+  fecha DateTime @default(now())
+}
+
+model Proveedor {
+  id       Int      @id @default(autoincrement())
+  nombre   String   @unique
+  contacto String?
+  activo   Boolean  @default(true)
+  creadoEn DateTime @default(now())
+
+  movimientos MovimientoInventario[]
+}
+
+// "Entrada" siempre suma stock (compra a proveedor, o ajuste positivo por
+// conteo físico sin proveedor). "Salida" siempre resta stock (venta,
+// descarte/merma, o ajuste negativo). La cantidad siempre se guarda positiva;
+// el signo lo da el campo tipo.
+model MovimientoInventario {
+  id Int @id @default(autoincrement())
+
+  productoId Int
+  producto   Producto @relation(fields: [productoId], references: [id])
+
+  usuarioId Int
+  usuario   Usuario @relation(fields: [usuarioId], references: [id])
+
+  tipo   String // "entrada" | "salida"
+  motivo String // entrada: "compra" | "ajuste" — salida: "venta" | "descarte" | "ajuste"
+
+  cantidad Float
+
+  // Solo aplica a entradas por compra.
+  costoUnitario Float?
+  proveedorId   Int?
+  proveedor     Proveedor? @relation(fields: [proveedorId], references: [id])
 
   fecha DateTime @default(now())
 }

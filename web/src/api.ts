@@ -32,6 +32,34 @@ export interface Producto {
   duracion: string | null;
   codigoProveedor: string | null;
   activo: boolean;
+  stockActual: number;
+  umbralStockBajo: number | null;
+}
+
+export interface ProductoConStock extends Producto {
+  bajoStock: boolean;
+}
+
+export interface Proveedor {
+  id: number;
+  nombre: string;
+  contacto: string | null;
+  activo: boolean;
+}
+
+export interface MovimientoInventario {
+  id: number;
+  productoId: number;
+  producto: Producto;
+  usuarioId: number;
+  usuario: Usuario;
+  tipo: "entrada" | "salida";
+  motivo: string;
+  cantidad: number;
+  costoUnitario: number | null;
+  proveedorId: number | null;
+  proveedor: Proveedor | null;
+  fecha: string;
 }
 
 export interface HistorialEntrada {
@@ -110,10 +138,12 @@ export const api = {
       return get<Producto[]>(`/api/productos${query ? `?${query}` : ""}`);
     },
     obtener: (id: number) => get<Producto>(`/api/productos/${id}`),
-    crear: (data: Omit<Producto, "id" | "categoria" | "activo">) =>
+    crear: (data: Omit<Producto, "id" | "categoria" | "activo" | "stockActual">) =>
       post<Producto>("/api/productos", data),
-    actualizar: (id: number, data: Omit<Producto, "id" | "categoria" | "activo" | "precio">) =>
-      put<Producto>(`/api/productos/${id}`, data),
+    actualizar: (
+      id: number,
+      data: Omit<Producto, "id" | "categoria" | "activo" | "precio" | "stockActual">
+    ) => put<Producto>(`/api/productos/${id}`, data),
     eliminar: (id: number) => del<void>(`/api/productos/${id}`),
   },
   precios: {
@@ -154,6 +184,36 @@ export const api = {
   historial: {
     listar: (productoId?: number) =>
       get<HistorialEntrada[]>(`/api/historial${productoId ? `?productoId=${productoId}` : ""}`),
+  },
+  proveedores: {
+    listar: () => get<Proveedor[]>("/api/proveedores"),
+    crear: (data: { nombre: string; contacto?: string | null }) =>
+      post<Proveedor>("/api/proveedores", data),
+  },
+  inventario: {
+    stock: (soloBajo = false) =>
+      get<ProductoConStock[]>(`/api/inventario/stock${soloBajo ? "?bajo=true" : ""}`),
+    entrada: (data: {
+      productoId: number;
+      cantidad: number;
+      motivo: "compra" | "ajuste";
+      proveedorId?: number | null;
+      costoUnitario?: number | null;
+      usuarioId: number;
+    }) => post<Producto>("/api/inventario/entrada", data),
+    salida: (data: {
+      productoId: number;
+      cantidad: number;
+      motivo: "venta" | "descarte" | "ajuste";
+      usuarioId: number;
+    }) => post<Producto>("/api/inventario/salida", data),
+    movimientos: (params: { productoId?: number; tipo?: "entrada" | "salida" } = {}) => {
+      const qs = new URLSearchParams();
+      if (params.productoId) qs.set("productoId", String(params.productoId));
+      if (params.tipo) qs.set("tipo", params.tipo);
+      const query = qs.toString();
+      return get<MovimientoInventario[]>(`/api/inventario/movimientos${query ? `?${query}` : ""}`);
+    },
   },
 };
 

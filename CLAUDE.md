@@ -158,8 +158,19 @@ Todo corre **local**, en el PC de la carnicería, sin depender de internet:
   de quién hizo cada cambio (ej. en el historial de precios).
 
 ## Estado de módulos
-1. **Gestión de precios** — en construcción.
-2. Inventario — no iniciado.
+1. **Gestión de precios** — listo (productos, categorías, cambio individual/masivo, historial).
+2. **Inventario** — listo (proveedores, entradas, salidas/merma, stock actual con alerta de stock bajo, historial de movimientos).
 3. Reportes de ventas — no iniciado.
 4. Envío a balanza — no iniciado (bloqueado por documentación SDK bTwin).
 5. Caja / punto de venta — no iniciado.
+
+## Decisiones tomadas en el módulo de inventario
+- La merma hoy no se registra formalmente (confirmado con el usuario) — este
+  módulo es el primer registro formal de ese dato.
+- El stock no se edita a mano en la ficha del producto: solo cambia a través
+  de movimientos de entrada/salida, igual que el precio solo cambia a través
+  del endpoint de cambio de precio (mismo patrón, mismo motivo: dejar rastro
+  de auditoría).
+- "Ajuste" por conteo físico que encuentra *más* stock del registrado se
+  maneja como una entrada sin proveedor (no se creó un tercer tipo de
+  movimiento que sume o reste).

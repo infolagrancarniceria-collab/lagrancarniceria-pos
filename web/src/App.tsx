@@ -8,6 +8,11 @@ import ProductoForm from "./pages/ProductoForm";
 import CambioMasivo from "./pages/CambioMasivo";
 import Historial from "./pages/Historial";
 import Categorias from "./pages/Categorias";
+import Inventario from "./pages/Inventario";
+import RegistrarEntrada from "./pages/RegistrarEntrada";
+import RegistrarSalida from "./pages/RegistrarSalida";
+import MovimientosInventario from "./pages/MovimientosInventario";
+import Proveedores from "./pages/Proveedores";
 
 export default function App() {
   return (
@@ -22,6 +27,11 @@ export default function App() {
             <Route path="/cambio-masivo" element={<CambioMasivo />} />
             <Route path="/historial" element={<Historial />} />
             <Route path="/categorias" element={<Categorias />} />
+            <Route path="/inventario" element={<Inventario />} />
+            <Route path="/inventario/entrada" element={<RegistrarEntrada />} />
+            <Route path="/inventario/salida" element={<RegistrarSalida />} />
+            <Route path="/inventario/movimientos" element={<MovimientosInventario />} />
+            <Route path="/proveedores" element={<Proveedores />} />
           </Route>
         </Route>
         <Route path="/" element={<Navigate to="/productos" replace />} />

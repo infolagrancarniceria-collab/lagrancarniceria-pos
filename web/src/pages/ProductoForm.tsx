@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, formatoCLP, type Categoria, type FlagBalanza, type Producto } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
 
@@ -18,6 +18,7 @@ interface FormState {
   impuestoAdicional: string;
   duracion: string;
   codigoProveedor: string;
+  umbralStockBajo: string;
 }
 
 const formVacio: FormState = {
@@ -35,6 +36,7 @@ const formVacio: FormState = {
   impuestoAdicional: "",
   duracion: "",
   codigoProveedor: "",
+  umbralStockBajo: "",
 };
 
 export default function ProductoForm() {
@@ -76,6 +78,7 @@ export default function ProductoForm() {
           impuestoAdicional: p.impuestoAdicional != null ? String(p.impuestoAdicional) : "",
           duracion: p.duracion ?? "",
           codigoProveedor: p.codigoProveedor ?? "",
+          umbralStockBajo: p.umbralStockBajo != null ? String(p.umbralStockBajo) : "",
         });
       })
       .catch((e) => setError(e.message));
@@ -109,6 +112,7 @@ export default function ProductoForm() {
       impuestoAdicional: form.impuestoAdicional ? Number(form.impuestoAdicional) : null,
       duracion: form.duracion.trim() || null,
       codigoProveedor: form.codigoProveedor.trim() || null,
+      umbralStockBajo: form.umbralStockBajo ? Number(form.umbralStockBajo) : null,
     };
 
     setGuardando(true);
@@ -182,6 +186,23 @@ export default function ProductoForm() {
               Cambiar precio
             </button>
           </div>
+        </div>
+      )}
+
+      {!esNuevo && productoActual && (
+        <div className="tarjeta cambio-precio">
+          <h2>
+            Stock actual: {productoActual.stockActual}
+            {productoActual.umbralStockBajo != null &&
+              productoActual.stockActual <= productoActual.umbralStockBajo && (
+                <span className="error"> — bajo el umbral ({productoActual.umbralStockBajo})</span>
+              )}
+          </h2>
+          <p className="ayuda">
+            El stock se actualiza solo con los movimientos de inventario.{" "}
+            <Link to="/inventario/entrada">Registrar entrada</Link> ·{" "}
+            <Link to="/inventario/salida">Registrar salida</Link>
+          </p>
         </div>
       )}
 
@@ -272,6 +293,16 @@ export default function ProductoForm() {
         <label>
           Código proveedor
           <input value={form.codigoProveedor} onChange={(e) => actualizarCampo("codigoProveedor", e.target.value)} />
+        </label>
+        <label>
+          Umbral de stock bajo
+          <input
+            type="number"
+            min="0"
+            placeholder="ej. 5 (avisa si quedan 5 o menos)"
+            value={form.umbralStockBajo}
+            onChange={(e) => actualizarCampo("umbralStockBajo", e.target.value)}
+          />
         </label>
 
         <div className="acciones-formulario">

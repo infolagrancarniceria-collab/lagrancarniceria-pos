@@ -60,6 +60,7 @@ const productoBaseSchema = z.object({
   impuestoAdicional: z.number().min(0).optional().nullable(),
   duracion: z.string().trim().optional().nullable(),
   codigoProveedor: z.string().trim().optional().nullable(),
+  umbralStockBajo: z.number().min(0).optional().nullable(),
 });
 
 function validarCodigoBarrasVsFlag(data: {

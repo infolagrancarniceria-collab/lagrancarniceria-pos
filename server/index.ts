@@ -7,6 +7,8 @@ import { categoriasRouter } from "./routes/categorias";
 import { productosRouter } from "./routes/productos";
 import { preciosRouter } from "./routes/precios";
 import { historialRouter } from "./routes/historial";
+import { proveedoresRouter } from "./routes/proveedores";
+import { inventarioRouter } from "./routes/inventario";
 
 const app = express();
 const PORT = Number(process.env.PORT) || 5175;
@@ -18,6 +20,8 @@ app.use("/api/categorias", categoriasRouter);
 app.use("/api/productos", productosRouter);
 app.use("/api/precios", preciosRouter);
 app.use("/api/historial", historialRouter);
+app.use("/api/proveedores", proveedoresRouter);
+app.use("/api/inventario", inventarioRouter);
 
 // En producción, el mismo servidor sirve la interfaz web ya compilada
 // (así la tablet/celular en la red del local también puede entrar por navegador).
