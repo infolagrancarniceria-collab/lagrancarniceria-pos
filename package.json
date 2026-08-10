@@ -34,10 +34,7 @@
       "node_modules/**/*",
       "node_modules/.prisma/**/*"
     ],
-    "asarUnpack": [
-      "node_modules/.prisma/**/*",
-      "node_modules/@prisma/client/**/*"
-    ],
+    "asar": false,
     "extraResources": [
       { "from": "prisma/plantilla.db", "to": "plantilla.db" }
     ],
