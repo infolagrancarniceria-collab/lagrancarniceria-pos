@@ -66,14 +66,18 @@ Detalles no obvios de la configuración (en `package.json`, clave `"build"`):
 - El motor de Prisma para SQLite es un binario nativo por sistema operativo.
   `prisma/schema.prisma` genera tanto el binario "native" (para seguir
   desarrollando en Linux/Mac) como el de "windows" (`binaryTargets`).
-- Ese binario no puede ejecutarse desde dentro de un `.asar` (el archivo
-  comprimido donde Electron empaqueta el código), así que se configura
-  `asarUnpack` para dejarlo como archivo suelto.
+- El proyecto empaqueta **sin** `.asar` (`"asar": false`): ese binario no
+  puede cargarse correctamente desde dentro de un `.asar` (el archivo
+  comprimido donde Electron suele empaquetar el código) porque
+  `node_modules/.prisma` nunca queda registrado dentro del `.asar` en
+  primer lugar (ver el punto siguiente), y sin ese registro Node no logra
+  cruzar del archivo `.asar` virtual hacia el archivo desempaquetado en
+  disco aunque exista físicamente. Con `asar: false` todo queda como
+  archivos reales, sin ese problema.
 - `node_modules/.prisma` (donde vive ese binario) empieza con un punto, y el
   empaquetador de Electron no lo detecta como una dependencia real aunque se
   liste explícitamente — así que `scripts/after-pack.js` (hook `afterPack`)
-  lo copia a mano después de armar la app, al mismo lugar donde debería
-  haber quedado.
+  lo copia a mano después de armar la app, a `resources/app/node_modules`.
 - La base de datos real (`datos.db`, con los datos del local) vive en la
   carpeta de datos del usuario de Windows (`app.getPath('userData')`), no
   dentro de la carpeta de instalación — esa carpeta queda de solo lectura
@@ -90,8 +94,11 @@ depender de que alguien lo pruebe a mano en su propia PC. El `.exe` queda
 disponible para descargar como artefacto en la página de cada ejecución del
 workflow en GitHub (pestaña "Actions").
 
+Confirmado en CI y también instalando y abriendo el programa en una PC con
+Windows real.
+
 ## Pendiente para producción (no bloquea seguir desarrollando módulos)
 
-Confirmar con una instalación real (no solo en CI) que se puede crear un
-producto de prueba y usar el sistema normalmente desde el programa
-instalado.
+Crear un producto de prueba y usar el sistema con normalidad desde el
+programa instalado, para confirmar que funciona igual que en desarrollo
+(la ventana ya abre bien; falta esta prueba funcional).

@@ -179,6 +179,10 @@ en la página de cada ejecución del workflow, sin necesidad de instalar
 Node.js para generarlo.
 
 Confirmado en CI (Windows real, GitHub Actions): el instalador se arma y la
+app abre sin crashear. **Confirmado también por el usuario**, instalando y
+abriendo el programa en su propia PC con Windows.
+
+Confirmado en CI (Windows real, GitHub Actions): el instalador se arma y la
 app abre sin crashear. **Pendiente:** confirmación del usuario probándolo en
 su propia PC — crear un producto de prueba y usar el sistema con normalidad
 desde el programa instalado.
