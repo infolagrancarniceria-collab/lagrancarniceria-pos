@@ -1,0 +1,55 @@
+name: Instalador Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - claude/architecture-stack-proposal-8rkqp2
+    paths:
+      - package.json
+      - package-lock.json
+      - scripts/**
+      - electron/**
+      - server/**
+      - prisma/**
+      - .github/workflows/build-installer.yml
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm ci
+
+      - run: npm run dist:win
+
+      # No hay forma de "ver" la ventana en un runner de GitHub, pero sí se
+      # puede confirmar que el programa arranca y se queda corriendo (en vez
+      # de crashear al toque, que es justo lo que veníamos arreglando).
+      - name: Verificar que la app arranca sin crashear
+        shell: pwsh
+        run: |
+          $exe = "release\win-unpacked\La Gran Carnicería POS.exe"
+          if (-not (Test-Path $exe)) {
+            Write-Error "No se encontró el ejecutable en $exe"
+            exit 1
+          }
+          $proc = Start-Process -FilePath $exe -PassThru
+          Start-Sleep -Seconds 10
+          if ($proc.HasExited) {
+            Write-Error "La app se cerró sola (código de salida: $($proc.ExitCode)) - probablemente crasheó al iniciar."
+            exit 1
+          }
+          Write-Host "La app sigue corriendo después de 10 segundos - arrancó bien."
+          Stop-Process -Id $proc.Id -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: instalador-windows
+          path: release/*.exe
+          if-no-files-found: error
