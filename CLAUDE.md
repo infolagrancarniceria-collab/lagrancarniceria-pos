@@ -166,15 +166,22 @@ Todo corre **local**, en el PC de la carnicería, sin depender de internet:
 
 ## Instalador de Windows
 Armado con `electron-builder` (`npm run dist:win`, ver README para el
-detalle técnico). Produce un `.exe` instalador de verdad — se hizo antes de
-la primera prueba real con datos, a pedido del usuario, para que el sistema
-se pueda abrir con doble clic como cualquier programa de Windows, sin usar
-la terminal. Verificado: estructura del instalador correcta (motor de base
-de datos de Windows incluido, base de datos plantilla incluida) y el flujo
-de "primer arranque" (copiar la plantilla, levantar el servidor, guardar
-datos) probado de punta a punta. **Pendiente:** abrirlo en un PC con Windows
-real — este entorno de desarrollo no tiene uno disponible para confirmar que
-la ventana abre y se ve bien.
+detalle técnico). Se hizo antes de la primera prueba real con datos, a
+pedido del usuario, para que el sistema se pueda abrir con doble clic como
+cualquier programa de Windows, sin usar la terminal.
+
+Un workflow de GitHub Actions (`.github/workflows/build-installer.yml`)
+arma el instalador en una PC Windows real cada vez que cambia algo relevante
+al empaquetado, y confirma que la app abre sin crashear — así los errores
+específicos de Windows (hubo varios, ver git log) se detectan sin depender
+de que alguien lo pruebe a mano. El `.exe` queda descargable como artefacto
+en la página de cada ejecución del workflow, sin necesidad de instalar
+Node.js para generarlo.
+
+Confirmado en CI (Windows real, GitHub Actions): el instalador se arma y la
+app abre sin crashear. **Pendiente:** confirmación del usuario probándolo en
+su propia PC — crear un producto de prueba y usar el sistema con normalidad
+desde el programa instalado.
 
 ## Decisiones tomadas en el módulo de caja
 - Clave de supervisor: una sola clave compartida (no hay cuentas ni

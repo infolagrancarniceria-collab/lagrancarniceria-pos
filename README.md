@@ -79,14 +79,19 @@ Detalles no obvios de la configuración (en `package.json`, clave `"build"`):
   dentro de la carpeta de instalación — esa carpeta queda de solo lectura
   una vez instalado el programa.
 
-**Cómo se probó:** el build se verificó completo (estructura de archivos,
-motor de Prisma incluido, formato del `.exe` válido) y se simuló el flujo de
-"primer arranque" (copiar la plantilla, levantar el servidor, crear datos de
-prueba) corriendo el mismo `dist-server/index.js` compilado, apuntado a una
-copia de la plantilla — funcionó de punta a punta. Lo que falta, porque este
-entorno de desarrollo no tiene Windows real, es abrir el `.exe` instalador en
-un PC con Windows y confirmar que la ventana abre y se ve bien.
+**Cómo se prueba en cada cambio:** `.github/workflows/build-installer.yml`
+arma el instalador en un runner de Windows real de GitHub Actions (no en
+este entorno de desarrollo, que es Linux) cada vez que cambia algo relevante
+al empaquetado, y además abre la app empaquetada y confirma que se queda
+corriendo unos segundos sin crashear — así los errores específicos de
+Windows (hubo varios: cómo lanzar `npx` desde Node en Windows, y cómo
+Electron resuelve `node_modules/.prisma` sin usar `.asar`) se detectan sin
+depender de que alguien lo pruebe a mano en su propia PC. El `.exe` queda
+disponible para descargar como artefacto en la página de cada ejecución del
+workflow en GitHub (pestaña "Actions").
 
 ## Pendiente para producción (no bloquea seguir desarrollando módulos)
 
-Probar el instalador en un PC con Windows real (ver sección anterior).
+Confirmar con una instalación real (no solo en CI) que se puede crear un
+producto de prueba y usar el sistema normalmente desde el programa
+instalado.
