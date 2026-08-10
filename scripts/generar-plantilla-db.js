@@ -14,7 +14,11 @@ for (const sufijo of ["", "-journal", "-wal", "-shm"]) {
   if (fs.existsSync(archivo)) fs.unlinkSync(archivo);
 }
 
-execFileSync("npx", ["prisma", "migrate", "deploy", "--schema", "prisma/schema.prisma"], {
+// En Windows, Node no encuentra "npx" directamente porque en realidad es un
+// shim de línea de comandos ("npx.cmd") — hay que darle ese nombre exacto.
+const comandoNpx = process.platform === "win32" ? "npx.cmd" : "npx";
+
+execFileSync(comandoNpx, ["prisma", "migrate", "deploy", "--schema", "prisma/schema.prisma"], {
   cwd: path.join(__dirname, ".."),
   stdio: "inherit",
   env: {
