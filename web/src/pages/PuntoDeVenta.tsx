@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, formatoCLP, type MedioPago, type Producto, type Venta } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
@@ -19,9 +19,16 @@ export default function PuntoDeVenta() {
   const [mensaje, setMensaje] = useState<string | null>(null);
   const [procesando, setProcesando] = useState(false);
 
+  const [codigoEscaneado, setCodigoEscaneado] = useState("");
+  const inputEscanerRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     iniciarVenta();
   }, []);
+
+  useEffect(() => {
+    inputEscanerRef.current?.focus();
+  }, [venta]);
 
   useEffect(() => {
     api.productos.listar({ buscar: buscar || undefined }).then(setProductos).catch((e) => setError(e.message));
@@ -72,6 +79,22 @@ export default function PuntoDeVenta() {
       setBuscar("");
     } catch (e) {
       setError((e as Error).message);
+    }
+  }
+
+  async function escanearCodigo(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setMensaje(null);
+    if (!venta || !codigoEscaneado.trim()) return;
+    try {
+      const actualizada = await api.caja.escanearCodigo(venta.id, codigoEscaneado.trim());
+      setVenta(actualizada);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setCodigoEscaneado("");
+      inputEscanerRef.current?.focus();
     }
   }
 
@@ -181,7 +204,26 @@ export default function PuntoDeVenta() {
       {mensaje && <p className="exito">{mensaje}</p>}
 
       <section className="tarjeta">
-        <h2>Agregar producto</h2>
+        <h2>Escanear código de barras</h2>
+        <p className="ayuda">
+          El cursor queda siempre listo acá — apunta el lector y escanea, el producto se agrega solo. Funciona con
+          el código de fábrica (productos normales) y con el que imprime la balanza (productos pesables).
+        </p>
+        <form onSubmit={escanearCodigo} className="fila-inline">
+          <input
+            ref={inputEscanerRef}
+            type="text"
+            placeholder="Esperando código..."
+            value={codigoEscaneado}
+            onChange={(e) => setCodigoEscaneado(e.target.value)}
+            autoFocus
+          />
+          <button type="submit">Agregar</button>
+        </form>
+      </section>
+
+      <section className="tarjeta">
+        <h2>Agregar producto manualmente</h2>
         <form onSubmit={agregarItem} onKeyDown={manejarEnterComoTab} className="fila-inline">
           <input
             type="text"

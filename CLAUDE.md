@@ -313,6 +313,20 @@ desde el programa instalado.
   sin guardarlo en ningún lado (no es dinero que quede en la caja, así que
   no afecta el cálculo de cierre X/Z). Solo aplica a efectivo — en tarjeta
   se sigue cobrando el monto exacto.
+- **Lectura de código de barras:** la pantalla de Punto de Venta tiene un
+  campo dedicado, siempre enfocado, listo para un lector físico tipo
+  "teclado" (escribe el código y presiona Enter solo, sin drivers
+  especiales). Prueba dos formatos, en este orden: (1) el código de fábrica
+  exacto (campo `codigoBarras`, solo productos Flag Balanza = Normal); (2)
+  si no hay coincidencia, el código de 13 dígitos que imprime la balanza
+  para productos Pesable (`2` + PLU 6 dígitos + peso en gramos 5 dígitos +
+  dígito verificador EAN-13 — ver `server/lib/codigoBarras.ts`), agregando
+  automáticamente el peso real como cantidad. Probado con el código exacto
+  de la foto del ticket real (`2000001002261` → 0,226 kg de CHURRASCO DE
+  VACUNO, mismo total que el ticket). **No confirmado todavía:** el formato
+  del código para productos "Importe" (precio fijo) — falta una foto de
+  ticket de ese tipo de producto para confirmarlo; por ahora solo se
+  decodifica el caso Pesable.
 
 ## Decisiones tomadas en el módulo de inventario
 - La merma hoy no se registra formalmente (confirmado con el usuario) — este

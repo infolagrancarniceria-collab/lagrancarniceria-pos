@@ -442,6 +442,8 @@ export const api = {
     crearVenta: (usuarioId: number) => post<Venta>("/api/caja/ventas", { usuarioId }),
     agregarItem: (ventaId: number, data: { productoId: number; cantidad: number }) =>
       post<Venta>(`/api/caja/ventas/${ventaId}/items`, data),
+    escanearCodigo: (ventaId: number, codigo: string) =>
+      post<Venta>(`/api/caja/ventas/${ventaId}/items/escanear`, { codigo }),
     anularItem: (
       ventaId: number,
       itemId: number,

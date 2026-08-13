@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../db";
 import { hashClave, verificarClave } from "../lib/clave";
+import { decodificarCodigoBalanza } from "../lib/codigoBarras";
 
 export const cajaRouter = Router();
 
@@ -223,36 +224,89 @@ const agregarItemSchema = z.object({
   cantidad: z.number().positive("La cantidad debe ser mayor a 0"),
 });
 
-cajaRouter.post("/ventas/:id/items", async (req, res) => {
-  const ventaId = Number(req.params.id);
-  const parsed = agregarItemSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({ error: parsed.error.issues[0].message });
-  }
-  const { productoId, cantidad } = parsed.data;
+interface ErrorAgregarItem {
+  status: number;
+  error: string;
+}
 
+async function agregarItemAVenta(
+  ventaId: number,
+  productoId: number,
+  cantidad: number
+): Promise<ErrorAgregarItem | null> {
   const venta = await prisma.venta.findUnique({ where: { id: ventaId }, include: { items: true } });
-  if (!venta) return res.status(404).json({ error: "Venta no encontrada" });
-  if (venta.estado !== "abierta") return res.status(400).json({ error: "Esta venta ya no admite cambios" });
+  if (!venta) return { status: 404, error: "Venta no encontrada" };
+  if (venta.estado !== "abierta") return { status: 400, error: "Esta venta ya no admite cambios" };
 
   const producto = await prisma.producto.findUnique({ where: { id: productoId } });
-  if (!producto) return res.status(404).json({ error: "Producto no encontrado" });
+  if (!producto) return { status: 404, error: "Producto no encontrado" };
 
   const yaEnCarrito = venta.items
     .filter((i) => i.productoId === productoId && !i.anulado)
     .reduce((suma, i) => suma + i.cantidad, 0);
   if (producto.stockActual < yaEnCarrito + cantidad) {
-    return res.status(400).json({
-      error: `Stock insuficiente: quedan ${producto.stockActual - yaEnCarrito} disponibles`,
-    });
+    return { status: 400, error: `Stock insuficiente: quedan ${producto.stockActual - yaEnCarrito} disponibles` };
   }
 
   const subtotal = producto.precio * cantidad;
   await prisma.itemVenta.create({
     data: { ventaId, productoId, cantidad, precioUnitario: producto.precio, subtotal },
   });
-
   await recalcularTotal(ventaId);
+  return null;
+}
+
+cajaRouter.post("/ventas/:id/items", async (req, res) => {
+  const ventaId = Number(req.params.id);
+  const parsed = agregarItemSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0].message });
+  }
+
+  const errorAgregar = await agregarItemAVenta(ventaId, parsed.data.productoId, parsed.data.cantidad);
+  if (errorAgregar) return res.status(errorAgregar.status).json({ error: errorAgregar.error });
+
+  const ventaActualizada = await prisma.venta.findUnique({
+    where: { id: ventaId },
+    include: { items: { include: { producto: true } }, pagos: true },
+  });
+  res.status(201).json(ventaActualizada);
+});
+
+// --- Agregar ítem escaneando un código de barras ---
+// Prueba dos formatos: el EAN normal de fábrica (campo codigoBarras, solo en
+// productos Flag Balanza = Normal), o el código que imprime la balanza para
+// productos Pesable (PLU + peso embebido, ver server/lib/codigoBarras.ts).
+
+const escanearCodigoSchema = z.object({
+  codigo: z.string().trim().min(1, "Falta el código escaneado"),
+});
+
+cajaRouter.post("/ventas/:id/items/escanear", async (req, res) => {
+  const ventaId = Number(req.params.id);
+  const parsed = escanearCodigoSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0].message });
+  }
+  const { codigo } = parsed.data;
+
+  let producto = await prisma.producto.findUnique({ where: { codigoBarras: codigo } });
+  let cantidad = 1;
+
+  if (!producto) {
+    const decodificado = decodificarCodigoBalanza(codigo);
+    if (decodificado) {
+      producto = await prisma.producto.findUnique({ where: { plu: decodificado.plu } });
+      cantidad = decodificado.pesoKg;
+    }
+  }
+
+  if (!producto) {
+    return res.status(404).json({ error: "No se encontró ningún producto con ese código" });
+  }
+
+  const errorAgregar = await agregarItemAVenta(ventaId, producto.id, cantidad);
+  if (errorAgregar) return res.status(errorAgregar.status).json({ error: errorAgregar.error });
 
   const ventaActualizada = await prisma.venta.findUnique({
     where: { id: ventaId },
