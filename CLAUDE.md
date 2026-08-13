@@ -30,22 +30,36 @@ efectivo se ingresa manualmente ahí mismo).
 - **Modelo:** Mettler Toledo bPlus-T2M-BB15D-MW0, certificación CL (Chile),
   6/15 kg, e=2/5g.
 - **Conectividad:** Ethernet, USB, RS232 (según configuración).
-- **Protocolo real confirmado (corregido):** bTwin NO usa un SDK/DLL
-  separado — la idea de un "SDK bTwin" era un malentendido de cómo se ve el
-  sistema actual (la segunda app tipo "Win32 DLL Demo" es una herramienta
-  de demostración de Mettler Toledo, no una dependencia obligatoria). La
-  comunicación real es directa por **socket TCP/IP** hacia la
-  **dirección IP de la balanza** en el puerto de
-  comunicación (usualmente **3001**, modo "Batch"), enviando un **bloque de
-  texto plano con campos de ancho fijo** (cada dato — código, tipo, precio,
-  nombre — ocupa una posición y cantidad de caracteres exacta dentro de la
-  línea). No hace falta SDK, DLL, ni paquete de terceros — se puede
-  construir nativo en Node.js con el módulo `net` (sockets TCP), que ya es
-  parte del lenguaje.
-- **Pendiente:** conseguir o reconstruir la especificación exacta del
-  formato de ancho fijo (qué campo va en qué posición, cuántos caracteres,
-  relleno con espacios o ceros, mayúsculas, fin de línea, etc.) — ver
-  preguntas abiertas abajo.
+- **Protocolo real confirmado (corregido dos veces):** bTwin NO usa un
+  SDK/DLL separado — la idea de un "SDK bTwin" era un malentendido de cómo
+  se ve el sistema actual (la segunda app tipo "Win32 DLL Demo" es una
+  herramienta de demostración de Mettler Toledo, no una dependencia
+  obligatoria). La comunicación real es directa por **socket TCP/IP** hacia
+  la **dirección IP de la balanza** en el puerto **3001** — confirmado con
+  una captura real de red (Wireshark).
+- **Formato del mensaje (confirmado por captura real, corrige la hipótesis
+  anterior de "texto de ancho fijo"):** es **XML**, no texto de ancho fijo.
+  Cada mensaje viene envuelto en `<Message>...</Message>`, con un
+  `<ARTSCommonHeader MessageType="Request"/>` (o `"Response"`) seguido de un
+  elemento específico de la acción. Ejemplo real capturado — mensaje de
+  "descubrimiento" (pedirle a la balanza que se identifique, no es el envío
+  de precio):
+  ```
+  Request:  <Message><ARTSCommonHeader MessageType="Request"/><NetworkExploration ActionCode="Read"/></Message>
+  Response: <Message><ARTSCommonHeader MessageType="Response"/><NetworkExploration><DeviceMap>
+              <DeviceID>00:10:52:CD:3E:27</DeviceID><ModelName>bPlus</ModelName>
+              <SerialNumber>B834307144</SerialNumber><IPAddress>192.168.18.120</IPAddress>
+              <TCPPort>3001</TCPPort>...</DeviceMap></NetworkExploration></Message>
+  ```
+  Esto sigue (o se parece mucho a) el estándar **ARTS/IXRetail XML** para
+  comunicación con balanzas de red, no un formato propietario inventado por
+  Mettler Toledo. Confirma también IP `192.168.18.120` = balanza 2, puerto
+  3001, modelo bPlus — todo coincide con lo ya documentado.
+- **Pendiente:** todavía no tenemos el mensaje XML específico que manda el
+  **precio de un producto** (PLU, nombre, precio) — el capturado arriba es
+  solo el paso de "descubrir la balanza en la red", un paso previo. Falta
+  capturar el momento exacto en que Gexus aprieta "Execute Task" para
+  actualizar un precio.
 
 ### Modelo de datos de producto (confirmado por manual del sistema actual)
 - Cada producto tiene un campo **"Flag Balanza"**: Normal / Pesable / Importe
@@ -69,11 +83,12 @@ efectivo se ingresa manualmente ahí mismo).
   ambas direcciones.
 
 ### Preguntas técnicas abiertas (bloquean el módulo 4)
-1. Especificación exacta del formato de ancho fijo (qué campo va en qué
-   posición/cuántos caracteres, relleno, fin de línea) — pendiente.
-2. Si existe algún archivo de ejemplo o log del sistema actual con el
-   texto exacto que se envía hoy a la balanza — sería la forma más rápida
-   y confiable de calcar el formato exacto, en vez de adivinarlo de cero.
+1. El mensaje XML exacto que envía un **cambio de precio** (PLU,
+   descripción, precio) — todavía no capturado, solo tenemos el de
+   "descubrimiento" de la balanza en la red.
+2. Si existe algún archivo de ejemplo o log del sistema actual con ese
+   mensaje — sería la forma más rápida y confiable de calcarlo, en vez de
+   adivinar los nombres de las etiquetas XML.
 
 ### Meta de automatización para el módulo de balanza
 Como el envío es directo por socket TCP (sin segunda app ni SDK de por
