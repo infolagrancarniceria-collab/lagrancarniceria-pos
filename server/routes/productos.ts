@@ -1,9 +1,12 @@
 import { Router } from "express";
+import multer from "multer";
+import { parse } from "csv-parse/sync";
 import { z } from "zod";
 import { prisma } from "../db";
 import { obtenerIdsCategoriaYDescendientes } from "../lib/categorias";
 
 export const productosRouter = Router();
+const upload = multer({ storage: multer.memoryStorage() });
 
 productosRouter.get("/", async (req, res) => {
   const buscar = typeof req.query.buscar === "string" ? req.query.buscar.trim() : "";
@@ -146,4 +149,123 @@ productosRouter.delete("/:id", async (req, res) => {
 
   await prisma.producto.update({ where: { id }, data: { activo: false } });
   res.status(204).send();
+});
+
+// --- Importar catálogo desde CSV (crear productos nuevos, no cambia precios
+// de productos existentes) — columnas: plu,descripcion,precio,flag_balanza,
+// categoria_codigo (categoria_codigo es opcional: si se deja vacío, el
+// producto queda en la categoría "Sin categorizar" para ordenar después). ---
+
+const CODIGO_CATEGORIA_SIN_CATEGORIZAR = "00";
+
+interface FilaImportacion {
+  fila: number;
+  plu: string;
+  descripcion: string;
+  precio: number | null;
+  flagBalanza: string | null;
+  categoriaCodigo: string | null;
+  yaExiste: boolean;
+  error: string | null;
+}
+
+async function procesarCsvImportacion(buffer: Buffer): Promise<FilaImportacion[]> {
+  let registros: Record<string, string>[];
+  try {
+    registros = parse(buffer, { columns: true, skip_empty_lines: true, trim: true });
+  } catch {
+    throw new Error(
+      "No se pudo leer el archivo. Debe ser un CSV con columnas: plu,descripcion,precio,flag_balanza,categoria_codigo"
+    );
+  }
+
+  const resultado: FilaImportacion[] = [];
+  for (let i = 0; i < registros.length; i++) {
+    const fila = i + 2;
+    const plu = (registros[i].plu ?? "").trim();
+    const descripcion = (registros[i].descripcion ?? "").trim();
+    const precioTexto = (registros[i].precio ?? "").trim();
+    const flagBalanza = (registros[i].flag_balanza ?? "").trim().toUpperCase();
+    const categoriaCodigo = (registros[i].categoria_codigo ?? "").trim() || null;
+
+    const base = { fila, plu, descripcion, categoriaCodigo, yaExiste: false };
+
+    if (!plu) {
+      resultado.push({ ...base, precio: null, flagBalanza: null, error: "Falta el PLU" });
+      continue;
+    }
+    if (!descripcion) {
+      resultado.push({ ...base, precio: null, flagBalanza: null, error: "Falta la descripción" });
+      continue;
+    }
+    const precio = Number(precioTexto);
+    if (!precioTexto || Number.isNaN(precio) || precio <= 0) {
+      resultado.push({ ...base, precio: null, flagBalanza: null, error: "precio inválido" });
+      continue;
+    }
+    if (!flagBalanzaEnum.safeParse(flagBalanza).success) {
+      resultado.push({ ...base, precio, flagBalanza: null, error: "flag_balanza debe ser NORMAL, PESABLE o IMPORTE" });
+      continue;
+    }
+
+    const existente = await prisma.producto.findUnique({ where: { plu } });
+    if (existente) {
+      resultado.push({ ...base, precio, flagBalanza, yaExiste: true, error: "Ya existe un producto con ese PLU — se omite" });
+      continue;
+    }
+
+    resultado.push({ ...base, precio, flagBalanza, error: null });
+  }
+  return resultado;
+}
+
+productosRouter.post("/importar-csv", upload.single("archivo"), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "Falta el archivo CSV" });
+  const confirmar = req.body.confirmar === "true";
+
+  let filas: FilaImportacion[];
+  try {
+    filas = await procesarCsvImportacion(req.file.buffer);
+  } catch (err) {
+    return res.status(400).json({ error: (err as Error).message });
+  }
+
+  if (!confirmar) {
+    return res.json({ previsualizacion: true, filas });
+  }
+
+  const filasValidas = filas.filter((f) => !f.error && f.precio && f.flagBalanza);
+
+  const codigosCategoria = new Set(
+    filasValidas.map((f) => f.categoriaCodigo ?? CODIGO_CATEGORIA_SIN_CATEGORIZAR)
+  );
+  const categoriaIdPorCodigo = new Map<string, number>();
+  for (const codigo of codigosCategoria) {
+    let categoria = await prisma.categoria.findUnique({ where: { codigo } });
+    if (!categoria && codigo === CODIGO_CATEGORIA_SIN_CATEGORIZAR) {
+      categoria = await prisma.categoria.create({
+        data: { codigo: CODIGO_CATEGORIA_SIN_CATEGORIZAR, nombre: "Sin categorizar", nivel: 1 },
+      });
+    }
+    if (!categoria) {
+      return res.status(400).json({ error: `No existe la categoría con código "${codigo}"` });
+    }
+    categoriaIdPorCodigo.set(codigo, categoria.id);
+  }
+
+  const creados = await prisma.$transaction(
+    filasValidas.map((f) =>
+      prisma.producto.create({
+        data: {
+          plu: f.plu,
+          descripcion: f.descripcion,
+          precio: f.precio!,
+          flagBalanza: f.flagBalanza!,
+          categoriaId: categoriaIdPorCodigo.get(f.categoriaCodigo ?? CODIGO_CATEGORIA_SIN_CATEGORIZAR)!,
+        },
+      })
+    )
+  );
+
+  res.json({ previsualizacion: false, filas, creados: creados.length });
 });

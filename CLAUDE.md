@@ -215,6 +215,19 @@ solo temporal y menor.
 - ¿Cómo registra hoy la merma?
 - ¿Qué reporte mira más seguido hoy — cuál le sirve más para decidir?
 
+## Migración de datos del sistema viejo (Gexus)
+- **Pendiente:** confirmar si Gexus tiene alguna forma de exportar/imprimir
+  el listado completo de productos (Excel, CSV, PDF, reporte de "Maestro de
+  productos"). Es el camino más directo para traer el catálogo completo
+  (con categorías, marca, EAN, etc.) al sistema nuevo sin tener que
+  tipearlo todo a mano.
+- **Adelanto ya cargado:** mientras se resuelve eso, se importaron 199
+  productos reales (PLU, nombre, precio, Pesable/Importe) usando los datos
+  que ya teníamos de la captura de red de la balanza — quedaron en la
+  categoría "Sin categorizar" para ordenar después. Herramienta reutilizable
+  para cuando se consiga el listado completo (pantalla Productos → "Importar
+  productos (CSV)").
+
 ## Arquitectura y stack (aprobado)
 Todo corre **local**, en el PC de la carnicería, sin depender de internet:
 
@@ -242,7 +255,7 @@ Todo corre **local**, en el PC de la carnicería, sin depender de internet:
   de quién hizo cada cambio (ej. en el historial de precios).
 
 ## Estado de módulos
-1. **Gestión de precios** — listo (productos, categorías, cambio individual/masivo, historial).
+1. **Gestión de precios** — listo (productos, categorías, cambio individual/masivo, historial). Además, importación de productos nuevos desde CSV (columnas plu/descripción/precio/flag balanza/categoría — categoría opcional, cae en "Sin categorizar" si se deja vacía). Se usó para cargar 199 productos reales (PLU, nombre, precio) sacados de la captura de red de la balanza, como adelanto mientras se resuelve la migración completa desde el sistema viejo (Gexus) — ver "Migración de datos del sistema viejo" más abajo.
 2. **Inventario** — listo (proveedores, entradas, salidas/merma, stock actual con alerta de stock bajo, historial de movimientos).
 3. **Reportes** — listo: inventario (entradas/salidas por motivo, top productos con más merma), precios (cambios y mayores variaciones) y ventas (cantidad de ventas, total vendido, más vendidos por cantidad y por ingreso), los tres por rango de fechas.
 4. **Envío a balanza** — listo: botón "Actualizar balanza" en su propia

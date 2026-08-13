@@ -36,6 +36,17 @@ export interface Producto {
   umbralStockBajo: number | null;
 }
 
+export interface FilaImportacionProductos {
+  fila: number;
+  plu: string;
+  descripcion: string;
+  precio: number | null;
+  flagBalanza: string | null;
+  categoriaCodigo: string | null;
+  yaExiste: boolean;
+  error: string | null;
+}
+
 export interface ProductoConStock extends Producto {
   bajoStock: boolean;
 }
@@ -309,6 +320,17 @@ export const api = {
       data: Omit<Producto, "id" | "categoria" | "activo" | "precio" | "stockActual">
     ) => put<Producto>(`/api/productos/${id}`, data),
     eliminar: (id: number) => del<void>(`/api/productos/${id}`),
+    importarCsv: async (archivo: File, confirmar: boolean) => {
+      const form = new FormData();
+      form.append("archivo", archivo);
+      form.append("confirmar", String(confirmar));
+      const res = await fetch("/api/productos/importar-csv", { method: "POST", body: form });
+      return manejarRespuesta<{
+        previsualizacion: boolean;
+        creados?: number;
+        filas: FilaImportacionProductos[];
+      }>(res);
+    },
   },
   precios: {
     cambiarIndividual: (data: { productoId: number; precioNuevo: number; usuarioId: number }) =>
