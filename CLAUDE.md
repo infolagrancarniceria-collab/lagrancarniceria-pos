@@ -35,7 +35,7 @@ efectivo se ingresa manualmente ahí mismo).
   sistema actual (la segunda app tipo "Win32 DLL Demo" es una herramienta
   de demostración de Mettler Toledo, no una dependencia obligatoria). La
   comunicación real es directa por **socket TCP/IP** hacia la
-  **dirección IP de la balanza** (ej. 192.168.0.13) en el puerto de
+  **dirección IP de la balanza** en el puerto de
   comunicación (usualmente **3001**, modo "Batch"), enviando un **bloque de
   texto plano con campos de ancho fijo** (cada dato — código, tipo, precio,
   nombre — ocupa una posición y cantidad de caracteres exacta dentro de la
@@ -59,13 +59,19 @@ efectivo se ingresa manualmente ahí mismo).
   descripción, nombre corto, marca, contenido, capacidad x caja, envase,
   categoría, impuesto adicional, duración, código proveedor.
 
+### Hay dos balanzas físicas, cada una con su propia IP (confirmado)
+- Balanza 1: `192.168.18.122`
+- Balanza 2: `192.168.18.120`
+- Puerto de comunicación: 3001 (a confirmar si es el mismo para ambas).
+- **Confirmado con el usuario:** las dos balanzas son espejo — todo el
+  catálogo se manda igual a las dos IP, no hay reparto por
+  producto/sección. El botón "Actualizar balanza" dispara el envío a
+  ambas direcciones.
+
 ### Preguntas técnicas abiertas (bloquean el módulo 4)
 1. Especificación exacta del formato de ancho fijo (qué campo va en qué
    posición/cuántos caracteres, relleno, fin de línea) — pendiente.
-2. Dirección IP y puerto reales y confirmados de la balanza de la
-   carnicería (se ha usado 192.168.0.13 / 3001 como ejemplo, falta
-   confirmar el valor real).
-3. Si existe algún archivo de ejemplo o log del sistema actual con el
+2. Si existe algún archivo de ejemplo o log del sistema actual con el
    texto exacto que se envía hoy a la balanza — sería la forma más rápida
    y confiable de calcar el formato exacto, en vez de adivinarlo de cero.
 
