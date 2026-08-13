@@ -46,15 +46,33 @@ async function obtenerUrlInicio() {
   return `http://localhost:${PORT}`;
 }
 
-app.whenReady().then(async () => {
-  const url = await obtenerUrlInicio();
-  crearVentana(url);
+// Evita que se abra una segunda copia del programa: si ya hay una corriendo
+// (aunque esté minimizada), intentar abrir otra hacía que las dos peleen por
+// el mismo puerto del servidor local y el programa se cerraba con un error.
+// Con este bloqueo, la segunda copia simplemente enfoca la ventana que ya
+// estaba abierta y se cierra sola.
+const tieneBloqueoDeInstanciaUnica = app.requestSingleInstanceLock();
 
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) crearVentana(url);
+if (!tieneBloqueoDeInstanciaUnica) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    const [ventana] = BrowserWindow.getAllWindows();
+    if (!ventana) return;
+    if (ventana.isMinimized()) ventana.restore();
+    ventana.focus();
   });
-});
 
-app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") app.quit();
-});
+  app.whenReady().then(async () => {
+    const url = await obtenerUrlInicio();
+    crearVentana(url);
+
+    app.on("activate", () => {
+      if (BrowserWindow.getAllWindows().length === 0) crearVentana(url);
+    });
+  });
+
+  app.on("window-all-closed", () => {
+    if (process.platform !== "darwin") app.quit();
+  });
+}
