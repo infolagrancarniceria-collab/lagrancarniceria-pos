@@ -30,19 +30,22 @@ efectivo se ingresa manualmente ahí mismo).
 - **Modelo:** Mettler Toledo bPlus-T2M-BB15D-MW0, certificación CL (Chile),
   6/15 kg, e=2/5g.
 - **Conectividad:** Ethernet, USB, RS232 (según configuración).
-- **Protocolo real confirmado (vía manual del sistema actual):** el sistema
-  actual usa la integración oficial de Mettler Toledo llamada **"bTwin"** —
-  NO es un archivo CSV plano. Las balanzas se identifican por **dirección
-  IP** en una red local (ej. 192.168.0.13), y el envío de precios pasa por
-  un **SDK/DLL de Mettler Toledo para bTwin** (en el sistema actual se ve
-  literalmente una segunda app tipo "Win32 DLL Demo" con un botón "Execute
-  Task" que finaliza el envío). Confirmado también por documentación pública:
-  bTwin es una línea de balanzas de red con capacidad Ethernet y modo
-  maestro/esclavo.
-- **Acción concreta:** pedir a Mettler Toledo Chile o al soporte de Ingepav
-  específicamente la **documentación del SDK/DLL de integración bTwin**
-  (no un manual de usuario genérico). Es un camino oficial del fabricante,
-  no hay que reinventar el protocolo.
+- **Protocolo real confirmado (corregido):** bTwin NO usa un SDK/DLL
+  separado — la idea de un "SDK bTwin" era un malentendido de cómo se ve el
+  sistema actual (la segunda app tipo "Win32 DLL Demo" es una herramienta
+  de demostración de Mettler Toledo, no una dependencia obligatoria). La
+  comunicación real es directa por **socket TCP/IP** hacia la
+  **dirección IP de la balanza** (ej. 192.168.0.13) en el puerto de
+  comunicación (usualmente **3001**, modo "Batch"), enviando un **bloque de
+  texto plano con campos de ancho fijo** (cada dato — código, tipo, precio,
+  nombre — ocupa una posición y cantidad de caracteres exacta dentro de la
+  línea). No hace falta SDK, DLL, ni paquete de terceros — se puede
+  construir nativo en Node.js con el módulo `net` (sockets TCP), que ya es
+  parte del lenguaje.
+- **Pendiente:** conseguir o reconstruir la especificación exacta del
+  formato de ancho fijo (qué campo va en qué posición, cuántos caracteres,
+  relleno con espacios o ceros, mayúsculas, fin de línea, etc.) — ver
+  preguntas abiertas abajo.
 
 ### Modelo de datos de producto (confirmado por manual del sistema actual)
 - Cada producto tiene un campo **"Flag Balanza"**: Normal / Pesable / Importe
@@ -57,18 +60,20 @@ efectivo se ingresa manualmente ahí mismo).
   categoría, impuesto adicional, duración, código proveedor.
 
 ### Preguntas técnicas abiertas (bloquean el módulo 4)
-1. Documentación del SDK/DLL bTwin — pendiente de conseguir.
-2. ¿Existe forma de invocar el envío sin intervención humana (más allá del
-   botón "Execute Task" que usa hoy el sistema viejo)? — pendiente, define
-   el techo real de automatización posible.
+1. Especificación exacta del formato de ancho fijo (qué campo va en qué
+   posición/cuántos caracteres, relleno, fin de línea) — pendiente.
+2. Dirección IP y puerto reales y confirmados de la balanza de la
+   carnicería (se ha usado 192.168.0.13 / 3001 como ejemplo, falta
+   confirmar el valor real).
+3. Si existe algún archivo de ejemplo o log del sistema actual con el
+   texto exacto que se envía hoy a la balanza — sería la forma más rápida
+   y confiable de calcar el formato exacto, en vez de adivinarlo de cero.
 
 ### Meta de automatización para el módulo de balanza
-1. Manual completo (es el estado actual confirmado: seleccionar balanza,
-   enviar, y presionar "Execute Task" en una segunda app).
-2. **Semi-automatizado — objetivo mínimo de esta fase:** el sistema nuevo
-   arma y dispara el envío vía el SDK bTwin con un clic, sin la segunda
-   app intermedia.
-3. Totalmente automatizado (aspiracional, depende de la pregunta 2).
+Como el envío es directo por socket TCP (sin segunda app ni SDK de por
+medio), el objetivo pasa a ser directamente el nivel más alto: el sistema
+arma el texto y lo envía por socket con un clic, sin pasos manuales
+adicionales — no hay una "segunda app" que reproducir.
 
 ## Decisión de alcance: módulo de caja / punto de venta
 **El sistema actual tiene un módulo completo de caja (GexusPOS)** separado
@@ -150,9 +155,10 @@ Todo corre **local**, en el PC de la carnicería, sin depender de internet:
   archivo. Si más adelante se necesita más robustez, se puede migrar a
   Postgres sin rehacer todo, porque se usa Prisma (ORM) como capa
   intermedia.
-- **Balanza (módulo 4, pendiente):** probablemente un componente aparte en
-  C# (.NET) que hable con el DLL bTwin, invocado desde la app principal.
-  Se define en detalle cuando llegue la documentación del SDK.
+- **Balanza (módulo 4, pendiente):** no requiere un componente aparte en
+  C#/.NET ni ningún SDK — el envío es un socket TCP directo con texto de
+  ancho fijo, algo que Node.js hace nativo (módulo `net`). Se construye
+  dentro del mismo servidor Node/Express del resto del sistema.
 - **Usuarios:** solo una persona usa el sistema a la vez. El "login" es
   elegir el nombre de una lista (sin contraseña), solo para dejar registro
   de quién hizo cada cambio (ej. en el historial de precios).
