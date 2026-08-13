@@ -243,3 +243,68 @@ select {
 .cambio-precio h2 {
   margin-top: 0;
 }
+
+/* Punto de venta: pantalla que se usa de pie en el mesón — letra y botones
+   más grandes que el resto del sistema, para tocar/leer rápido. */
+.punto-de-venta {
+  font-size: 1.15rem;
+}
+.punto-de-venta h1 {
+  font-size: 2rem;
+}
+.punto-de-venta h2 {
+  font-size: 1.35rem;
+}
+.punto-de-venta button,
+.punto-de-venta a.boton {
+  font-size: 1.15rem;
+  padding: 0.85rem 1.4rem;
+}
+.punto-de-venta input,
+.punto-de-venta select {
+  font-size: 1.15rem;
+  padding: 0.75rem;
+}
+.punto-de-venta .tabla {
+  font-size: 1.1rem;
+}
+
+.buscador-producto {
+  position: relative;
+  flex: 1;
+  min-width: 260px;
+}
+.buscador-producto input {
+  width: 100%;
+}
+.resultados-busqueda {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  background: white;
+  border: 1px solid var(--color-borde);
+  border-radius: 6px;
+  margin-top: 0.25rem;
+  max-height: 260px;
+  overflow-y: auto;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+}
+.resultado-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.6rem 0.75rem;
+  border: none;
+  border-radius: 0;
+  border-bottom: 1px solid var(--color-borde);
+  background: white;
+  font-size: 1rem;
+}
+.resultado-item:last-child {
+  border-bottom: none;
+}
+.resultado-item:hover {
+  background: #efe9e2;
+}

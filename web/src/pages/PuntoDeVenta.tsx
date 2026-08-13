@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, formatoCLP, type MedioPago, type Producto, type Venta } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
+import { useEscanerCodigoBarras } from "../hooks/useEscanerCodigoBarras";
 
 export default function PuntoDeVenta() {
   const { usuario } = useUsuario();
@@ -11,7 +12,7 @@ export default function PuntoDeVenta() {
   const [venta, setVenta] = useState<Venta | null>(null);
   const [productos, setProductos] = useState<Producto[]>([]);
   const [buscar, setBuscar] = useState("");
-  const [productoId, setProductoId] = useState<number | "">("");
+  const [productoSeleccionado, setProductoSeleccionado] = useState<Producto | null>(null);
   const [cantidad, setCantidad] = useState("");
   const [medioPago, setMedioPago] = useState<MedioPago>("efectivo");
   const [montoPago, setMontoPago] = useState("");
@@ -19,19 +20,23 @@ export default function PuntoDeVenta() {
   const [mensaje, setMensaje] = useState<string | null>(null);
   const [procesando, setProcesando] = useState(false);
 
-  const [codigoEscaneado, setCodigoEscaneado] = useState("");
-  const inputEscanerRef = useRef<HTMLInputElement>(null);
+  const inputCantidadRef = useRef<HTMLInputElement>(null);
+  const ventaRef = useRef<Venta | null>(null);
+
+  useEffect(() => {
+    ventaRef.current = venta;
+  }, [venta]);
 
   useEffect(() => {
     iniciarVenta();
   }, []);
 
   useEffect(() => {
-    inputEscanerRef.current?.focus();
-  }, [venta]);
-
-  useEffect(() => {
-    api.productos.listar({ buscar: buscar || undefined }).then(setProductos).catch((e) => setError(e.message));
+    if (!buscar.trim()) {
+      setProductos([]);
+      return;
+    }
+    api.productos.listar({ buscar }).then(setProductos).catch((e) => setError(e.message));
   }, [buscar]);
 
   async function iniciarVenta() {
@@ -58,11 +63,18 @@ export default function PuntoDeVenta() {
   const totalVenta = venta?.total ?? 0;
   const faltaPagar = Math.round((totalVenta - totalPagado) * 100) / 100;
 
+  function elegirProducto(p: Producto) {
+    setProductoSeleccionado(p);
+    setBuscar("");
+    setProductos([]);
+    setTimeout(() => inputCantidadRef.current?.focus(), 0);
+  }
+
   async function agregarItem(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setMensaje(null);
-    if (!venta || !productoId) {
+    if (!venta || !productoSeleccionado) {
       setError("Elige un producto");
       return;
     }
@@ -72,9 +84,9 @@ export default function PuntoDeVenta() {
       return;
     }
     try {
-      const actualizada = await api.caja.agregarItem(venta.id, { productoId: Number(productoId), cantidad: cant });
+      const actualizada = await api.caja.agregarItem(venta.id, { productoId: productoSeleccionado.id, cantidad: cant });
       setVenta(actualizada);
-      setProductoId("");
+      setProductoSeleccionado(null);
       setCantidad("");
       setBuscar("");
     } catch (e) {
@@ -82,21 +94,22 @@ export default function PuntoDeVenta() {
     }
   }
 
-  async function escanearCodigo(e: React.FormEvent) {
-    e.preventDefault();
+  const escanearCodigo = useCallback(async (codigo: string) => {
     setError(null);
     setMensaje(null);
-    if (!venta || !codigoEscaneado.trim()) return;
+    const ventaActual = ventaRef.current;
+    if (!ventaActual) return;
     try {
-      const actualizada = await api.caja.escanearCodigo(venta.id, codigoEscaneado.trim());
+      const actualizada = await api.caja.escanearCodigo(ventaActual.id, codigo);
+      const nuevo = actualizada.items[actualizada.items.length - 1];
+      setMensaje(nuevo ? `Agregado: ${nuevo.producto.descripcion} (${nuevo.cantidad})` : "Producto agregado");
       setVenta(actualizada);
     } catch (e) {
       setError((e as Error).message);
-    } finally {
-      setCodigoEscaneado("");
-      inputEscanerRef.current?.focus();
     }
-  }
+  }, []);
+
+  useEscanerCodigoBarras(escanearCodigo, !!venta);
 
   async function anularItem(itemId: number) {
     if (!venta || !usuario) return;
@@ -136,12 +149,13 @@ export default function PuntoDeVenta() {
       setError("Ya no falta nada por pagar");
       return;
     }
+    const vueltoAEntregar = vueltoPreview;
     try {
       const actualizada = await api.caja.agregarPago(venta.id, { medio: medioPago, monto: montoACobrar });
       setVenta(actualizada);
       setMontoPago("");
-      if (vueltoPreview > 0) {
-        setMensaje(`Vuelto: ${formatoCLP(vueltoPreview)}`);
+      if (vueltoAEntregar > 0) {
+        window.alert(`Vuelto: ${formatoCLP(vueltoAEntregar)}`);
       }
     } catch (e) {
       setError((e as Error).message);
@@ -189,7 +203,7 @@ export default function PuntoDeVenta() {
 
   if (!venta) {
     return (
-      <div>
+      <div className="punto-de-venta">
         <h1>Punto de venta</h1>
         {error && <p className="error">{error}</p>}
         <p>Cargando...</p>
@@ -198,51 +212,50 @@ export default function PuntoDeVenta() {
   }
 
   return (
-    <div>
+    <div className="punto-de-venta">
       <h1>Punto de venta</h1>
       {error && <p className="error">{error}</p>}
       {mensaje && <p className="exito">{mensaje}</p>}
 
       <section className="tarjeta">
-        <h2>Escanear código de barras</h2>
         <p className="ayuda">
-          El cursor queda siempre listo acá — apunta el lector y escanea, el producto se agrega solo. Funciona con
-          el código de fábrica (productos normales) y con el que imprime la balanza (productos pesables).
+          🔦 Lector de código de barras listo — escanea en cualquier momento en esta pantalla, no hace falta hacer
+          clic en ningún campo primero. Funciona con el código de fábrica (productos normales) y con el que
+          imprime la balanza (productos pesables).
         </p>
-        <form onSubmit={escanearCodigo} className="fila-inline">
-          <input
-            ref={inputEscanerRef}
-            type="text"
-            placeholder="Esperando código..."
-            value={codigoEscaneado}
-            onChange={(e) => setCodigoEscaneado(e.target.value)}
-            autoFocus
-          />
-          <button type="submit">Agregar</button>
-        </form>
       </section>
 
       <section className="tarjeta">
         <h2>Agregar producto manualmente</h2>
         <form onSubmit={agregarItem} onKeyDown={manejarEnterComoTab} className="fila-inline">
+          <div className="buscador-producto">
+            <input
+              type="text"
+              placeholder="Buscar por PLU o nombre..."
+              value={buscar}
+              onChange={(e) => {
+                setBuscar(e.target.value);
+                setProductoSeleccionado(null);
+              }}
+            />
+            {buscar.trim() && (
+              <div className="resultados-busqueda">
+                {productos.length === 0 && <div className="resultado-item ayuda">Sin resultados</div>}
+                {productos.map((p) => (
+                  <button key={p.id} type="button" className="resultado-item" onClick={() => elegirProducto(p)}>
+                    {p.plu} — {p.descripcion} ({formatoCLP(p.precio)}, stock: {p.stockActual})
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          {productoSeleccionado && (
+            <span className="exito">
+              Vendiendo: {productoSeleccionado.descripcion} ({formatoCLP(productoSeleccionado.precio)})
+            </span>
+          )}
           <input
-            type="text"
-            placeholder="Buscar por PLU o nombre..."
-            value={buscar}
-            onChange={(e) => {
-              setBuscar(e.target.value);
-              setProductoId("");
-            }}
-          />
-          <select value={productoId} onChange={(e) => setProductoId(e.target.value ? Number(e.target.value) : "")}>
-            <option value="">Elegir producto...</option>
-            {productos.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.plu} — {p.descripcion} ({formatoCLP(p.precio)}, stock: {p.stockActual})
-              </option>
-            ))}
-          </select>
-          <input
+            ref={inputCantidadRef}
             type="number"
             min="0.01"
             step="0.01"
@@ -251,7 +264,7 @@ export default function PuntoDeVenta() {
             onChange={(e) => setCantidad(e.target.value)}
           />
           <button type="submit" className="boton boton-primario">
-            Agregar
+            Agregar al carrito
           </button>
         </form>
       </section>
