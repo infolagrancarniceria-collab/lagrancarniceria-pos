@@ -39,6 +39,10 @@
       {
         "from": "prisma/plantilla.db",
         "to": "plantilla.db"
+      },
+      {
+        "from": "prisma/migrations",
+        "to": "migrations"
       }
     ],
     "afterPack": "scripts/after-pack.js",

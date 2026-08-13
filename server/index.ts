@@ -14,6 +14,7 @@ import { cajaRouter } from "./routes/caja";
 import { configuracionRouter } from "./routes/configuracion";
 import { asistenteRouter } from "./routes/asistente";
 import { balanzaRouter } from "./routes/balanza";
+import { aplicarMigracionesPendientes } from "./lib/migraciones";
 
 const app = express();
 const PORT = Number(process.env.PORT) || 5175;
@@ -49,7 +50,19 @@ const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
 };
 app.use(errorHandler);
 
-export function iniciarServidor(): Promise<void> {
+export async function iniciarServidor(): Promise<void> {
+  // Aplica migraciones pendientes antes de aceptar conexiones — así, si
+  // alguien actualiza el programa y su base de datos existente le falta una
+  // tabla nueva, se pone al día sola en vez de que las consultas a esa
+  // tabla se queden esperando para siempre.
+  // "resourcesPath" es una propiedad que agrega Electron a "process", no
+  // parte de Node — no está en los tipos estándar de @types/node.
+  const resourcesPath = (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath;
+  const carpetaMigraciones = resourcesPath
+    ? path.join(resourcesPath, "migrations")
+    : path.join(__dirname, "../prisma/migrations");
+  await aplicarMigracionesPendientes(carpetaMigraciones);
+
   return new Promise((resolve) => {
     app.listen(PORT, "0.0.0.0", () => {
       console.log(`Servidor escuchando en el puerto ${PORT} (accesible desde la red local)`);
