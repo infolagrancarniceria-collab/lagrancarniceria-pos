@@ -226,7 +226,13 @@ Todo corre **local**, en el PC de la carnicería, sin depender de internet:
 - **Base de datos:** SQLite (un solo archivo). Respaldo = copiar ese
   archivo. Si más adelante se necesita más robustez, se puede migrar a
   Postgres sin rehacer todo, porque se usa Prisma (ORM) como capa
-  intermedia.
+  intermedia. **Actualizaciones:** al iniciar, el programa revisa si a la
+  base de datos existente del usuario le faltan tablas de versiones más
+  nuevas y las agrega solas, sin perder los datos ya ingresados (antes
+  solo se preparaba la base de datos la primerísima vez, así que
+  actualizar el programa sin esto dejaba tablas nuevas sin crear —
+  causaba que pantallas como "Configuración" se quedaran cargando para
+  siempre sin ningún error).
 - **Balanza (módulo 4, pendiente):** no requiere un componente aparte en
   C#/.NET ni ningún SDK — el envío es un socket TCP directo con texto de
   ancho fijo, algo que Node.js hace nativo (módulo `net`). Se construye
