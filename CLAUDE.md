@@ -258,7 +258,7 @@ Todo corre **local**, en el PC de la carnicería, sin depender de internet:
    balanzas físicas del local (todo lo anterior se probó contra una
    balanza falsa simulada, replicando el protocolo capturado).
 5. **Caja / punto de venta** — listo (apertura con fondo fijo, punto de venta con carrito y pagos combinados efectivo/tarjeta, anulación de ítems con clave de supervisor, cierre con reporte X/Z y diferencia de efectivo). Cuenta corriente de clientes queda fuera de esta primera versión (a pedido del usuario). Cada venta confirmada genera automáticamente movimientos de inventario (motivo "venta"), reutilizando la misma validación de stock del módulo de inventario.
-6. **Asistente de IA** — listo el backend y las pantallas; **pendiente la prueba real** con una clave de API válida (se probó todo el flujo con una clave falsa: guardar, error de clave inválida). Ver "Decisiones tomadas en el asistente de IA" más abajo.
+6. **Asistente de IA** — listo y **confirmado funcionando con una clave de API real** por el usuario. Ver "Decisiones tomadas en el asistente de IA" más abajo.
 
 ## Instalador de Windows
 Armado con `electron-builder` (`npm run dist:win`, ver README para el
