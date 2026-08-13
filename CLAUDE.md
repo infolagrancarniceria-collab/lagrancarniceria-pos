@@ -113,7 +113,13 @@ efectivo se ingresa manualmente ahí mismo).
   `01 Aves > 0101 Pollos > 010101 Trutros`.
 - **EAN (código de barras) es un campo aparte del PLU**, y solo aplica a
   productos que NO son pesables/importe (la balanza imprime su propio
-  código con el peso/precio embebido).
+  código con el peso/precio embebido). **Confirmado con foto real de
+  ticket:** el código que imprime la balanza para un producto pesable
+  sigue el patrón `2 + PLU (6 dígitos) + peso en gramos (5 dígitos) +
+  dígito verificador` (ej. PLU 1, 226 g → `2000001002261`) — es un dato
+  que la balanza genera sola combinando el PLU con el peso real pesado,
+  no algo que nuestro sistema le manda. Relevante para más adelante (leer
+  ese código al cobrar en caja), no para el módulo 4 en sí.
 - Otros campos del maestro de producto vistos en el sistema actual:
   descripción, nombre corto, marca, contenido, capacidad x caja, envase,
   categoría, impuesto adicional, duración, código proveedor.
