@@ -32,6 +32,52 @@ function rangoFechas(query: Record<string, unknown>): { desde: Date; hasta: Date
   return rangoFechasDesdeTexto(query.desde, query.hasta);
 }
 
+export async function calcularReporteVentas(desdeTexto?: unknown, hastaTexto?: unknown) {
+  const { desde, hasta } = rangoFechasDesdeTexto(desdeTexto, hastaTexto);
+
+  const items = await prisma.itemVenta.findMany({
+    where: { anulado: false, venta: { estado: "pagada", fecha: { gte: desde, lte: hasta } } },
+    include: { producto: true },
+  });
+  const ventasEnRango = await prisma.venta.findMany({
+    where: { estado: "pagada", fecha: { gte: desde, lte: hasta } },
+  });
+
+  const totalVentas = ventasEnRango.reduce((s, v) => s + v.total, 0);
+
+  const porProducto = new Map<
+    number,
+    { productoId: number; plu: string; descripcion: string; cantidad: number; ingreso: number }
+  >();
+  for (const i of items) {
+    const actual = porProducto.get(i.productoId) ?? {
+      productoId: i.productoId,
+      plu: i.producto.plu,
+      descripcion: i.producto.descripcion,
+      cantidad: 0,
+      ingreso: 0,
+    };
+    actual.cantidad += i.cantidad;
+    actual.ingreso += i.subtotal;
+    porProducto.set(i.productoId, actual);
+  }
+  const masVendidosPorCantidad = Array.from(porProducto.values())
+    .sort((a, b) => b.cantidad - a.cantidad)
+    .slice(0, 10);
+  const masVendidosPorIngreso = Array.from(porProducto.values())
+    .sort((a, b) => b.ingreso - a.ingreso)
+    .slice(0, 10);
+
+  return {
+    desde: desde.toISOString(),
+    hasta: hasta.toISOString(),
+    cantidadVentas: ventasEnRango.length,
+    totalVentas,
+    masVendidosPorCantidad,
+    masVendidosPorIngreso,
+  };
+}
+
 reportesRouter.get("/inventario", async (req, res) => {
   const { desde, hasta } = rangoFechas(req.query as Record<string, unknown>);
 
@@ -111,4 +157,9 @@ reportesRouter.get("/precios", async (req, res) => {
     porTipo,
     mayoresCambios,
   });
+});
+
+reportesRouter.get("/ventas", async (req, res) => {
+  const query = req.query as Record<string, unknown>;
+  res.json(await calcularReporteVentas(query.desde, query.hasta));
 });

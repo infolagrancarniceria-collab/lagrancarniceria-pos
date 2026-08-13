@@ -86,6 +86,15 @@ export interface ReportePrecios {
   }[];
 }
 
+export interface ReporteVentas {
+  desde: string;
+  hasta: string;
+  cantidadVentas: number;
+  totalVentas: number;
+  masVendidosPorCantidad: { productoId: number; plu: string; descripcion: string; cantidad: number; ingreso: number }[];
+  masVendidosPorIngreso: { productoId: number; plu: string; descripcion: string; cantidad: number; ingreso: number }[];
+}
+
 export interface HistorialEntrada {
   id: number;
   productoId: number;
@@ -334,6 +343,13 @@ export const api = {
       if (hasta) qs.set("hasta", hasta);
       const query = qs.toString();
       return get<ReportePrecios>(`/api/reportes/precios${query ? `?${query}` : ""}`);
+    },
+    ventas: (desde?: string, hasta?: string) => {
+      const qs = new URLSearchParams();
+      if (desde) qs.set("desde", desde);
+      if (hasta) qs.set("hasta", hasta);
+      const query = qs.toString();
+      return get<ReporteVentas>(`/api/reportes/ventas${query ? `?${query}` : ""}`);
     },
   },
   caja: {

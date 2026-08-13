@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "../db";
-import { rangoFechasDesdeTexto } from "../routes/reportes";
+import { rangoFechasDesdeTexto, calcularReporteVentas } from "../routes/reportes";
 
 // Herramientas de solo lectura: el asistente las ejecuta directo, nunca
 // cambian datos. Las herramientas "proponer_*" son distintas a propósito:
@@ -228,34 +228,8 @@ async function ejecutarHerramientaLectura(nombre: string, input: Record<string, 
         .slice(0, 10);
       return { desde: desde.toISOString(), hasta: hasta.toISOString(), totalCambios: cambios.length, mayoresCambios };
     }
-    case "reporte_ventas": {
-      const { desde, hasta } = rangoFechasDesdeTexto(input.desde, input.hasta);
-      const items = await prisma.itemVenta.findMany({
-        where: { anulado: false, venta: { estado: "pagada", fecha: { gte: desde, lte: hasta } } },
-        include: { producto: true },
-      });
-      const ventasEnRango = await prisma.venta.findMany({
-        where: { estado: "pagada", fecha: { gte: desde, lte: hasta } },
-      });
-      const totalVentas = ventasEnRango.reduce((s, v) => s + v.total, 0);
-      const porProducto = new Map<number, { descripcion: string; cantidad: number; ingreso: number }>();
-      for (const i of items) {
-        const actual = porProducto.get(i.productoId) ?? { descripcion: i.producto.descripcion, cantidad: 0, ingreso: 0 };
-        actual.cantidad += i.cantidad;
-        actual.ingreso += i.subtotal;
-        porProducto.set(i.productoId, actual);
-      }
-      const masVendidosPorCantidad = Array.from(porProducto.values()).sort((a, b) => b.cantidad - a.cantidad).slice(0, 10);
-      const masVendidosPorIngreso = Array.from(porProducto.values()).sort((a, b) => b.ingreso - a.ingreso).slice(0, 10);
-      return {
-        desde: desde.toISOString(),
-        hasta: hasta.toISOString(),
-        cantidadVentas: ventasEnRango.length,
-        totalVentas,
-        masVendidosPorCantidad,
-        masVendidosPorIngreso,
-      };
-    }
+    case "reporte_ventas":
+      return calcularReporteVentas(input.desde, input.hasta);
     default:
       return { error: `Herramienta desconocida: ${nombre}` };
   }

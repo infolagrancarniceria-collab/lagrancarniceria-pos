@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, formatoCLP, type ReporteInventario, type ReportePrecios } from "../api";
+import { api, formatoCLP, type ReporteInventario, type ReportePrecios, type ReporteVentas } from "../api";
 
 const etiquetasMotivo: Record<string, string> = {
   venta: "Venta",
@@ -28,16 +28,22 @@ export default function Reportes() {
   const [hasta, setHasta] = useState(hoy());
   const [reporteInventario, setReporteInventario] = useState<ReporteInventario | null>(null);
   const [reportePrecios, setReportePrecios] = useState<ReportePrecios | null>(null);
+  const [reporteVentas, setReporteVentas] = useState<ReporteVentas | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(false);
 
   function cargar() {
     setError(null);
     setCargando(true);
-    Promise.all([api.reportes.inventario(desde, hasta), api.reportes.precios(desde, hasta)])
-      .then(([inv, prec]) => {
+    Promise.all([
+      api.reportes.inventario(desde, hasta),
+      api.reportes.precios(desde, hasta),
+      api.reportes.ventas(desde, hasta),
+    ])
+      .then(([inv, prec, ventas]) => {
         setReporteInventario(inv);
         setReportePrecios(prec);
+        setReporteVentas(ventas);
       })
       .catch((e) => setError(e.message))
       .finally(() => setCargando(false));
@@ -48,10 +54,6 @@ export default function Reportes() {
   return (
     <div>
       <h1>Reportes</h1>
-      <p className="ayuda">
-        Reportes de ventas quedan pendientes hasta que exista el módulo de caja (todavía no hay
-        registro de ventas). Por ahora, esto cubre inventario y precios, que sí tienen datos reales.
-      </p>
       {error && <p className="error">{error}</p>}
 
       <div className="fila-inline">
@@ -67,6 +69,74 @@ export default function Reportes() {
           {cargando ? "Cargando..." : "Actualizar reportes"}
         </button>
       </div>
+
+      {reporteVentas && (
+        <section className="tarjeta">
+          <h2>Ventas</h2>
+          <div className="fila-inline">
+            <div>
+              <strong>Cantidad de ventas:</strong> {reporteVentas.cantidadVentas}
+            </div>
+            <div>
+              <strong>Total vendido:</strong> {formatoCLP(reporteVentas.totalVentas)}
+            </div>
+          </div>
+
+          <h3>Más vendidos por cantidad</h3>
+          <table className="tabla">
+            <thead>
+              <tr>
+                <th>PLU</th>
+                <th>Descripción</th>
+                <th>Cantidad vendida</th>
+                <th>Ingreso</th>
+              </tr>
+            </thead>
+            <tbody>
+              {reporteVentas.masVendidosPorCantidad.map((p) => (
+                <tr key={p.productoId}>
+                  <td>{p.plu}</td>
+                  <td>{p.descripcion}</td>
+                  <td>{p.cantidad}</td>
+                  <td>{formatoCLP(p.ingreso)}</td>
+                </tr>
+              ))}
+              {reporteVentas.masVendidosPorCantidad.length === 0 && (
+                <tr>
+                  <td colSpan={4}>No hubo ventas en este período.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+
+          <h3>Más vendidos por ingreso</h3>
+          <table className="tabla">
+            <thead>
+              <tr>
+                <th>PLU</th>
+                <th>Descripción</th>
+                <th>Ingreso</th>
+                <th>Cantidad vendida</th>
+              </tr>
+            </thead>
+            <tbody>
+              {reporteVentas.masVendidosPorIngreso.map((p) => (
+                <tr key={p.productoId}>
+                  <td>{p.plu}</td>
+                  <td>{p.descripcion}</td>
+                  <td>{formatoCLP(p.ingreso)}</td>
+                  <td>{p.cantidad}</td>
+                </tr>
+              ))}
+              {reporteVentas.masVendidosPorIngreso.length === 0 && (
+                <tr>
+                  <td colSpan={4}>No hubo ventas en este período.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </section>
+      )}
 
       {reporteInventario && (
         <section className="tarjeta">
