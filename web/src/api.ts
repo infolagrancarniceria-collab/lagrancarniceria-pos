@@ -215,22 +215,53 @@ async function manejarRespuesta<T>(res: Response): Promise<T> {
   return res.json();
 }
 
+// Si el servidor local queda trabado (ej. un archivo de bloqueo pegado tras
+// un cierre inesperado), sin esto la pantalla se queda cargando para siempre
+// sin avisar nada. Con el límite de tiempo, al menos se muestra un error
+// claro en vez de un spinner infinito.
+const TIEMPO_LIMITE_MS = 15000;
+
+async function fetchConLimiteDeTiempo(
+  url: string,
+  init?: RequestInit,
+  tiempoLimiteMs: number = TIEMPO_LIMITE_MS
+): Promise<Response> {
+  const controlador = new AbortController();
+  const limite = setTimeout(() => controlador.abort(), tiempoLimiteMs);
+  try {
+    return await fetch(url, { ...init, signal: controlador.signal });
+  } catch (e) {
+    if ((e as Error).name === "AbortError") {
+      throw new ApiError(
+        "El programa no respondió a tiempo. Cierra el programa por completo (revisa que no quede ninguna copia abierta en el Administrador de tareas) y vuelve a abrirlo."
+      );
+    }
+    throw e;
+  } finally {
+    clearTimeout(limite);
+  }
+}
+
 async function get<T>(url: string): Promise<T> {
-  const res = await fetch(url);
+  const res = await fetchConLimiteDeTiempo(url);
   return manejarRespuesta<T>(res);
 }
 
-async function post<T>(url: string, body: unknown): Promise<T> {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+async function post<T>(url: string, body: unknown, tiempoLimiteMs?: number): Promise<T> {
+  const res = await fetchConLimiteDeTiempo(
+    url,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+    tiempoLimiteMs
+  );
   return manejarRespuesta<T>(res);
 }
 
 async function put<T>(url: string, body: unknown): Promise<T> {
-  const res = await fetch(url, {
+  const res = await fetchConLimiteDeTiempo(url, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -239,7 +270,7 @@ async function put<T>(url: string, body: unknown): Promise<T> {
 }
 
 async function delConBody<T>(url: string, body: unknown): Promise<T> {
-  const res = await fetch(url, {
+  const res = await fetchConLimiteDeTiempo(url, {
     method: "DELETE",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -248,7 +279,7 @@ async function delConBody<T>(url: string, body: unknown): Promise<T> {
 }
 
 async function del<T>(url: string): Promise<T> {
-  const res = await fetch(url, { method: "DELETE" });
+  const res = await fetchConLimiteDeTiempo(url, { method: "DELETE" });
   return manejarRespuesta<T>(res);
 }
 
@@ -409,7 +440,7 @@ export const api = {
   },
   asistente: {
     enviarMensaje: (mensaje: string, historial: unknown[]) =>
-      post<RespuestaAsistente>("/api/asistente/mensaje", { mensaje, historial }),
+      post<RespuestaAsistente>("/api/asistente/mensaje", { mensaje, historial }, 60000),
   },
   balanza: {
     configuracion: () => get<ConfiguracionBalanza>("/api/balanza/configuracion"),
