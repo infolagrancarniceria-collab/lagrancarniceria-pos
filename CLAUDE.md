@@ -55,11 +55,56 @@ efectivo se ingresa manualmente ahí mismo).
   comunicación con balanzas de red, no un formato propietario inventado por
   Mettler Toledo. Confirma también IP `192.168.18.120` = balanza 2, puerto
   3001, modelo bPlus — todo coincide con lo ya documentado.
-- **Pendiente:** todavía no tenemos el mensaje XML específico que manda el
-  **precio de un producto** (PLU, nombre, precio) — el capturado arriba es
-  solo el paso de "descubrir la balanza en la red", un paso previo. Falta
-  capturar el momento exacto en que Gexus aprieta "Execute Task" para
-  actualizar un precio.
+- **Mensaje de actualización de precios — CONFIRMADO por captura real
+  completa.** Cada vez que se aprieta "Execute Task", Gexus manda **el
+  catálogo completo** (se capturó un envío real con 200 productos) en un
+  solo mensaje grande, no solo lo que cambió. Estructura por producto:
+  ```xml
+  <Message><ARTSCommonHeader MessageType="Request"/><ItemTransaction ActionCode="Update">
+    <Item>
+      <PLU>42</PLU>
+      <DepartmentID>0</DepartmentID>
+      <AlternativeItemIDs Action="Create"><AlternativeItemID>0000000000042</AlternativeItemID></AlternativeItemIDs>
+      <Descriptions Action="Create">
+        <Description Type="ItemName">CHULETA DE CENTRO</Description>
+        <Description ID="0" Type="ExtraText"></Description>
+      </Descriptions>
+      <ItemPrices Action="Update">
+        <ItemPrice ValueTypeCode="BasePrice" Index="0" UnitOfMeasureCode="KGM" PriceOverrideFlag="false" DiscountFlag="false" Hidden="false">1234</ItemPrice>
+      </ItemPrices>
+      <Dates Action="Create">
+        <DateOffset Type="PackedDate" UnitOfOffset="day" IsPrintEnabled="true">0</DateOffset>
+        <DateOffset Type="SellBy" UnitOfOffset="day" IsPrintEnabled="true">005</DateOffset>
+      </Dates>
+      <LabelFormats Action="Create"><LabelFormatID Index="0">2</LabelFormatID></LabelFormats>
+      <TargetWeights Action="Create"><TargetWeight Index="0" LowerTolerance="0" UpperTolerance="0" UnitOfMeasureCode="KGM">0</TargetWeight></TargetWeights>
+    </Item>
+    <!-- ...un <Item> por cada producto, todos dentro del mismo <ItemTransaction>... -->
+  </ItemTransaction></Message>
+  ```
+  La balanza responde con un mensaje vacío de confirmación:
+  `<Message><ARTSCommonHeader MessageType="Response"/></Message>`.
+
+  Notas del formato, confirmadas comparando varios productos del catálogo
+  real capturado:
+  - `PLU`: el código del producto, sin ceros a la izquierda.
+  - `AlternativeItemID`: el mismo PLU, pero como texto de 13 dígitos con
+    ceros a la izquierda (ej. PLU 42 → `0000000000042`).
+  - `Description Type="ItemName"`: el nombre/descripción del producto.
+  - `ItemPrice` (dentro de `ItemPrices`): el precio, como número entero en
+    pesos chilenos (sin decimales, ej. `1234` = $1.234).
+  - `UnitOfMeasureCode`: `KGM` para productos que se venden por kilo (van a
+    la balanza como pesables) o `PCS` para productos que se venden por
+    unidad pero igual se imprimen en la balanza (ej. "POLLO ENTERO",
+    "HAMBURGUESA QUESO 150 GRS") — hipótesis: esto corresponde al campo
+    "Flag Balanza" (Pesable → `KGM`, Importe → `PCS`); los productos con
+    flag "Normal" probablemente no van en este mensaje. **Falta confirmar
+    esta hipótesis con el usuario.**
+  - `Dates`, `LabelFormats`, `TargetWeights`: en los 200 productos
+    capturados, estos valores fueron siempre los mismos (`SellBy` = 5 días,
+    `LabelFormatID` = 2, `TargetWeight` = 0) — parecen ser configuración
+    fija del sistema, no algo que varía por producto. **Falta confirmar si
+    esto debe ser configurable o si un valor fijo por ahora está bien.**
 
 ### Modelo de datos de producto (confirmado por manual del sistema actual)
 - Cada producto tiene un campo **"Flag Balanza"**: Normal / Pesable / Importe
@@ -82,13 +127,13 @@ efectivo se ingresa manualmente ahí mismo).
   producto/sección. El botón "Actualizar balanza" dispara el envío a
   ambas direcciones.
 
-### Preguntas técnicas abiertas (bloquean el módulo 4)
-1. El mensaje XML exacto que envía un **cambio de precio** (PLU,
-   descripción, precio) — todavía no capturado, solo tenemos el de
-   "descubrimiento" de la balanza en la red.
-2. Si existe algún archivo de ejemplo o log del sistema actual con ese
-   mensaje — sería la forma más rápida y confiable de calcarlo, en vez de
-   adivinar los nombres de las etiquetas XML.
+### Preguntas técnicas abiertas (ya no bloquean iniciar el módulo 4)
+1. ¿`UnitOfMeasureCode` = `KGM`/`PCS` corresponde exactamente al "Flag
+   Balanza" (Pesable/Importe) de cada producto? ¿Los productos "Normal" se
+   excluyen del mensaje?
+2. ¿Los valores fijos observados (`SellBy` 5 días, `LabelFormatID` 2,
+   `TargetWeight` 0) deben ser configurables o está bien dejarlos fijos
+   por ahora?
 
 ### Meta de automatización para el módulo de balanza
 Como el envío es directo por socket TCP (sin segunda app ni SDK de por
