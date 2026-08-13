@@ -305,8 +305,14 @@ desde el programa instalado.
 - El stock de cada producto se descuenta recién al **confirmar** la venta
   (no al agregar un ítem al carrito), para no descontar stock de ventas que
   se cancelan antes de pagar.
-- Los pagos registrados deben sumar exactamente el total de la venta para
-  poder confirmarla (no se modela "vuelto"/cambio).
+- Los pagos **registrados** deben sumar exactamente el total de la venta
+  para poder confirmarla — eso no cambió. Lo que sí se agregó: **vuelto en
+  efectivo** (decisión revisada, antes se exigía pago exacto). El cajero
+  escribe lo que el cliente entregó en la mano; el sistema registra solo la
+  parte que cubre lo que falta y muestra el resto como vuelto en pantalla,
+  sin guardarlo en ningún lado (no es dinero que quede en la caja, así que
+  no afecta el cálculo de cierre X/Z). Solo aplica a efectivo — en tarjeta
+  se sigue cobrando el monto exacto.
 
 ## Decisiones tomadas en el módulo de inventario
 - La merma hoy no se registra formalmente (confirmado con el usuario) — este

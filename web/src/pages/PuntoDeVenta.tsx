@@ -90,6 +90,15 @@ export default function PuntoDeVenta() {
     }
   }
 
+  // En efectivo, el cajero escribe lo que el cliente entregó en la mano — no
+  // necesariamente el monto exacto de la venta. Solo se registra como pago
+  // lo que realmente cubre lo que falta; el resto se muestra como vuelto,
+  // sin guardarse en ningún lado (no es dinero que se queda en la caja).
+  const faltaPagarPositivo = Math.max(faltaPagar, 0);
+  const montoIngresado = Number(montoPago) || 0;
+  const vueltoPreview =
+    medioPago === "efectivo" && montoIngresado > faltaPagarPositivo ? montoIngresado - faltaPagarPositivo : 0;
+
   async function agregarPago(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -99,10 +108,18 @@ export default function PuntoDeVenta() {
       setError("El monto debe ser mayor a 0");
       return;
     }
+    const montoACobrar = medioPago === "efectivo" ? Math.min(monto, faltaPagarPositivo) : monto;
+    if (montoACobrar <= 0) {
+      setError("Ya no falta nada por pagar");
+      return;
+    }
     try {
-      const actualizada = await api.caja.agregarPago(venta.id, { medio: medioPago, monto });
+      const actualizada = await api.caja.agregarPago(venta.id, { medio: medioPago, monto: montoACobrar });
       setVenta(actualizada);
       setMontoPago("");
+      if (vueltoPreview > 0) {
+        setMensaje(`Vuelto: ${formatoCLP(vueltoPreview)}`);
+      }
     } catch (e) {
       setError((e as Error).message);
     }
@@ -247,11 +264,12 @@ export default function PuntoDeVenta() {
           <input
             type="number"
             min="1"
-            placeholder="Monto"
+            placeholder={medioPago === "efectivo" ? "Efectivo recibido" : "Monto"}
             value={montoPago}
             onChange={(e) => setMontoPago(e.target.value)}
           />
           <button type="submit">Agregar pago</button>
+          {vueltoPreview > 0 && <span className="exito">Vuelto: {formatoCLP(vueltoPreview)}</span>}
         </form>
         <table className="tabla">
           <thead>
