@@ -239,7 +239,18 @@ Todo corre **local**, en el PC de la carnicería, sin depender de internet:
 1. **Gestión de precios** — listo (productos, categorías, cambio individual/masivo, historial).
 2. **Inventario** — listo (proveedores, entradas, salidas/merma, stock actual con alerta de stock bajo, historial de movimientos).
 3. **Reportes** — listo: inventario (entradas/salidas por motivo, top productos con más merma), precios (cambios y mayores variaciones) y ventas (cantidad de ventas, total vendido, más vendidos por cantidad y por ingreso), los tres por rango de fechas.
-4. Envío a balanza — no iniciado (bloqueado por documentación SDK bTwin).
+4. **Envío a balanza** — listo: botón "Actualizar balanza" en su propia
+   pantalla, manda el catálogo completo (productos Pesable/Importe) por
+   socket TCP directo a las dos balanzas (IP y puerto configurables),
+   mostrando éxito/error por cada una. Verificado que el mensaje armado
+   por el sistema es **idéntico, carácter por carácter**, al capturado de
+   una balanza real (Wireshark). Quedan dos hipótesis sin confirmar al
+   100% con el usuario (documentadas arriba): el mapeo Pesable→KGM /
+   Importe→PCS, y si Dates/LabelFormats/TargetWeights deberían ser
+   configurables en vez de fijos — ambas fáciles de ajustar si se
+   confirma lo contrario. **Pendiente la prueba real** contra las
+   balanzas físicas del local (todo lo anterior se probó contra una
+   balanza falsa simulada, replicando el protocolo capturado).
 5. **Caja / punto de venta** — listo (apertura con fondo fijo, punto de venta con carrito y pagos combinados efectivo/tarjeta, anulación de ítems con clave de supervisor, cierre con reporte X/Z y diferencia de efectivo). Cuenta corriente de clientes queda fuera de esta primera versión (a pedido del usuario). Cada venta confirmada genera automáticamente movimientos de inventario (motivo "venta"), reutilizando la misma validación de stock del módulo de inventario.
 6. **Asistente de IA** — listo el backend y las pantallas; **pendiente la prueba real** con una clave de API válida (se probó todo el flujo con una clave falsa: guardar, error de clave inválida). Ver "Decisiones tomadas en el asistente de IA" más abajo.
 

@@ -23,6 +23,7 @@ export default function Layout() {
           <NavLink to="/reportes">Reportes</NavLink>
           <NavLink to="/caja">Caja</NavLink>
           <NavLink to="/asistente">Asistente</NavLink>
+          <NavLink to="/balanza">Balanza</NavLink>
           <NavLink to="/configuracion">Configuración</NavLink>
         </nav>
         <div className="usuario-actual">

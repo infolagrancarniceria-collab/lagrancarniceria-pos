@@ -1,0 +1,8 @@
+-- CreateTable
+CREATE TABLE "ConfiguracionBalanza" (
+    "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "ip1" TEXT NOT NULL DEFAULT '192.168.18.122',
+    "ip2" TEXT NOT NULL DEFAULT '192.168.18.120',
+    "puerto" INTEGER NOT NULL DEFAULT 3001,
+    "actualizadoEn" DATETIME NOT NULL
+);

@@ -179,6 +179,25 @@ export interface RespuestaTextoAsistente {
 
 export type RespuestaAsistente = PropuestaAsistente | RespuestaTextoAsistente;
 
+export interface ConfiguracionBalanza {
+  id: number;
+  ip1: string;
+  ip2: string;
+  puerto: number;
+  actualizadoEn: string;
+}
+
+export interface ResultadoEnvioBalanza {
+  ip: string;
+  exito: boolean;
+  error?: string;
+}
+
+export interface ResultadoActualizarBalanza {
+  cantidadProductos: number;
+  resultados: ResultadoEnvioBalanza[];
+}
+
 class ApiError extends Error {}
 
 async function manejarRespuesta<T>(res: Response): Promise<T> {
@@ -391,6 +410,12 @@ export const api = {
   asistente: {
     enviarMensaje: (mensaje: string, historial: unknown[]) =>
       post<RespuestaAsistente>("/api/asistente/mensaje", { mensaje, historial }),
+  },
+  balanza: {
+    configuracion: () => get<ConfiguracionBalanza>("/api/balanza/configuracion"),
+    guardarConfiguracion: (data: { ip1: string; ip2: string; puerto: number }) =>
+      post<ConfiguracionBalanza>("/api/balanza/configuracion", data),
+    actualizar: () => post<ResultadoActualizarBalanza>("/api/balanza/actualizar", {}),
   },
 };
 

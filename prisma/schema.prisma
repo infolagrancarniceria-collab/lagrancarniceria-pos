@@ -158,6 +158,17 @@ model ConfiguracionIA {
   actualizadoEn     DateTime @updatedAt
 }
 
+// Direcciones IP de las balanzas (son espejo entre sí: se les manda el mismo
+// catálogo a las dos). Puerto 3001 confirmado por captura de red real.
+// Siempre hay como máximo una fila.
+model ConfiguracionBalanza {
+  id            Int      @id @default(autoincrement())
+  ip1           String   @default("192.168.18.122")
+  ip2           String   @default("192.168.18.120")
+  puerto        Int      @default(3001)
+  actualizadoEn DateTime @updatedAt
+}
+
 // Solo puede haber una sesión de caja "abierta" a la vez (una sola persona
 // usa el sistema a la vez, según la arquitectura del proyecto).
 model SesionCaja {
