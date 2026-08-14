@@ -71,7 +71,13 @@ export default function CerrarCaja() {
             <strong>Tarjeta:</strong> {formatoCLP(cerrada.totalPorMedio.tarjeta ?? 0)}
           </p>
           <p>
-            <strong>Efectivo esperado (fondo fijo + ventas en efectivo):</strong>{" "}
+            <strong>Crédito otorgado hoy:</strong> {formatoCLP(cerrada.totalPorMedio.credito ?? 0)}
+          </p>
+          <p>
+            <strong>Cobros de crédito recibidos hoy:</strong> {formatoCLP(cerrada.totalCobrosCredito)}
+          </p>
+          <p>
+            <strong>Efectivo esperado (fondo fijo + ventas en efectivo + cobros de crédito en efectivo):</strong>{" "}
             {formatoCLP(cerrada.efectivoEsperado)}
           </p>
           <p>
@@ -111,6 +117,12 @@ export default function CerrarCaja() {
           </p>
           <p>
             <strong>Tarjeta:</strong> {formatoCLP(resumen.totalPorMedio.tarjeta ?? 0)}
+          </p>
+          <p>
+            <strong>Crédito otorgado hoy:</strong> {formatoCLP(resumen.totalPorMedio.credito ?? 0)}
+          </p>
+          <p>
+            <strong>Cobros de crédito recibidos hoy:</strong> {formatoCLP(resumen.totalCobrosCredito)}
           </p>
           <p>
             <strong>Efectivo esperado en caja:</strong> {formatoCLP(resumen.efectivoEsperado)}

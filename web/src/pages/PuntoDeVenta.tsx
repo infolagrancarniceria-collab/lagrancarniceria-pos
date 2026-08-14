@@ -17,6 +17,7 @@ export default function PuntoDeVenta() {
   const [cantidad, setCantidad] = useState("");
   const [medioPago, setMedioPago] = useState<MedioPago>("efectivo");
   const [montoPago, setMontoPago] = useState("");
+  const [clienteNombre, setClienteNombre] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
   const [procesando, setProcesando] = useState(false);
@@ -145,6 +146,10 @@ export default function PuntoDeVenta() {
       setError("El monto debe ser mayor a 0");
       return;
     }
+    if (medioPago === "credito" && !clienteNombre.trim()) {
+      setError("Falta el nombre del cliente para dejarlo a crédito");
+      return;
+    }
     const montoACobrar = medioPago === "efectivo" ? Math.min(monto, faltaPagarPositivo) : monto;
     if (montoACobrar <= 0) {
       setError("Ya no falta nada por pagar");
@@ -152,9 +157,14 @@ export default function PuntoDeVenta() {
     }
     const vueltoAEntregar = vueltoPreview;
     try {
-      const actualizada = await api.caja.agregarPago(venta.id, { medio: medioPago, monto: montoACobrar });
+      const actualizada = await api.caja.agregarPago(venta.id, {
+        medio: medioPago,
+        monto: montoACobrar,
+        clienteNombre: medioPago === "credito" ? clienteNombre.trim() : undefined,
+      });
       setVenta(actualizada);
       setMontoPago("");
+      setClienteNombre("");
       if (vueltoAEntregar > 0) {
         window.alert(`Vuelto: ${formatoCLP(vueltoAEntregar)}`);
       }
@@ -330,8 +340,24 @@ export default function PuntoDeVenta() {
             <span className="medio-pago-icono">💳</span>
             Tarjeta
           </button>
+          <button
+            type="button"
+            className={`medio-pago-tile ${medioPago === "credito" ? "activo" : ""}`}
+            onClick={() => setMedioPago("credito")}
+          >
+            <span className="medio-pago-icono">🧾</span>
+            Crédito
+          </button>
         </div>
         <form onSubmit={agregarPago} onKeyDown={manejarEnterComoTab} className="fila-inline">
+          {medioPago === "credito" && (
+            <input
+              type="text"
+              placeholder="Nombre del cliente"
+              value={clienteNombre}
+              onChange={(e) => setClienteNombre(e.target.value)}
+            />
+          )}
           <input
             type="number"
             min="1"
@@ -354,7 +380,9 @@ export default function PuntoDeVenta() {
           <tbody>
             {venta.pagos.map((p) => (
               <tr key={p.id}>
-                <td>{p.medio === "efectivo" ? "Efectivo" : "Tarjeta"}</td>
+                <td>
+                  {p.medio === "efectivo" ? "Efectivo" : p.medio === "tarjeta" ? "Tarjeta" : `Crédito (${p.clienteNombre})`}
+                </td>
                 <td>{formatoCLP(p.monto)}</td>
                 <td>
                   <button type="button" onClick={() => quitarPago(p.id)}>

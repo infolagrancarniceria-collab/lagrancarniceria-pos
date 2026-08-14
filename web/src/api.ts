@@ -118,7 +118,8 @@ export interface HistorialEntrada {
   fecha: string;
 }
 
-export type MedioPago = "efectivo" | "tarjeta";
+export type MedioPago = "efectivo" | "tarjeta" | "credito";
+export type MedioCobro = "efectivo" | "tarjeta";
 
 export interface ItemVenta {
   id: number;
@@ -137,8 +138,15 @@ export interface ItemVenta {
 export interface PagoVenta {
   id: number;
   ventaId: number;
+  venta?: Venta;
   medio: MedioPago;
   monto: number;
+  clienteNombre: string | null;
+  cobrado: boolean;
+  medioCobro: MedioCobro | null;
+  sesionCajaCobroId: number | null;
+  usuarioCobroId: number | null;
+  fechaCobro: string | null;
 }
 
 export interface Venta {
@@ -171,6 +179,7 @@ export interface ResumenSesion {
   cantidadVentas: number;
   totalVentas: number;
   totalPorMedio: Record<string, number>;
+  totalCobrosCredito: number;
   efectivoEsperado: number;
   diferencia: number | null;
 }
@@ -449,13 +458,16 @@ export const api = {
       itemId: number,
       data: { clave: string; usuarioId: number; motivo?: string }
     ) => delConBody<Venta>(`/api/caja/ventas/${ventaId}/items/${itemId}`, data),
-    agregarPago: (ventaId: number, data: { medio: MedioPago; monto: number }) =>
+    agregarPago: (ventaId: number, data: { medio: MedioPago; monto: number; clienteNombre?: string }) =>
       post<Venta>(`/api/caja/ventas/${ventaId}/pagos`, data),
     quitarPago: (ventaId: number, pagoId: number) =>
       del<Venta>(`/api/caja/ventas/${ventaId}/pagos/${pagoId}`),
     confirmarVenta: (ventaId: number, usuarioId: number) =>
       post<Venta>(`/api/caja/ventas/${ventaId}/confirmar`, { usuarioId }),
     cancelarVenta: (ventaId: number) => post<Venta>(`/api/caja/ventas/${ventaId}/cancelar`, {}),
+    creditosPendientes: () => get<PagoVenta[]>("/api/caja/creditos-pendientes"),
+    cobrarCredito: (pagoId: number, data: { medioCobro: MedioCobro; usuarioId: number }) =>
+      post<PagoVenta>(`/api/caja/creditos/${pagoId}/cobrar`, data),
   },
   configuracion: {
     estadoIA: () => get<{ configurada: boolean }>("/api/configuracion/ia/estado"),

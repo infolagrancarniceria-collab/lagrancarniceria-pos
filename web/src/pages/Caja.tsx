@@ -70,6 +70,9 @@ export default function Caja() {
           <Link to="/caja/sesiones" className="boton">
             Historial de cajas
           </Link>
+          <Link to="/caja/creditos" className="boton">
+            Créditos pendientes
+          </Link>
         </div>
       </div>
       {error && <p className="error">{error}</p>}
@@ -94,6 +97,12 @@ export default function Caja() {
               </div>
               <div>
                 <strong>Tarjeta:</strong> {formatoCLP(resumen.totalPorMedio.tarjeta ?? 0)}
+              </div>
+              <div>
+                <strong>Crédito otorgado hoy:</strong> {formatoCLP(resumen.totalPorMedio.credito ?? 0)}
+              </div>
+              <div>
+                <strong>Cobros de crédito recibidos hoy:</strong> {formatoCLP(resumen.totalCobrosCredito)}
               </div>
             </div>
           </>
