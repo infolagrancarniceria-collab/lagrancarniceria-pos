@@ -15,6 +15,7 @@ export default function RegistrarEntrada() {
   const [motivo, setMotivo] = useState<"compra" | "ajuste">("compra");
   const [proveedorId, setProveedorId] = useState<number | "">("");
   const [costoUnitario, setCostoUnitario] = useState("");
+  const [numeroFactura, setNumeroFactura] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
@@ -45,11 +46,13 @@ export default function RegistrarEntrada() {
         motivo,
         proveedorId: proveedorId ? Number(proveedorId) : null,
         costoUnitario: costoUnitario ? Number(costoUnitario) : null,
+        numeroFactura: numeroFactura.trim() || null,
         usuarioId: usuario.id,
       });
       setMensaje("Entrada registrada — el stock quedó actualizado");
       setCantidad("");
       setCostoUnitario("");
+      setNumeroFactura("");
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -106,6 +109,15 @@ export default function RegistrarEntrada() {
                 min="0"
                 value={costoUnitario}
                 onChange={(e) => setCostoUnitario(e.target.value)}
+                placeholder="opcional"
+              />
+            </label>
+            <label>
+              N° de factura del proveedor
+              <input
+                type="text"
+                value={numeroFactura}
+                onChange={(e) => setNumeroFactura(e.target.value)}
                 placeholder="opcional"
               />
             </label>

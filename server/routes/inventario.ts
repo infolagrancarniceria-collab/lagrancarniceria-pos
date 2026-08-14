@@ -37,6 +37,7 @@ const entradaSchema = z.object({
   motivo: z.enum(["compra", "ajuste"]),
   proveedorId: z.number().int().positive().optional().nullable(),
   costoUnitario: z.number().positive().optional().nullable(),
+  numeroFactura: z.string().trim().optional().nullable(),
   usuarioId: z.number().int().positive(),
 });
 
@@ -45,7 +46,7 @@ inventarioRouter.post("/entrada", async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.issues[0].message });
   }
-  const { productoId, cantidad, motivo, proveedorId, costoUnitario, usuarioId } = parsed.data;
+  const { productoId, cantidad, motivo, proveedorId, costoUnitario, numeroFactura, usuarioId } = parsed.data;
 
   const usuario = await validarUsuario(usuarioId);
   if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
@@ -72,6 +73,7 @@ inventarioRouter.post("/entrada", async (req, res) => {
         cantidad,
         proveedorId: proveedorId || null,
         costoUnitario: costoUnitario || null,
+        numeroFactura: numeroFactura || null,
       },
     }),
   ]);
@@ -125,11 +127,13 @@ inventarioRouter.post("/salida", async (req, res) => {
 inventarioRouter.get("/movimientos", async (req, res) => {
   const productoId = req.query.productoId ? Number(req.query.productoId) : undefined;
   const tipo = typeof req.query.tipo === "string" ? req.query.tipo : undefined;
+  const numeroFactura = typeof req.query.numeroFactura === "string" ? req.query.numeroFactura.trim() : undefined;
 
   const movimientos = await prisma.movimientoInventario.findMany({
     where: {
       ...(productoId ? { productoId } : {}),
       ...(tipo ? { tipo } : {}),
+      ...(numeroFactura ? { numeroFactura: { contains: numeroFactura } } : {}),
     },
     include: { producto: true, usuario: true, proveedor: true },
     orderBy: { fecha: "desc" },

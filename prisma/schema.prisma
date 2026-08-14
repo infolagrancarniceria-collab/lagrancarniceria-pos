@@ -28,6 +28,22 @@ model Usuario {
   ventas           Venta[]
   itemsAnulados    ItemVenta[]  @relation("ItemsAnuladosPorUsuario")
   cobrosDeCreditoRegistrados PagoVenta[] @relation("CobrosDeCreditoRegistradosPorUsuario")
+  gastos           Gasto[]
+}
+
+// Gastos generales del negocio (sueldos, luz, agua, arriendo, etc.) —
+// separado de las compras de mercadería, que ya se registran como entradas
+// de inventario (con su propio proveedor/costo).
+model Gasto {
+  id Int @id @default(autoincrement())
+
+  fecha       DateTime @default(now())
+  categoria   String // ej. "Sueldos", "Luz", "Agua", "Arriendo", "Otros"
+  descripcion String?
+  monto       Float
+
+  usuarioId Int
+  usuario   Usuario @relation(fields: [usuarioId], references: [id])
 }
 
 // Categorías jerárquicas de 3 niveles, ej: 01 Aves > 0101 Pollos > 010101 Trutros.
@@ -134,6 +150,7 @@ model MovimientoInventario {
   costoUnitario Float?
   proveedorId   Int?
   proveedor     Proveedor? @relation(fields: [proveedorId], references: [id])
+  numeroFactura String?
 
   fecha DateTime @default(now())
 }

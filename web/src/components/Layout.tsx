@@ -21,6 +21,7 @@ export default function Layout() {
           <NavLink to="/categorias">Categorías</NavLink>
           <NavLink to="/inventario">Inventario</NavLink>
           <NavLink to="/reportes">Reportes</NavLink>
+          <NavLink to="/gastos">Gastos</NavLink>
           <NavLink to="/caja">Caja</NavLink>
           <NavLink to="/caja/creditos">Créditos</NavLink>
           <NavLink to="/asistente">Asistente</NavLink>

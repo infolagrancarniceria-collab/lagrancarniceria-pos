@@ -58,6 +58,23 @@ export interface Proveedor {
   activo: boolean;
 }
 
+export interface Gasto {
+  id: number;
+  fecha: string;
+  categoria: string;
+  descripcion: string | null;
+  monto: number;
+  usuarioId: number;
+  usuario: Usuario;
+}
+
+export interface ReporteGastos {
+  desde: string;
+  hasta: string;
+  total: number;
+  totalPorCategoria: Record<string, number>;
+}
+
 export interface MovimientoInventario {
   id: number;
   productoId: number;
@@ -70,6 +87,7 @@ export interface MovimientoInventario {
   costoUnitario: number | null;
   proveedorId: number | null;
   proveedor: Proveedor | null;
+  numeroFactura: string | null;
   fecha: string;
 }
 
@@ -394,6 +412,7 @@ export const api = {
       motivo: "compra" | "ajuste";
       proveedorId?: number | null;
       costoUnitario?: number | null;
+      numeroFactura?: string | null;
       usuarioId: number;
     }) => post<Producto>("/api/inventario/entrada", data),
     salida: (data: {
@@ -402,10 +421,11 @@ export const api = {
       motivo: "venta" | "descarte" | "ajuste";
       usuarioId: number;
     }) => post<Producto>("/api/inventario/salida", data),
-    movimientos: (params: { productoId?: number; tipo?: "entrada" | "salida" } = {}) => {
+    movimientos: (params: { productoId?: number; tipo?: "entrada" | "salida"; numeroFactura?: string } = {}) => {
       const qs = new URLSearchParams();
       if (params.productoId) qs.set("productoId", String(params.productoId));
       if (params.tipo) qs.set("tipo", params.tipo);
+      if (params.numeroFactura) qs.set("numeroFactura", params.numeroFactura);
       const query = qs.toString();
       return get<MovimientoInventario[]>(`/api/inventario/movimientos${query ? `?${query}` : ""}`);
     },
@@ -448,6 +468,14 @@ export const api = {
       post<ResumenSesion>(`/api/caja/sesiones/${id}/cerrar`, data),
     ventaAbierta: () => get<Venta | null>("/api/caja/ventas/abierta"),
     obtenerVenta: (id: number) => get<Venta>(`/api/caja/ventas/${id}`),
+    buscarVentas: (params: { desde?: string; hasta?: string; ventaId?: number } = {}) => {
+      const qs = new URLSearchParams();
+      if (params.desde) qs.set("desde", params.desde);
+      if (params.hasta) qs.set("hasta", params.hasta);
+      if (params.ventaId) qs.set("ventaId", String(params.ventaId));
+      const query = qs.toString();
+      return get<Venta[]>(`/api/caja/ventas${query ? `?${query}` : ""}`);
+    },
     crearVenta: (usuarioId: number) => post<Venta>("/api/caja/ventas", { usuarioId }),
     agregarItem: (ventaId: number, data: { productoId: number; cantidad: number }) =>
       post<Venta>(`/api/caja/ventas/${ventaId}/items`, data),
@@ -456,7 +484,7 @@ export const api = {
     anularItem: (
       ventaId: number,
       itemId: number,
-      data: { clave: string; usuarioId: number; motivo?: string }
+      data: { clave?: string; usuarioId: number; motivo?: string }
     ) => delConBody<Venta>(`/api/caja/ventas/${ventaId}/items/${itemId}`, data),
     agregarPago: (ventaId: number, data: { medio: MedioPago; monto: number; clienteNombre?: string }) =>
       post<Venta>(`/api/caja/ventas/${ventaId}/pagos`, data),
@@ -483,6 +511,26 @@ export const api = {
     guardarConfiguracion: (data: { ip1: string; ip2: string; puerto: number }) =>
       post<ConfiguracionBalanza>("/api/balanza/configuracion", data),
     actualizar: () => post<ResultadoActualizarBalanza>("/api/balanza/actualizar", {}),
+  },
+  gastos: {
+    listar: (params: { desde?: string; hasta?: string; categoria?: string } = {}) => {
+      const qs = new URLSearchParams();
+      if (params.desde) qs.set("desde", params.desde);
+      if (params.hasta) qs.set("hasta", params.hasta);
+      if (params.categoria) qs.set("categoria", params.categoria);
+      const query = qs.toString();
+      return get<Gasto[]>(`/api/gastos${query ? `?${query}` : ""}`);
+    },
+    reporte: (desde?: string, hasta?: string) => {
+      const qs = new URLSearchParams();
+      if (desde) qs.set("desde", desde);
+      if (hasta) qs.set("hasta", hasta);
+      const query = qs.toString();
+      return get<ReporteGastos>(`/api/gastos/reporte${query ? `?${query}` : ""}`);
+    },
+    crear: (data: { fecha?: string; categoria: string; descripcion?: string | null; monto: number; usuarioId: number }) =>
+      post<Gasto>("/api/gastos", data),
+    eliminar: (id: number) => del<void>(`/api/gastos/${id}`),
   },
 };
 

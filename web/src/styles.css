@@ -356,3 +356,36 @@ select {
 .medio-pago-icono {
   font-size: 1.8rem;
 }
+
+.boton-quitar-item {
+  width: 2.2rem;
+  height: 2.2rem;
+  padding: 0;
+  line-height: 1;
+  color: var(--color-error);
+  border-color: var(--color-error);
+  background: white;
+}
+.boton-quitar-item:hover {
+  background: #fbeceb;
+}
+
+.vale {
+  max-width: 420px;
+  background: white;
+  border: 1px solid var(--color-borde);
+  border-radius: 10px;
+  padding: 1.5rem;
+  margin-top: 1.5rem;
+}
+
+@media print {
+  .topbar,
+  .no-imprimir {
+    display: none !important;
+  }
+  .vale {
+    border: none;
+    max-width: none;
+  }
+}

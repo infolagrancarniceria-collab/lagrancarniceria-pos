@@ -270,8 +270,9 @@ Todo corre **local**, en el PC de la carnicería, sin depender de internet:
    confirma lo contrario. **Pendiente la prueba real** contra las
    balanzas físicas del local (todo lo anterior se probó contra una
    balanza falsa simulada, replicando el protocolo capturado).
-5. **Caja / punto de venta** — listo (apertura con fondo fijo, punto de venta con carrito y pagos combinados efectivo/tarjeta/crédito, anulación de ítems con clave de supervisor, cierre con reporte X/Z y diferencia de efectivo). Crédito (fiado) agregado luego a pedido del usuario — ver "Decisiones tomadas en el módulo de caja" para el detalle (solo pide nombre del cliente, pantalla aparte de "Créditos pendientes" para cobrar después). Cada venta confirmada genera automáticamente movimientos de inventario (motivo "venta"), reutilizando la misma validación de stock del módulo de inventario.
+5. **Caja / punto de venta** — listo (apertura con fondo fijo, punto de venta con carrito y pagos combinados efectivo/tarjeta/crédito, anulación de ítems con clave de supervisor solo una vez que hay pagos registrados, cierre con reporte X/Z y diferencia de efectivo). Crédito (fiado) agregado luego a pedido del usuario — ver "Decisiones tomadas en el módulo de caja" para el detalle (solo pide nombre del cliente, pantalla aparte de "Créditos pendientes" para cobrar después). También "Buscar venta" (por fecha o N° de venta) para ver el detalle/vale de una venta pasada e imprimirlo. Cada venta confirmada genera automáticamente movimientos de inventario (motivo "venta"), reutilizando la misma validación de stock del módulo de inventario.
 6. **Asistente de IA** — listo y **confirmado funcionando con una clave de API real** por el usuario. Ver "Decisiones tomadas en el asistente de IA" más abajo.
+7. **Gastos generales** — listo: registro de gastos del negocio (sueldos, luz, agua, etc., separado de las compras de mercadería) con resumen por categoría y total por rango de fechas. Ver "Módulo de gastos generales" más abajo.
 
 ## Instalador de Windows
 Armado con `electron-builder` (`npm run dist:win`, ver README para el
@@ -365,6 +366,26 @@ desde el programa instalado.
   Efectivo recibido — el teclado físico se sigue pudiendo usar igual. Los
   medios de pago (antes un `<select>`) ahora son dos botones grandes con
   ícono (💵 Efectivo / 💳 Tarjeta, los únicos que maneja el sistema).
+- **Fondo fijo con teclado numérico**: el mismo componente `TecladoNumerico`
+  se agregó también al abrir caja, junto al campo de fondo fijo inicial —
+  a pedido del usuario, para poder escribirlo rápido cada día sin
+  necesitar el teclado físico.
+- **Anular ítem del carrito sin clave, antes de pagar**: la clave de
+  supervisor originalmente se pedía para anular cualquier ítem, incluso
+  antes de empezar a pagar la venta. A pedido del usuario (caso real: el
+  cliente cambia de opinión sobre un producto antes de pagar), ahora **no
+  se pide clave si la venta todavía no tiene ningún pago registrado** — no
+  hay plata ni stock comprometido todavía, así que no hay nada que
+  proteger. Apenas se registra el primer pago, volver a quitar un ítem sí
+  pide clave, para dejar rastro. El botón cambió de un texto "Anular" a
+  una "✕" compacta.
+- **Buscar venta y ver el detalle (vale) con opción de imprimir**: nueva
+  pantalla "Buscar venta" (por rango de fechas o N° de venta) que muestra
+  el detalle completo de una venta ya confirmada — productos, cantidades,
+  medios de pago, total — con un botón "Imprimir" que usa la impresora que
+  ya esté configurada en Windows (sin integrar una impresora térmica
+  especial; `window.print()` con estilos propios para que solo se imprima
+  el vale, no el resto de la pantalla).
 
 ## Decisiones tomadas en el módulo de inventario
 - La merma hoy no se registra formalmente (confirmado con el usuario) — este
@@ -376,6 +397,23 @@ desde el programa instalado.
 - "Ajuste" por conteo físico que encuentra *más* stock del registrado se
   maneja como una entrada sin proveedor (no se creó un tercer tipo de
   movimiento que sume o reste).
+- **N° de factura del proveedor**: campo opcional en las entradas por
+  compra (junto a proveedor/costo), a pedido del usuario, para tener el
+  respaldo de la factura ligado a esa compra. Se puede buscar/filtrar el
+  historial de movimientos por ese número. No es un módulo de facturas
+  separado — es solo un dato más de la entrada que ya se registraba.
+
+## Módulo de gastos generales
+Nuevo módulo, a pedido del usuario, para gastos del negocio que **no** son
+compra de mercadería (sueldos, luz, agua, arriendo, etc. — la mercadería se
+sigue registrando aparte, como entrada de inventario). Cada gasto es un
+registro simple: fecha, categoría (texto libre, con sugerencias comunes),
+descripción opcional, monto, quién lo registró. Pantalla con resumen por
+categoría y total de un rango de fechas (para armar la planilla de fin de
+mes), formulario para registrar, y opción de eliminar un gasto mal
+ingresado (a diferencia del historial de precios/inventario, un gasto no
+tiene ningún efecto en cadena sobre otros datos, así que corregirlo
+borrándolo es seguro).
 
 ## Decisiones tomadas en el asistente de IA
 - **Regla central de seguridad: "la IA propone, la persona confirma"** — sin

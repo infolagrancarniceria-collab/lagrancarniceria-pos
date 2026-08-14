@@ -117,10 +117,19 @@ export default function PuntoDeVenta() {
     if (!venta || !usuario) return;
     setError(null);
     setMensaje(null);
-    const clave = window.prompt("Clave de supervisor para anular este ítem:");
-    if (!clave) return;
+    // Antes de registrar cualquier pago, quitar un ítem es solo corregir el
+    // carrito (ej. el cliente cambia de opinión) — no hace falta clave.
+    // Una vez que hay pagos registrados, sí se pide, para dejar rastro.
+    let clave: string | null = null;
+    if (venta.pagos.length > 0) {
+      clave = window.prompt("Clave de supervisor para anular este ítem:");
+      if (!clave) return;
+    }
     try {
-      const actualizada = await api.caja.anularItem(venta.id, itemId, { clave, usuarioId: usuario.id });
+      const actualizada = await api.caja.anularItem(venta.id, itemId, {
+        clave: clave ?? undefined,
+        usuarioId: usuario.id,
+      });
       setVenta(actualizada);
       setMensaje("Ítem anulado");
     } catch (e) {
@@ -304,8 +313,13 @@ export default function PuntoDeVenta() {
                   {item.anulado ? (
                     "Anulado"
                   ) : (
-                    <button type="button" onClick={() => anularItem(item.id)}>
-                      Anular
+                    <button
+                      type="button"
+                      className="boton-quitar-item"
+                      title="Quitar del carrito"
+                      onClick={() => anularItem(item.id)}
+                    >
+                      ✕
                     </button>
                   )}
                 </td>

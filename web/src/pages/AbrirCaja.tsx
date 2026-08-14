@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
+import { TecladoNumerico } from "../components/TecladoNumerico";
 
 export default function AbrirCaja() {
   const { usuario } = useUsuario();
@@ -38,14 +39,17 @@ export default function AbrirCaja() {
       <form onSubmit={abrir} onKeyDown={manejarEnterComoTab} className="formulario">
         <label>
           Fondo fijo inicial
-          <input
-            type="number"
-            min="0"
-            value={fondoFijoInicial}
-            onChange={(e) => setFondoFijoInicial(e.target.value)}
-            placeholder="ej. 20000"
-            required
-          />
+          <div className="fila-inline">
+            <input
+              type="number"
+              min="0"
+              value={fondoFijoInicial}
+              onChange={(e) => setFondoFijoInicial(e.target.value)}
+              placeholder="ej. 20000"
+              required
+            />
+            <TecladoNumerico valor={fondoFijoInicial} onCambiar={setFondoFijoInicial} />
+          </div>
         </label>
         <div className="acciones-formulario">
           <button type="submit" className="boton boton-primario" disabled={guardando}>

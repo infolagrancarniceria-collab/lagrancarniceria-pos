@@ -11,14 +11,18 @@ const etiquetasMotivo: Record<string, string> = {
 export default function MovimientosInventario() {
   const [movimientos, setMovimientos] = useState<MovimientoInventario[]>([]);
   const [tipo, setTipo] = useState<"" | "entrada" | "salida">("");
+  const [numeroFactura, setNumeroFactura] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api.inventario
-      .movimientos(tipo ? { tipo } : {})
-      .then(setMovimientos)
-      .catch((e) => setError(e.message));
-  }, [tipo]);
+    const timeout = setTimeout(() => {
+      api.inventario
+        .movimientos({ ...(tipo ? { tipo } : {}), ...(numeroFactura ? { numeroFactura } : {}) })
+        .then(setMovimientos)
+        .catch((e) => setError(e.message));
+    }, 250);
+    return () => clearTimeout(timeout);
+  }, [tipo, numeroFactura]);
 
   return (
     <div>
@@ -31,6 +35,12 @@ export default function MovimientosInventario() {
           <option value="entrada">Solo entradas</option>
           <option value="salida">Solo salidas</option>
         </select>
+        <input
+          type="text"
+          placeholder="Buscar por N° de factura..."
+          value={numeroFactura}
+          onChange={(e) => setNumeroFactura(e.target.value)}
+        />
       </div>
 
       <table className="tabla">
@@ -42,6 +52,7 @@ export default function MovimientosInventario() {
             <th>Motivo</th>
             <th>Cantidad</th>
             <th>Proveedor</th>
+            <th>N° Factura</th>
             <th>Usuario</th>
           </tr>
         </thead>
@@ -56,12 +67,13 @@ export default function MovimientosInventario() {
               <td>{etiquetasMotivo[m.motivo] ?? m.motivo}</td>
               <td>{m.cantidad}</td>
               <td>{m.proveedor?.nombre ?? "—"}</td>
+              <td>{m.numeroFactura ?? "—"}</td>
               <td>{m.usuario.nombre}</td>
             </tr>
           ))}
           {movimientos.length === 0 && (
             <tr>
-              <td colSpan={7}>Todavía no hay movimientos registrados.</td>
+              <td colSpan={8}>Todavía no hay movimientos registrados.</td>
             </tr>
           )}
         </tbody>

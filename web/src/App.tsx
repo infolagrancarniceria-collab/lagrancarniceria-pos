@@ -21,6 +21,8 @@ import PuntoDeVenta from "./pages/PuntoDeVenta";
 import CerrarCaja from "./pages/CerrarCaja";
 import SesionesCaja from "./pages/SesionesCaja";
 import CreditosPendientes from "./pages/CreditosPendientes";
+import BuscarVenta from "./pages/BuscarVenta";
+import Gastos from "./pages/Gastos";
 import Configuracion from "./pages/Configuracion";
 import Asistente from "./pages/Asistente";
 import Balanza from "./pages/Balanza";
@@ -51,6 +53,8 @@ export default function App() {
             <Route path="/caja/cerrar" element={<CerrarCaja />} />
             <Route path="/caja/sesiones" element={<SesionesCaja />} />
             <Route path="/caja/creditos" element={<CreditosPendientes />} />
+            <Route path="/caja/buscar" element={<BuscarVenta />} />
+            <Route path="/gastos" element={<Gastos />} />
             <Route path="/asistente" element={<Asistente />} />
             <Route path="/balanza" element={<Balanza />} />
             <Route path="/configuracion" element={<Configuracion />} />

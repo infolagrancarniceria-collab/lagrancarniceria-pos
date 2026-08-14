@@ -73,6 +73,9 @@ export default function Caja() {
           <Link to="/caja/creditos" className="boton">
             Créditos pendientes
           </Link>
+          <Link to="/caja/buscar" className="boton">
+            Buscar venta
+          </Link>
         </div>
       </div>
       {error && <p className="error">{error}</p>}

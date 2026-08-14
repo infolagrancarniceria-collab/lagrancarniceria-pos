@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "../db";
 import { hashClave, verificarClave } from "../lib/clave";
 import { decodificarCodigoBalanza } from "../lib/codigoBarras";
+import { rangoFechasDesdeTexto } from "./reportes";
 
 export const cajaRouter = Router();
 
@@ -188,6 +189,24 @@ cajaRouter.post("/sesiones/:id/cerrar", async (req, res) => {
 
 // --- Ventas ---
 
+// Buscar ventas confirmadas (pagadas) por rango de fechas y/o N° de venta —
+// para la pantalla "Buscar venta" (ver detalle / reimprimir un vale).
+cajaRouter.get("/ventas", async (req, res) => {
+  const ventaId = req.query.ventaId ? Number(req.query.ventaId) : undefined;
+  const { desde, hasta } = rangoFechasDesdeTexto(req.query.desde, req.query.hasta);
+
+  const ventas = await prisma.venta.findMany({
+    where: {
+      estado: "pagada",
+      ...(ventaId ? { id: ventaId } : { fecha: { gte: desde, lte: hasta } }),
+    },
+    include: { usuario: true, items: true, pagos: true },
+    orderBy: { fecha: "desc" },
+    take: 200,
+  });
+  res.json(ventas);
+});
+
 cajaRouter.get("/ventas/abierta", async (_req, res) => {
   const sesion = await prisma.sesionCaja.findFirst({ where: { estado: "abierta" } });
   if (!sesion) return res.json(null);
@@ -336,7 +355,7 @@ async function recalcularTotal(ventaId: number) {
 }
 
 const anularItemSchema = z.object({
-  clave: z.string().min(1, "Falta la clave de supervisor"),
+  clave: z.string().trim().optional().nullable(),
   usuarioId: z.number().int().positive(),
   motivo: z.string().trim().optional().nullable(),
 });
@@ -353,17 +372,24 @@ cajaRouter.delete("/ventas/:id/items/:itemId", async (req, res) => {
   const usuario = await validarUsuario(usuarioId);
   if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
 
-  const claveSupervisor = await prisma.claveSupervisor.findFirst();
-  if (!claveSupervisor || !verificarClave(clave, claveSupervisor.hashClave)) {
-    return res.status(403).json({ error: "Clave de supervisor incorrecta" });
-  }
-
   const item = await prisma.itemVenta.findUnique({ where: { id: itemId } });
   if (!item || item.ventaId !== ventaId) return res.status(404).json({ error: "Ítem no encontrado" });
 
-  const venta = await prisma.venta.findUnique({ where: { id: ventaId } });
+  const venta = await prisma.venta.findUnique({ where: { id: ventaId }, include: { pagos: true } });
   if (!venta || venta.estado !== "abierta") {
     return res.status(400).json({ error: "Esta venta ya no admite cambios" });
+  }
+
+  // Si todavía no se registró ningún pago, no hay plata ni stock comprometido
+  // — se puede sacar el ítem del carrito sin pedir clave de supervisor
+  // (ej. el cliente cambia de opinión antes de pagar). Una vez que empezó a
+  // registrarse el pago, sí se pide clave, para dejar rastro de auditoría.
+  if (venta.pagos.length > 0) {
+    if (!clave) return res.status(400).json({ error: "Falta la clave de supervisor" });
+    const claveSupervisor = await prisma.claveSupervisor.findFirst();
+    if (!claveSupervisor || !verificarClave(clave, claveSupervisor.hashClave)) {
+      return res.status(403).json({ error: "Clave de supervisor incorrecta" });
+    }
   }
 
   await prisma.itemVenta.update({
