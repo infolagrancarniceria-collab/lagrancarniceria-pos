@@ -308,3 +308,51 @@ select {
 .resultado-item:hover {
   background: #efe9e2;
 }
+
+/* Teclado numérico en pantalla, estilo caja registradora antigua. */
+.teclado-numerico {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.4rem;
+  width: fit-content;
+}
+.tecla-numerica {
+  width: 3rem;
+  height: 3rem;
+  font-size: 1.2rem;
+  font-weight: 600;
+  padding: 0;
+  background: white;
+}
+.tecla-numerica:hover {
+  background: #efe9e2;
+}
+
+/* Botones grandes de medio de pago, con ícono, en vez de un desplegable. */
+.medios-pago {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+.medio-pago-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  width: 7.5rem;
+  padding: 1rem 0.5rem;
+  background: white;
+  border: 2px solid var(--color-borde);
+  border-radius: 10px;
+  font-weight: 600;
+}
+.medio-pago-tile:hover {
+  background: #efe9e2;
+}
+.medio-pago-tile.activo {
+  border-color: var(--color-primario, #8a2c1f);
+  background: #fdf0ec;
+}
+.medio-pago-icono {
+  font-size: 1.8rem;
+}

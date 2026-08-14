@@ -346,6 +346,15 @@ desde el programa instalado.
 - **Pantalla de Caja con letra y botones más grandes** (clase
   `.punto-de-venta`) — pensado para uso de pie en el mesón, no sentado
   frente a un mouse/teclado tradicional.
+- **Teclado numérico en pantalla y medios de pago con íconos**, al estilo
+  del sistema anterior (Gexus) — el usuario mostró fotos del sistema viejo
+  y pidió replicar esos dos elementos puntuales (confirmó que el mesón usa
+  mouse y teclado normal, no pantalla táctil, así que no se rehizo toda la
+  pantalla al estilo del sistema viejo, solo estas dos partes). El teclado
+  (`TecladoNumerico`) es un agregado junto a los campos de Cantidad y
+  Efectivo recibido — el teclado físico se sigue pudiendo usar igual. Los
+  medios de pago (antes un `<select>`) ahora son dos botones grandes con
+  ícono (💵 Efectivo / 💳 Tarjeta, los únicos que maneja el sistema).
 
 ## Decisiones tomadas en el módulo de inventario
 - La merma hoy no se registra formalmente (confirmado con el usuario) — este

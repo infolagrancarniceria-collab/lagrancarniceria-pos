@@ -4,6 +4,7 @@ import { api, formatoCLP, type MedioPago, type Producto, type Venta } from "../a
 import { useUsuario } from "../context/UsuarioContext";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 import { useEscanerCodigoBarras } from "../hooks/useEscanerCodigoBarras";
+import { TecladoNumerico } from "../components/TecladoNumerico";
 
 export default function PuntoDeVenta() {
   const { usuario } = useUsuario();
@@ -263,6 +264,7 @@ export default function PuntoDeVenta() {
             value={cantidad}
             onChange={(e) => setCantidad(e.target.value)}
           />
+          <TecladoNumerico valor={cantidad} onCambiar={setCantidad} />
           <button type="submit" className="boton boton-primario">
             Agregar al carrito
           </button>
@@ -311,11 +313,25 @@ export default function PuntoDeVenta() {
 
       <section className="tarjeta">
         <h2>Pagos</h2>
+        <div className="medios-pago">
+          <button
+            type="button"
+            className={`medio-pago-tile ${medioPago === "efectivo" ? "activo" : ""}`}
+            onClick={() => setMedioPago("efectivo")}
+          >
+            <span className="medio-pago-icono">💵</span>
+            Efectivo
+          </button>
+          <button
+            type="button"
+            className={`medio-pago-tile ${medioPago === "tarjeta" ? "activo" : ""}`}
+            onClick={() => setMedioPago("tarjeta")}
+          >
+            <span className="medio-pago-icono">💳</span>
+            Tarjeta
+          </button>
+        </div>
         <form onSubmit={agregarPago} onKeyDown={manejarEnterComoTab} className="fila-inline">
-          <select value={medioPago} onChange={(e) => setMedioPago(e.target.value as MedioPago)}>
-            <option value="efectivo">Efectivo</option>
-            <option value="tarjeta">Tarjeta</option>
-          </select>
           <input
             type="number"
             min="1"
@@ -323,6 +339,7 @@ export default function PuntoDeVenta() {
             value={montoPago}
             onChange={(e) => setMontoPago(e.target.value)}
           />
+          <TecladoNumerico valor={montoPago} onCambiar={setMontoPago} />
           <button type="submit">Agregar pago</button>
           {vueltoPreview > 0 && <span className="exito">Vuelto: {formatoCLP(vueltoPreview)}</span>}
         </form>
