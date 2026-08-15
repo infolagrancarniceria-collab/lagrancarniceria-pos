@@ -215,6 +215,7 @@ export interface Venta {
   descuentoTipo: "porcentaje" | "monto_fijo" | null;
   descuentoValor: number | null;
   usuarioAnulacionId: number | null;
+  motivoAnulacion: string | null;
   fechaAnulacion: string | null;
   items: ItemVenta[];
   pagos: PagoVenta[];
@@ -556,7 +557,7 @@ export const api = {
       del<Venta>(`/api/caja/ventas/${ventaId}/pagos/${pagoId}`),
     confirmarVenta: (ventaId: number, usuarioId: number) =>
       post<Venta>(`/api/caja/ventas/${ventaId}/confirmar`, { usuarioId }),
-    cancelarVenta: (ventaId: number, data: { clave: string; usuarioId: number }) =>
+    cancelarVenta: (ventaId: number, data: { clave: string; usuarioId: number; motivo?: string }) =>
       post<Venta>(`/api/caja/ventas/${ventaId}/cancelar`, data),
     creditosPendientes: () => get<PagoVenta[]>("/api/caja/creditos-pendientes"),
     cobrarCredito: (pagoId: number, data: { medioCobro: MedioCobro; usuarioId: number }) =>

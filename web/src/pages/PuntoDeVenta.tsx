@@ -142,10 +142,10 @@ export default function PuntoDeVenta() {
   // Anular un ítem del carrito siempre pide clave de supervisor y el nombre
   // de quien autoriza (no necesariamente el cajero con la sesión abierta),
   // vía el modal ModalConfirmarClave — se abre marcando itemAAnular.
-  async function confirmarAnularItem(usuarioId: number, clave: string) {
+  async function confirmarAnularItem(usuarioId: number, clave: string, motivo?: string) {
     if (!venta || itemAAnular == null) return;
     setMensaje(null);
-    const actualizada = await api.caja.anularItem(venta.id, itemAAnular, { clave, usuarioId });
+    const actualizada = await api.caja.anularItem(venta.id, itemAAnular, { clave, usuarioId, motivo });
     setVenta(actualizada);
     setMensaje("Ítem anulado");
     setItemAAnular(null);
@@ -266,9 +266,9 @@ export default function PuntoDeVenta() {
 
   // Igual que anular un ítem, cancelar toda la venta pide clave de
   // supervisor y el nombre de quien autoriza, vía ModalConfirmarClave.
-  async function confirmarCancelarVenta(usuarioId: number, clave: string) {
+  async function confirmarCancelarVenta(usuarioId: number, clave: string, motivo?: string) {
     if (!venta) return;
-    await api.caja.cancelarVenta(venta.id, { usuarioId, clave });
+    await api.caja.cancelarVenta(venta.id, { usuarioId, clave, motivo });
     navigate("/caja");
   }
 
@@ -587,7 +587,14 @@ export default function PuntoDeVenta() {
       {itemAAnular != null && (
         <ModalConfirmarClave
           titulo="Anular producto"
-          descripcion="Elige quién autoriza y escribe la clave de supervisor."
+          descripcion="Elige el motivo, quién autoriza y la clave de supervisor."
+          motivoOpciones={[
+            "Ítem duplicado",
+            "Cliente canceló ese producto",
+            "Precio equivocado",
+            "Producto equivocado",
+            "Error de peso o cantidad",
+          ]}
           onConfirmar={confirmarAnularItem}
           onCancelar={() => setItemAAnular(null)}
         />
@@ -596,7 +603,8 @@ export default function PuntoDeVenta() {
       {cancelandoVenta && (
         <ModalConfirmarClave
           titulo="Cancelar toda la venta"
-          descripcion="No se guardará nada de esta venta. Elige quién autoriza y escribe la clave de supervisor."
+          descripcion="No se guardará nada de esta venta. Elige el motivo, quién autoriza y la clave de supervisor."
+          motivoOpciones={["Cliente canceló la compra", "Venta duplicada", "Error del cajero"]}
           onConfirmar={confirmarCancelarVenta}
           onCancelar={() => setCancelandoVenta(false)}
         />

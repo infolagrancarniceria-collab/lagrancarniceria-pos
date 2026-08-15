@@ -459,6 +459,19 @@ de que el problema no vuelve a aparecer con la próxima versión instalada.
   un ítem sin pagos registrados igual pide el modal, clave incorrecta la
   rechaza con error sin cerrar el modal, y el registro aparece correctamente
   en el detalle de la venta confirmada.
+- **Motivo de anulación, con opciones rápidas + "Otro"**: agregado al mismo
+  `ModalConfirmarClave`, con una lista corta para elegir rápido en vez de
+  escribir a mano cada vez — distinta según sea anular un producto ("Ítem
+  duplicado", "Cliente canceló ese producto", "Precio equivocado",
+  "Producto equivocado", "Error de peso o cantidad") o cancelar la venta
+  completa ("Cliente canceló la compra", "Venta duplicada", "Error del
+  cajero"), más "Otro" en ambas para texto libre cuando ninguna calza. Es
+  obligatorio elegir uno (o escribir el de "Otro") para poder confirmar,
+  igual que el nombre y la clave. `Venta` necesitó un campo
+  `motivoAnulacion` nuevo (mismo patrón que ya tenía `ItemVenta`). La tabla
+  "Productos anulados" en "Buscar venta" ahora también muestra la columna
+  Motivo. Probado end-to-end: falta elegir motivo bloquea la confirmación,
+  "Otro" muestra el campo de texto libre y lo guarda tal cual.
 - **Pantalla más compacta, en 2 columnas**: el usuario (con feedback de su
   papá probando el sistema) encontró que había que bajar mucho con el mouse
   para llegar a Pagos. Se reorganizó en dos columnas — izquierda: buscador +

@@ -253,6 +253,7 @@ model Venta {
   // confirmarla) — igual que anular un ítem, deja rastro de quién autorizó.
   usuarioAnulacionId Int?
   usuarioAnulacion   Usuario?  @relation("VentasAnuladasPorUsuario", fields: [usuarioAnulacionId], references: [id])
+  motivoAnulacion    String?
   fechaAnulacion     DateTime?
 
   items ItemVenta[]

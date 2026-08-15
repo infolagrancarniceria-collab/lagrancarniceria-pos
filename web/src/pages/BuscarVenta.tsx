@@ -156,6 +156,7 @@ export default function BuscarVenta() {
                   <tr>
                     <th>Producto</th>
                     <th>Cantidad</th>
+                    <th>Motivo</th>
                     <th>Anulado por</th>
                     <th>Fecha</th>
                   </tr>
@@ -165,6 +166,7 @@ export default function BuscarVenta() {
                     <tr key={item.id}>
                       <td>{item.producto.descripcion}</td>
                       <td>{item.cantidad}</td>
+                      <td>{item.motivoAnulacion ?? "—"}</td>
                       <td>{item.usuarioAnulacion?.nombre ?? "—"}</td>
                       <td>{item.fechaAnulacion ? new Date(item.fechaAnulacion).toLocaleString("es-CL") : "—"}</td>
                     </tr>

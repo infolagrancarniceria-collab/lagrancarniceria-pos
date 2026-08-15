@@ -621,6 +621,7 @@ cajaRouter.post("/ventas/:id/confirmar", async (req, res) => {
 const cancelarVentaSchema = z.object({
   clave: z.string().trim().min(1, "Falta la clave de supervisor"),
   usuarioId: z.number().int().positive(),
+  motivo: z.string().trim().optional().nullable(),
 });
 
 cajaRouter.post("/ventas/:id/cancelar", async (req, res) => {
@@ -629,7 +630,7 @@ cajaRouter.post("/ventas/:id/cancelar", async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.issues[0].message });
   }
-  const { clave, usuarioId } = parsed.data;
+  const { clave, usuarioId, motivo } = parsed.data;
 
   const usuario = await validarUsuario(usuarioId);
   if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
@@ -645,7 +646,7 @@ cajaRouter.post("/ventas/:id/cancelar", async (req, res) => {
 
   const ventaCancelada = await prisma.venta.update({
     where: { id: ventaId },
-    data: { estado: "anulada", usuarioAnulacionId: usuarioId, fechaAnulacion: new Date() },
+    data: { estado: "anulada", usuarioAnulacionId: usuarioId, motivoAnulacion: motivo || null, fechaAnulacion: new Date() },
   });
   res.json(ventaCancelada);
 });
