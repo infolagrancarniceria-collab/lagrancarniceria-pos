@@ -23,6 +23,7 @@ import SesionesCaja from "./pages/SesionesCaja";
 import CreditosPendientes from "./pages/CreditosPendientes";
 import BuscarVenta from "./pages/BuscarVenta";
 import Gastos from "./pages/Gastos";
+import Comunas from "./pages/Comunas";
 import Configuracion from "./pages/Configuracion";
 import Asistente from "./pages/Asistente";
 import Balanza from "./pages/Balanza";
@@ -55,6 +56,7 @@ export default function App() {
             <Route path="/caja/creditos" element={<CreditosPendientes />} />
             <Route path="/caja/buscar" element={<BuscarVenta />} />
             <Route path="/gastos" element={<Gastos />} />
+            <Route path="/comunas" element={<Comunas />} />
             <Route path="/asistente" element={<Asistente />} />
             <Route path="/balanza" element={<Balanza />} />
             <Route path="/configuracion" element={<Configuracion />} />

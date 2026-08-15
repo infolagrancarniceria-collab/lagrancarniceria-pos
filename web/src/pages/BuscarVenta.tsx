@@ -122,6 +122,11 @@ export default function BuscarVenta() {
             Venta #{ventaDetalle.id} — {new Date(ventaDetalle.fecha).toLocaleString("es-CL")}
           </p>
           <p>Vendedor: {ventaDetalle.usuario?.nombre ?? "—"}</p>
+          {ventaDetalle.esDespacho && (
+            <p>
+              Despacho a {ventaDetalle.comuna?.nombre ?? "—"} ({formatoCLP(ventaDetalle.costoEnvio ?? 0)})
+            </p>
+          )}
           <table className="tabla">
             <thead>
               <tr>

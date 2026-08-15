@@ -163,3 +163,41 @@ reportesRouter.get("/ventas", async (req, res) => {
   const query = req.query as Record<string, unknown>;
   res.json(await calcularReporteVentas(query.desde, query.hasta));
 });
+
+reportesRouter.get("/despachos", async (req, res) => {
+  const { desde, hasta } = rangoFechas(req.query as Record<string, unknown>);
+
+  const ventas = await prisma.venta.findMany({
+    where: { estado: "pagada", esDespacho: true, fecha: { gte: desde, lte: hasta } },
+    include: { comuna: true },
+  });
+
+  const porComuna = new Map<
+    string,
+    { comuna: string; cantidadDespachos: number; totalCostoEnvio: number; totalVentas: number }
+  >();
+  for (const v of ventas) {
+    const nombre = v.comuna?.nombre ?? "Sin comuna";
+    const actual = porComuna.get(nombre) ?? {
+      comuna: nombre,
+      cantidadDespachos: 0,
+      totalCostoEnvio: 0,
+      totalVentas: 0,
+    };
+    actual.cantidadDespachos += 1;
+    actual.totalCostoEnvio += v.costoEnvio ?? 0;
+    actual.totalVentas += v.total;
+    porComuna.set(nombre, actual);
+  }
+  const porComunaOrdenado = Array.from(porComuna.values()).sort(
+    (a, b) => b.cantidadDespachos - a.cantidadDespachos
+  );
+
+  res.json({
+    desde: desde.toISOString(),
+    hasta: hasta.toISOString(),
+    cantidadDespachos: ventas.length,
+    totalCostoEnvio: ventas.reduce((s, v) => s + (v.costoEnvio ?? 0), 0),
+    porComuna: porComunaOrdenado,
+  });
+});

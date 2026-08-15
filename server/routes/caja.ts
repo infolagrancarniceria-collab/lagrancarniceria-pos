@@ -213,7 +213,7 @@ cajaRouter.get("/ventas/abierta", async (_req, res) => {
 
   const venta = await prisma.venta.findFirst({
     where: { sesionCajaId: sesion.id, estado: "abierta" },
-    include: { items: { include: { producto: true } }, pagos: true },
+    include: { items: { include: { producto: true } }, pagos: true, comuna: true },
   });
   res.json(venta);
 });
@@ -221,7 +221,7 @@ cajaRouter.get("/ventas/abierta", async (_req, res) => {
 cajaRouter.get("/ventas/:id", async (req, res) => {
   const venta = await prisma.venta.findUnique({
     where: { id: Number(req.params.id) },
-    include: { items: { include: { producto: true } }, pagos: true, usuario: true },
+    include: { items: { include: { producto: true } }, pagos: true, usuario: true, comuna: true },
   });
   if (!venta) return res.status(404).json({ error: "Venta no encontrada" });
   res.json(venta);
@@ -247,9 +247,50 @@ cajaRouter.post("/ventas", async (req, res) => {
 
   const venta = await prisma.venta.create({
     data: { sesionCajaId: sesion.id, usuarioId },
-    include: { items: true, pagos: true },
+    include: { items: true, pagos: true, comuna: true },
   });
   res.status(201).json(venta);
+});
+
+const despachoSchema = z.object({
+  esDespacho: z.boolean(),
+  comunaId: z.number().int().positive().optional().nullable(),
+});
+
+cajaRouter.put("/ventas/:id/despacho", async (req, res) => {
+  const ventaId = Number(req.params.id);
+  const parsed = despachoSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0].message });
+  }
+  const { esDespacho, comunaId } = parsed.data;
+
+  const venta = await prisma.venta.findUnique({ where: { id: ventaId } });
+  if (!venta) return res.status(404).json({ error: "Venta no encontrada" });
+  if (venta.estado !== "abierta") return res.status(400).json({ error: "Esta venta ya no admite cambios" });
+
+  if (!esDespacho) {
+    await prisma.venta.update({
+      where: { id: ventaId },
+      data: { esDespacho: false, comunaId: null, costoEnvio: null },
+    });
+  } else {
+    if (!comunaId) return res.status(400).json({ error: "Falta elegir la comuna" });
+    const comuna = await prisma.comuna.findUnique({ where: { id: comunaId } });
+    if (!comuna) return res.status(400).json({ error: "La comuna indicada no existe" });
+
+    await prisma.venta.update({
+      where: { id: ventaId },
+      data: { esDespacho: true, comunaId, costoEnvio: comuna.costoEnvio },
+    });
+  }
+  await recalcularTotal(ventaId);
+
+  const ventaActualizada = await prisma.venta.findUnique({
+    where: { id: ventaId },
+    include: { items: { include: { producto: true } }, pagos: true, comuna: true },
+  });
+  res.json(ventaActualizada);
 });
 
 const agregarItemSchema = z.object({
@@ -301,7 +342,7 @@ cajaRouter.post("/ventas/:id/items", async (req, res) => {
 
   const ventaActualizada = await prisma.venta.findUnique({
     where: { id: ventaId },
-    include: { items: { include: { producto: true } }, pagos: true },
+    include: { items: { include: { producto: true } }, pagos: true, comuna: true },
   });
   res.status(201).json(ventaActualizada);
 });
@@ -343,14 +384,15 @@ cajaRouter.post("/ventas/:id/items/escanear", async (req, res) => {
 
   const ventaActualizada = await prisma.venta.findUnique({
     where: { id: ventaId },
-    include: { items: { include: { producto: true } }, pagos: true },
+    include: { items: { include: { producto: true } }, pagos: true, comuna: true },
   });
   res.status(201).json(ventaActualizada);
 });
 
 async function recalcularTotal(ventaId: number) {
+  const venta = await prisma.venta.findUnique({ where: { id: ventaId } });
   const items = await prisma.itemVenta.findMany({ where: { ventaId, anulado: false } });
-  const total = items.reduce((suma, i) => suma + i.subtotal, 0);
+  const total = items.reduce((suma, i) => suma + i.subtotal, 0) + (venta?.costoEnvio ?? 0);
   await prisma.venta.update({ where: { id: ventaId }, data: { total } });
 }
 
@@ -405,7 +447,7 @@ cajaRouter.delete("/ventas/:id/items/:itemId", async (req, res) => {
 
   const ventaActualizada = await prisma.venta.findUnique({
     where: { id: ventaId },
-    include: { items: { include: { producto: true } }, pagos: true },
+    include: { items: { include: { producto: true } }, pagos: true, comuna: true },
   });
   res.json(ventaActualizada);
 });
@@ -439,7 +481,7 @@ cajaRouter.post("/ventas/:id/pagos", async (req, res) => {
 
   const ventaActualizada = await prisma.venta.findUnique({
     where: { id: ventaId },
-    include: { items: { include: { producto: true } }, pagos: true },
+    include: { items: { include: { producto: true } }, pagos: true, comuna: true },
   });
   res.status(201).json(ventaActualizada);
 });
@@ -460,7 +502,7 @@ cajaRouter.delete("/ventas/:id/pagos/:pagoId", async (req, res) => {
 
   const ventaActualizada = await prisma.venta.findUnique({
     where: { id: ventaId },
-    include: { items: { include: { producto: true } }, pagos: true },
+    include: { items: { include: { producto: true } }, pagos: true, comuna: true },
   });
   res.json(ventaActualizada);
 });
@@ -480,7 +522,7 @@ cajaRouter.post("/ventas/:id/confirmar", async (req, res) => {
 
   const venta = await prisma.venta.findUnique({
     where: { id: ventaId },
-    include: { items: { include: { producto: true } }, pagos: true },
+    include: { items: { include: { producto: true } }, pagos: true, comuna: true },
   });
   if (!venta) return res.status(404).json({ error: "Venta no encontrada" });
   if (venta.estado !== "abierta") return res.status(400).json({ error: "Esta venta ya fue procesada" });
@@ -523,7 +565,7 @@ cajaRouter.post("/ventas/:id/confirmar", async (req, res) => {
 
   const ventaFinal = await prisma.venta.findUnique({
     where: { id: ventaId },
-    include: { items: { include: { producto: true } }, pagos: true },
+    include: { items: { include: { producto: true } }, pagos: true, comuna: true },
   });
   res.json(ventaFinal);
 });

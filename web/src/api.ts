@@ -51,6 +51,21 @@ export interface ProductoConStock extends Producto {
   bajoStock: boolean;
 }
 
+export interface Comuna {
+  id: number;
+  nombre: string;
+  costoEnvio: number;
+  activo: boolean;
+}
+
+export interface ReporteDespachos {
+  desde: string;
+  hasta: string;
+  cantidadDespachos: number;
+  totalCostoEnvio: number;
+  porComuna: { comuna: string; cantidadDespachos: number; totalCostoEnvio: number; totalVentas: number }[];
+}
+
 export interface Proveedor {
   id: number;
   nombre: string;
@@ -175,6 +190,10 @@ export interface Venta {
   fecha: string;
   estado: "abierta" | "pagada" | "anulada";
   total: number;
+  esDespacho: boolean;
+  comunaId: number | null;
+  comuna: Comuna | null;
+  costoEnvio: number | null;
   items: ItemVenta[];
   pagos: PagoVenta[];
 }
@@ -405,6 +424,13 @@ export const api = {
     crear: (data: { nombre: string; contacto?: string | null }) =>
       post<Proveedor>("/api/proveedores", data),
   },
+  comunas: {
+    listar: () => get<Comuna[]>("/api/comunas"),
+    crear: (data: { nombre: string; costoEnvio: number }) => post<Comuna>("/api/comunas", data),
+    actualizar: (id: number, data: { nombre: string; costoEnvio: number }) =>
+      put<Comuna>(`/api/comunas/${id}`, data),
+    eliminar: (id: number) => del<void>(`/api/comunas/${id}`),
+  },
   inventario: {
     stock: (soloBajo = false, categoriaId?: number) => {
       const qs = new URLSearchParams();
@@ -459,6 +485,13 @@ export const api = {
       const query = qs.toString();
       return get<ReporteVentas>(`/api/reportes/ventas${query ? `?${query}` : ""}`);
     },
+    despachos: (desde?: string, hasta?: string) => {
+      const qs = new URLSearchParams();
+      if (desde) qs.set("desde", desde);
+      if (hasta) qs.set("hasta", hasta);
+      const query = qs.toString();
+      return get<ReporteDespachos>(`/api/reportes/despachos${query ? `?${query}` : ""}`);
+    },
   },
   caja: {
     estadoClave: () => get<{ configurada: boolean }>("/api/caja/clave-supervisor/estado"),
@@ -503,6 +536,8 @@ export const api = {
     creditosPendientes: () => get<PagoVenta[]>("/api/caja/creditos-pendientes"),
     cobrarCredito: (pagoId: number, data: { medioCobro: MedioCobro; usuarioId: number }) =>
       post<PagoVenta>(`/api/caja/creditos/${pagoId}/cobrar`, data),
+    actualizarDespacho: (ventaId: number, data: { esDespacho: boolean; comunaId?: number | null }) =>
+      put<Venta>(`/api/caja/ventas/${ventaId}/despacho`, data),
   },
   configuracion: {
     estadoIA: () => get<{ configurada: boolean }>("/api/configuracion/ia/estado"),

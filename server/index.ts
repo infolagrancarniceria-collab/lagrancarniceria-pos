@@ -15,6 +15,7 @@ import { configuracionRouter } from "./routes/configuracion";
 import { asistenteRouter } from "./routes/asistente";
 import { balanzaRouter } from "./routes/balanza";
 import { gastosRouter } from "./routes/gastos";
+import { comunasRouter } from "./routes/comunas";
 import { aplicarMigracionesPendientes } from "./lib/migraciones";
 
 const app = express();
@@ -35,6 +36,7 @@ app.use("/api/configuracion", configuracionRouter);
 app.use("/api/asistente", asistenteRouter);
 app.use("/api/balanza", balanzaRouter);
 app.use("/api/gastos", gastosRouter);
+app.use("/api/comunas", comunasRouter);
 
 // En producción, el mismo servidor sirve la interfaz web ya compilada
 // (así la tablet/celular en la red del local también puede entrar por navegador).

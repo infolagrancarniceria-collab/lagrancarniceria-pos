@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, formatoCLP, type ReporteInventario, type ReportePrecios, type ReporteVentas } from "../api";
+import { api, formatoCLP, type ReporteDespachos, type ReporteInventario, type ReportePrecios, type ReporteVentas } from "../api";
 
 const etiquetasMotivo: Record<string, string> = {
   venta: "Venta",
@@ -29,6 +29,7 @@ export default function Reportes() {
   const [reporteInventario, setReporteInventario] = useState<ReporteInventario | null>(null);
   const [reportePrecios, setReportePrecios] = useState<ReportePrecios | null>(null);
   const [reporteVentas, setReporteVentas] = useState<ReporteVentas | null>(null);
+  const [reporteDespachos, setReporteDespachos] = useState<ReporteDespachos | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(false);
 
@@ -39,11 +40,13 @@ export default function Reportes() {
       api.reportes.inventario(desde, hasta),
       api.reportes.precios(desde, hasta),
       api.reportes.ventas(desde, hasta),
+      api.reportes.despachos(desde, hasta),
     ])
-      .then(([inv, prec, ventas]) => {
+      .then(([inv, prec, ventas, despachos]) => {
         setReporteInventario(inv);
         setReportePrecios(prec);
         setReporteVentas(ventas);
+        setReporteDespachos(despachos);
       })
       .catch((e) => setError(e.message))
       .finally(() => setCargando(false));
@@ -131,6 +134,47 @@ export default function Reportes() {
               {reporteVentas.masVendidosPorIngreso.length === 0 && (
                 <tr>
                   <td colSpan={4}>No hubo ventas en este período.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </section>
+      )}
+
+      {reporteDespachos && (
+        <section className="tarjeta">
+          <h2>Despachos</h2>
+          <div className="fila-inline">
+            <div>
+              <strong>Cantidad de despachos:</strong> {reporteDespachos.cantidadDespachos}
+            </div>
+            <div>
+              <strong>Total cobrado por envío:</strong> {formatoCLP(reporteDespachos.totalCostoEnvio)}
+            </div>
+          </div>
+
+          <h3>Por comuna</h3>
+          <table className="tabla">
+            <thead>
+              <tr>
+                <th>Comuna</th>
+                <th>Cantidad de despachos</th>
+                <th>Total cobrado por envío</th>
+                <th>Total vendido (incluye envío)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {reporteDespachos.porComuna.map((c) => (
+                <tr key={c.comuna}>
+                  <td>{c.comuna}</td>
+                  <td>{c.cantidadDespachos}</td>
+                  <td>{formatoCLP(c.totalCostoEnvio)}</td>
+                  <td>{formatoCLP(c.totalVentas)}</td>
+                </tr>
+              ))}
+              {reporteDespachos.porComuna.length === 0 && (
+                <tr>
+                  <td colSpan={4}>No hubo despachos en este período.</td>
                 </tr>
               )}
             </tbody>

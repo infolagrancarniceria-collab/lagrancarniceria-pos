@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, formatoCLP, type MedioPago, type Producto, type Venta } from "../api";
+import { api, formatoCLP, type Comuna, type MedioPago, type Producto, type Venta } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 import { useEscanerCodigoBarras } from "../hooks/useEscanerCodigoBarras";
@@ -12,6 +12,8 @@ export default function PuntoDeVenta() {
 
   const [venta, setVenta] = useState<Venta | null>(null);
   const [productos, setProductos] = useState<Producto[]>([]);
+  const [comunas, setComunas] = useState<Comuna[]>([]);
+  const [mostrarSelectorComuna, setMostrarSelectorComuna] = useState(false);
   const [buscar, setBuscar] = useState("");
   const [productoSeleccionado, setProductoSeleccionado] = useState<Producto | null>(null);
   const [cantidad, setCantidad] = useState("");
@@ -30,7 +32,13 @@ export default function PuntoDeVenta() {
   }, [venta]);
 
   useEffect(() => {
+    setMostrarSelectorComuna(venta?.esDespacho ?? false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [venta?.id]);
+
+  useEffect(() => {
     iniciarVenta();
+    api.comunas.listar().then(setComunas).catch((e) => setError(e.message));
   }, []);
 
   useEffect(() => {
@@ -177,6 +185,17 @@ export default function PuntoDeVenta() {
       if (vueltoAEntregar > 0) {
         window.alert(`Vuelto: ${formatoCLP(vueltoAEntregar)}`);
       }
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function actualizarDespacho(esDespacho: boolean, comunaId: number | null) {
+    if (!venta) return;
+    setError(null);
+    try {
+      const actualizada = await api.caja.actualizarDespacho(venta.id, { esDespacho, comunaId });
+      setVenta(actualizada);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -333,6 +352,37 @@ export default function PuntoDeVenta() {
           </tbody>
         </table>
         <h2>Total: {formatoCLP(totalVenta)}</h2>
+      </section>
+
+      <section className="tarjeta">
+        <h2>Despacho</h2>
+        <label className="fila-inline" style={{ marginBottom: mostrarSelectorComuna ? "0.75rem" : 0 }}>
+          <input
+            type="checkbox"
+            checked={mostrarSelectorComuna}
+            onChange={(e) => {
+              setMostrarSelectorComuna(e.target.checked);
+              if (!e.target.checked) actualizarDespacho(false, null);
+            }}
+          />
+          Es despacho a domicilio
+        </label>
+        {mostrarSelectorComuna && (
+          <select
+            value={venta.comunaId ?? ""}
+            onChange={(e) => {
+              const comunaId = e.target.value ? Number(e.target.value) : null;
+              if (comunaId) actualizarDespacho(true, comunaId);
+            }}
+          >
+            <option value="">Elegir comuna...</option>
+            {comunas.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.nombre} ({formatoCLP(c.costoEnvio)})
+              </option>
+            ))}
+          </select>
+        )}
       </section>
 
       <section className="tarjeta">

@@ -273,6 +273,7 @@ Todo corre **local**, en el PC de la carnicería, sin depender de internet:
 5. **Caja / punto de venta** — listo (apertura con fondo fijo, punto de venta con carrito y pagos combinados efectivo/tarjeta/crédito, anulación de ítems con clave de supervisor solo una vez que hay pagos registrados, cierre con reporte X/Z y diferencia de efectivo). Crédito (fiado) agregado luego a pedido del usuario — ver "Decisiones tomadas en el módulo de caja" para el detalle (solo pide nombre del cliente, pantalla aparte de "Créditos pendientes" para cobrar después). También "Buscar venta" (por fecha o N° de venta) para ver el detalle/vale de una venta pasada e imprimirlo. Cada venta confirmada genera automáticamente movimientos de inventario (motivo "venta"), reutilizando la misma validación de stock del módulo de inventario.
 6. **Asistente de IA** — listo y **confirmado funcionando con una clave de API real** por el usuario. Ver "Decisiones tomadas en el asistente de IA" más abajo.
 7. **Gastos generales** — listo: registro de gastos del negocio (sueldos, luz, agua, etc., separado de las compras de mercadería) con resumen por categoría y total por rango de fechas. Ver "Módulo de gastos generales" más abajo.
+8. **Despachos a domicilio** — listo: comunas con costo de envío fijo, marcar una venta como despacho (suma el costo al total), y reporte por comuna. Ver "Módulo de despachos a domicilio" más abajo.
 
 ## Instalador de Windows
 Armado con `electron-builder` (`npm run dist:win`, ver README para el
@@ -414,6 +415,39 @@ mes), formulario para registrar, y opción de eliminar un gasto mal
 ingresado (a diferencia del historial de precios/inventario, un gasto no
 tiene ningún efecto en cadena sobre otros datos, así que corregirlo
 borrándolo es seguro).
+
+## Módulo de despachos a domicilio
+Nuevo, a pedido del usuario, para poder informarle al asistente de IA
+estadísticas de a qué comunas se despachan más pedidos y cuánto se cobra
+por envío — antes esto no existía en el sistema (los pedidos con despacho
+de la página web separada quedan solo en su propia planilla de Google
+Sheets, sin relación con este sistema).
+
+- **Comunas** (pantalla nueva, enlazada desde Caja): lista fija de
+  comunas con su costo de envío predefinido — el usuario prefirió esto
+  antes que texto libre, para que el cajero elija de una lista en vez de
+  escribir la comuna cada vez (evita errores de tipeo y hace las
+  estadísticas más confiables). CRUD simple (crear, editar, eliminar).
+- **Marcar una venta como despacho** (en Punto de Venta): casilla "Es
+  despacho a domicilio" + selector de comuna. El costo de envío de la
+  comuna elegida se copia a la venta (no cambia después si el costo de
+  esa comuna se actualiza) y se **suma al total que paga el cliente**.
+  No se pidió trackear cuánto se le paga a quien reparte (eso quedó
+  fuera a propósito, solo se registra lo que se cobra).
+- **Detalle técnico importante:** la casilla de despacho NO llama al
+  backend apenas se marca — primero solo muestra el selector de comuna en
+  pantalla (estado local), y el despacho recién se confirma (llamada al
+  backend, que exige una comuna) cuando se elige una comuna real. La
+  primera versión llamaba al backend apenas se marcaba la casilla, sin
+  comuna todavía, lo que el servidor rechazaba correctamente (falta la
+  comuna) — pero visualmente la casilla "rebotaba" a destildada. Se
+  corrigió antes de subir el instalador.
+- **Reporte de despachos** (en Reportes): cantidad de despachos y total
+  cobrado por envío en el rango de fechas, desglosado por comuna — para
+  responder justo lo que pidió el usuario ("¿a qué comunas se despacha
+  más?", "¿cuánto se cobra por envío?").
+- El vale/detalle de una venta (pantalla "Buscar venta") muestra la
+  comuna y el costo de envío cuando la venta fue despacho.
 
 ## Decisiones tomadas en el asistente de IA
 - **Regla central de seguridad: "la IA propone, la persona confirma"** — sin

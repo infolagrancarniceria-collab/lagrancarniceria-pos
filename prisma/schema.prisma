@@ -208,6 +208,18 @@ model SesionCaja {
   cobrosDeCredito PagoVenta[] @relation("CobrosDeCredito")
 }
 
+// Lista fija de comunas a las que se hace despacho, con su costo de envío
+// predefinido (evita que el cajero tenga que escribirlo/tipear la comuna
+// cada vez, y permite sacar estadísticas por comuna).
+model Comuna {
+  id         Int     @id @default(autoincrement())
+  nombre     String  @unique
+  costoEnvio Float
+  activo     Boolean @default(true)
+
+  ventas Venta[]
+}
+
 model Venta {
   id Int @id @default(autoincrement())
 
@@ -220,6 +232,15 @@ model Venta {
   fecha  DateTime @default(now())
   estado String   @default("abierta") // "abierta" | "pagada" | "anulada"
   total  Float    @default(0)
+
+  // Despacho (opcional): si la venta se despacha a domicilio, se marca con
+  // una comuna de la lista fija — el costo de envío se copia a la venta al
+  // elegir la comuna (no cambia después si el costo de esa comuna se
+  // actualiza) y se suma al total que paga el cliente.
+  esDespacho Boolean @default(false)
+  comunaId   Int?
+  comuna     Comuna? @relation(fields: [comunaId], references: [id])
+  costoEnvio Float?
 
   items ItemVenta[]
   pagos PagoVenta[]
