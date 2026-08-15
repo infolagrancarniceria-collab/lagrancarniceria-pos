@@ -9,11 +9,15 @@ export default function RegistrarEntrada() {
   const navigate = useNavigate();
 
   const [productos, setProductos] = useState<Producto[]>([]);
+  const [buscarProducto, setBuscarProducto] = useState("");
+  const [productoSeleccionado, setProductoSeleccionado] = useState<Producto | null>(null);
+
   const [proveedores, setProveedores] = useState<Proveedor[]>([]);
-  const [productoId, setProductoId] = useState<number | "">("");
+  const [buscarProveedor, setBuscarProveedor] = useState("");
+  const [proveedorSeleccionado, setProveedorSeleccionado] = useState<Proveedor | null>(null);
+
   const [cantidad, setCantidad] = useState("");
   const [motivo, setMotivo] = useState<"compra" | "ajuste">("compra");
-  const [proveedorId, setProveedorId] = useState<number | "">("");
   const [costoUnitario, setCostoUnitario] = useState("");
   const [numeroFactura, setNumeroFactura] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -21,15 +25,29 @@ export default function RegistrarEntrada() {
   const [guardando, setGuardando] = useState(false);
 
   useEffect(() => {
-    api.productos.listar().then(setProductos).catch((e) => setError(e.message));
     api.proveedores.listar().then(setProveedores).catch((e) => setError(e.message));
   }, []);
+
+  useEffect(() => {
+    if (!buscarProducto.trim()) {
+      setProductos([]);
+      return;
+    }
+    const timeout = setTimeout(() => {
+      api.productos.listar({ buscar: buscarProducto }).then(setProductos).catch((e) => setError(e.message));
+    }, 250);
+    return () => clearTimeout(timeout);
+  }, [buscarProducto]);
+
+  const proveedoresFiltrados = buscarProveedor.trim()
+    ? proveedores.filter((p) => p.nombre.toLowerCase().includes(buscarProveedor.trim().toLowerCase()))
+    : proveedores;
 
   async function guardar(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setMensaje(null);
-    if (!productoId || !usuario) {
+    if (!productoSeleccionado || !usuario) {
       setError("Falta elegir un producto");
       return;
     }
@@ -41,15 +59,17 @@ export default function RegistrarEntrada() {
     setGuardando(true);
     try {
       await api.inventario.entrada({
-        productoId: Number(productoId),
+        productoId: productoSeleccionado.id,
         cantidad: cant,
         motivo,
-        proveedorId: proveedorId ? Number(proveedorId) : null,
+        proveedorId: proveedorSeleccionado?.id ?? null,
         costoUnitario: costoUnitario ? Number(costoUnitario) : null,
         numeroFactura: numeroFactura.trim() || null,
         usuarioId: usuario.id,
       });
       setMensaje("Entrada registrada — el stock quedó actualizado");
+      setProductoSeleccionado(null);
+      setBuscarProducto("");
       setCantidad("");
       setCostoUnitario("");
       setNumeroFactura("");
@@ -69,14 +89,37 @@ export default function RegistrarEntrada() {
       <form onSubmit={guardar} onKeyDown={manejarEnterComoTab} className="formulario">
         <label>
           Producto
-          <select value={productoId} onChange={(e) => setProductoId(e.target.value ? Number(e.target.value) : "")} required>
-            <option value="">Elegir producto...</option>
-            {productos.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.plu} — {p.descripcion}
-              </option>
-            ))}
-          </select>
+          <div className="buscador-producto">
+            <input
+              type="text"
+              placeholder="Buscar por PLU o nombre..."
+              value={buscarProducto}
+              onChange={(e) => {
+                setBuscarProducto(e.target.value);
+                setProductoSeleccionado(null);
+              }}
+            />
+            {buscarProducto.trim() && (
+              <div className="resultados-busqueda">
+                {productos.length === 0 && <div className="resultado-item ayuda">Sin resultados</div>}
+                {productos.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    className="resultado-item"
+                    onClick={() => {
+                      setProductoSeleccionado(p);
+                      setBuscarProducto("");
+                      setProductos([]);
+                    }}
+                  >
+                    {p.plu} — {p.descripcion}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          {productoSeleccionado && <p className="exito">Producto elegido: {productoSeleccionado.descripcion}</p>}
         </label>
         <label>
           Cantidad
@@ -93,14 +136,43 @@ export default function RegistrarEntrada() {
           <>
             <label>
               Proveedor
-              <select value={proveedorId} onChange={(e) => setProveedorId(e.target.value ? Number(e.target.value) : "")}>
-                <option value="">Sin especificar</option>
-                {proveedores.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.nombre}
-                  </option>
-                ))}
-              </select>
+              <div className="buscador-producto">
+                <input
+                  type="text"
+                  placeholder="Buscar proveedor... (vacío = ver todos)"
+                  value={buscarProveedor}
+                  onChange={(e) => {
+                    setBuscarProveedor(e.target.value);
+                    setProveedorSeleccionado(null);
+                  }}
+                />
+                {!proveedorSeleccionado && (
+                  <div className="resultados-busqueda">
+                    {proveedoresFiltrados.length === 0 && <div className="resultado-item ayuda">Sin resultados</div>}
+                    {proveedoresFiltrados.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        className="resultado-item"
+                        onClick={() => {
+                          setProveedorSeleccionado(p);
+                          setBuscarProveedor("");
+                        }}
+                      >
+                        {p.nombre}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {proveedorSeleccionado && (
+                <p className="exito">
+                  Proveedor elegido: {proveedorSeleccionado.nombre}{" "}
+                  <button type="button" onClick={() => setProveedorSeleccionado(null)}>
+                    Cambiar
+                  </button>
+                </p>
+              )}
             </label>
             <label>
               Costo unitario

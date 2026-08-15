@@ -403,6 +403,14 @@ desde el programa instalado.
   respaldo de la factura ligado a esa compra. Se puede buscar/filtrar el
   historial de movimientos por ese número. No es un módulo de facturas
   separado — es solo un dato más de la entrada que ya se registraba.
+- **Buscador de producto y proveedor con lista clickeable** en "Registrar
+  entrada de mercadería": antes eran dos `<select>` planos — a pedido del
+  usuario (mismo problema que ya habíamos resuelto en la búsqueda de
+  producto de la Caja), ahora ambos son campos de texto con resultados
+  clickeables debajo. Producto busca en el servidor a medida que se
+  escribe (como en Caja, por el volumen de productos); Proveedor muestra
+  la lista completa de una vez sin necesitar escribir nada (son pocos), y
+  se puede escribir para filtrar por las iniciales.
 
 ## Módulo de gastos generales
 Nuevo módulo, a pedido del usuario, para gastos del negocio que **no** son
