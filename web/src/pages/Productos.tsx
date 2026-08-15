@@ -17,6 +17,11 @@ export default function Productos() {
   const [mensajeImportar, setMensajeImportar] = useState<string | null>(null);
   const [errorImportar, setErrorImportar] = useState<string | null>(null);
 
+  const [modoCategorizar, setModoCategorizar] = useState(false);
+  const [seleccionados, setSeleccionados] = useState<Set<number>>(new Set());
+  const [categoriaDestino, setCategoriaDestino] = useState<number | "">("");
+  const [mensajeCategorizar, setMensajeCategorizar] = useState<string | null>(null);
+
   function recargarProductos() {
     setCargando(true);
     api.productos
@@ -55,6 +60,40 @@ export default function Productos() {
     }
   }
 
+  function alternarSeleccion(id: number) {
+    setSeleccionados((actual) => {
+      const nuevo = new Set(actual);
+      if (nuevo.has(id)) nuevo.delete(id);
+      else nuevo.add(id);
+      return nuevo;
+    });
+  }
+
+  function alternarSeleccionarTodos() {
+    setSeleccionados((actual) => {
+      if (productos.every((p) => actual.has(p.id))) return new Set();
+      return new Set(productos.map((p) => p.id));
+    });
+  }
+
+  async function aplicarCategorizarMasivo() {
+    if (!categoriaDestino || seleccionados.size === 0) return;
+    const categoria = categorias.find((c) => c.id === categoriaDestino);
+    const confirmado = window.confirm(
+      `¿Asignar la categoría "${categoria?.nombre}" a ${seleccionados.size} producto(s)?`
+    );
+    if (!confirmado) return;
+    try {
+      const resultado = await api.productos.categorizarMasivo(Array.from(seleccionados), Number(categoriaDestino));
+      setMensajeCategorizar(`Categoría actualizada en ${resultado.actualizados} producto(s)`);
+      setSeleccionados(new Set());
+      setCategoriaDestino("");
+      recargarProductos();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
   useEffect(() => {
     api.categorias.listar().then(setCategorias).catch((e) => setError(e.message));
   }, []);
@@ -79,11 +118,55 @@ export default function Productos() {
           <button type="button" onClick={() => setMostrarImportar((v) => !v)}>
             {mostrarImportar ? "Cerrar importar" : "Importar productos (CSV)"}
           </button>
+          <button
+            type="button"
+            onClick={() => {
+              setModoCategorizar((v) => !v);
+              setSeleccionados(new Set());
+              setMensajeCategorizar(null);
+            }}
+          >
+            {modoCategorizar ? "Cerrar categorizar varios" : "Categorizar varios"}
+          </button>
           <Link to="/productos/nuevo" className="boton boton-primario">
             + Nuevo producto
           </Link>
         </div>
       </div>
+
+      {modoCategorizar && (
+        <section className="tarjeta">
+          <h2>Categorizar varios productos</h2>
+          <p className="ayuda">
+            Marca los productos de la lista de abajo (tip: filtra por "Sin categorizar" para ordenarlos más rápido)
+            y elige la categoría que quieres asignarles a todos de una vez.
+          </p>
+          {mensajeCategorizar && <p className="exito">{mensajeCategorizar}</p>}
+          <div className="fila-inline">
+            <span>{seleccionados.size} seleccionado(s)</span>
+            <select
+              value={categoriaDestino}
+              onChange={(e) => setCategoriaDestino(e.target.value ? Number(e.target.value) : "")}
+            >
+              <option value="">Elegir categoría destino...</option>
+              {categorias.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {"— ".repeat(c.nivel - 1)}
+                  {c.codigo} {c.nombre}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="boton boton-primario"
+              disabled={!categoriaDestino || seleccionados.size === 0}
+              onClick={aplicarCategorizarMasivo}
+            >
+              Aplicar
+            </button>
+          </div>
+        </section>
+      )}
 
       {mostrarImportar && (
         <section className="tarjeta">
@@ -165,6 +248,15 @@ export default function Productos() {
       <table className="tabla">
         <thead>
           <tr>
+            {modoCategorizar && (
+              <th>
+                <input
+                  type="checkbox"
+                  checked={productos.length > 0 && productos.every((p) => seleccionados.has(p.id))}
+                  onChange={alternarSeleccionarTodos}
+                />
+              </th>
+            )}
             <th>PLU</th>
             <th>Descripción</th>
             <th>Categoría</th>
@@ -175,6 +267,11 @@ export default function Productos() {
         <tbody>
           {productos.map((p) => (
             <tr key={p.id}>
+              {modoCategorizar && (
+                <td>
+                  <input type="checkbox" checked={seleccionados.has(p.id)} onChange={() => alternarSeleccion(p.id)} />
+                </td>
+              )}
               <td>
                 <Link to={`/productos/${p.id}`}>{p.plu}</Link>
               </td>
@@ -186,7 +283,7 @@ export default function Productos() {
           ))}
           {productos.length === 0 && !cargando && (
             <tr>
-              <td colSpan={5}>No hay productos que coincidan con la búsqueda.</td>
+              <td colSpan={modoCategorizar ? 6 : 5}>No hay productos que coincidan con la búsqueda.</td>
             </tr>
           )}
         </tbody>

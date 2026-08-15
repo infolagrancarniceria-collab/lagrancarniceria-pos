@@ -347,6 +347,8 @@ export const api = {
       data: Omit<Producto, "id" | "categoria" | "activo" | "precio" | "stockActual">
     ) => put<Producto>(`/api/productos/${id}`, data),
     eliminar: (id: number) => del<void>(`/api/productos/${id}`),
+    categorizarMasivo: (productoIds: number[], categoriaId: number) =>
+      post<{ actualizados: number }>("/api/productos/categorizar-masivo", { productoIds, categoriaId }),
     importarCsv: async (archivo: File, confirmar: boolean) => {
       const form = new FormData();
       form.append("archivo", archivo);
@@ -404,8 +406,13 @@ export const api = {
       post<Proveedor>("/api/proveedores", data),
   },
   inventario: {
-    stock: (soloBajo = false) =>
-      get<ProductoConStock[]>(`/api/inventario/stock${soloBajo ? "?bajo=true" : ""}`),
+    stock: (soloBajo = false, categoriaId?: number) => {
+      const qs = new URLSearchParams();
+      if (soloBajo) qs.set("bajo", "true");
+      if (categoriaId) qs.set("categoriaId", String(categoriaId));
+      const query = qs.toString();
+      return get<ProductoConStock[]>(`/api/inventario/stock${query ? `?${query}` : ""}`);
+    },
     entrada: (data: {
       productoId: number;
       cantidad: number;

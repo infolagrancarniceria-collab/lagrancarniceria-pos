@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../db";
+import { obtenerIdsCategoriaYDescendientes } from "../lib/categorias";
 
 export const inventarioRouter = Router();
 
@@ -14,9 +15,11 @@ async function validarUsuario(usuarioId: number) {
 
 inventarioRouter.get("/stock", async (req, res) => {
   const soloBajoStock = req.query.bajo === "true";
+  const categoriaId = req.query.categoriaId ? Number(req.query.categoriaId) : undefined;
+  const categoriaIds = categoriaId ? await obtenerIdsCategoriaYDescendientes(categoriaId) : undefined;
 
   const productos = await prisma.producto.findMany({
-    where: { activo: true },
+    where: { activo: true, ...(categoriaIds ? { categoriaId: { in: categoriaIds } } : {}) },
     include: { categoria: true },
     orderBy: { descripcion: "asc" },
   });

@@ -151,6 +151,31 @@ productosRouter.delete("/:id", async (req, res) => {
   res.status(204).send();
 });
 
+// --- Categorizar varios productos a la vez (ej. ordenar los que quedaron
+// "Sin categorizar") — solo cambia la categoría, no toca ningún otro campo.
+
+const categorizarMasivoSchema = z.object({
+  productoIds: z.array(z.number().int().positive()).min(1, "Elige al menos un producto"),
+  categoriaId: z.number().int().positive(),
+});
+
+productosRouter.post("/categorizar-masivo", async (req, res) => {
+  const parsed = categorizarMasivoSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0].message });
+  }
+  const { productoIds, categoriaId } = parsed.data;
+
+  const categoria = await prisma.categoria.findUnique({ where: { id: categoriaId } });
+  if (!categoria) return res.status(400).json({ error: "La categoría indicada no existe" });
+
+  const resultado = await prisma.producto.updateMany({
+    where: { id: { in: productoIds } },
+    data: { categoriaId },
+  });
+  res.json({ actualizados: resultado.count });
+});
+
 // --- Importar catálogo desde CSV (crear productos nuevos, no cambia precios
 // de productos existentes) — columnas: plu,descripcion,precio,flag_balanza,
 // categoria_codigo (categoria_codigo es opcional: si se deja vacío, el

@@ -1,21 +1,27 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, type ProductoConStock } from "../api";
+import { api, type Categoria, type ProductoConStock } from "../api";
 
 export default function Inventario() {
   const [productos, setProductos] = useState<ProductoConStock[]>([]);
+  const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [soloBajoStock, setSoloBajoStock] = useState(false);
+  const [categoriaId, setCategoriaId] = useState<number | "">("");
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(false);
 
   useEffect(() => {
+    api.categorias.listar().then(setCategorias).catch((e) => setError(e.message));
+  }, []);
+
+  useEffect(() => {
     setCargando(true);
     api.inventario
-      .stock(soloBajoStock)
+      .stock(soloBajoStock, categoriaId || undefined)
       .then(setProductos)
       .catch((e) => setError(e.message))
       .finally(() => setCargando(false));
-  }, [soloBajoStock]);
+  }, [soloBajoStock, categoriaId]);
 
   return (
     <div>
@@ -39,10 +45,21 @@ export default function Inventario() {
 
       {error && <p className="error">{error}</p>}
 
-      <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "1rem" }}>
-        <input type="checkbox" checked={soloBajoStock} onChange={(e) => setSoloBajoStock(e.target.checked)} />
-        Mostrar solo productos con stock bajo
-      </label>
+      <div className="filtros">
+        <select value={categoriaId} onChange={(e) => setCategoriaId(e.target.value ? Number(e.target.value) : "")}>
+          <option value="">Todas las categorías</option>
+          {categorias.map((c) => (
+            <option key={c.id} value={c.id}>
+              {"— ".repeat(c.nivel - 1)}
+              {c.codigo} {c.nombre}
+            </option>
+          ))}
+        </select>
+        <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <input type="checkbox" checked={soloBajoStock} onChange={(e) => setSoloBajoStock(e.target.checked)} />
+          Mostrar solo productos con stock bajo
+        </label>
+      </div>
 
       {cargando && <p>Cargando...</p>}
 
