@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, formatoCLP, type Categoria } from "../api";
+import SelectorCategoria from "../components/SelectorCategoria";
 import { useUsuario } from "../context/UsuarioContext";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 
@@ -115,15 +116,7 @@ export default function CambioMasivo() {
       <section className="tarjeta">
         <h2>Por categoría</h2>
         <form onSubmit={previsualizarCategoria} onKeyDown={manejarEnterComoTab} className="fila-inline">
-          <select value={categoriaId} onChange={(e) => setCategoriaId(e.target.value ? Number(e.target.value) : "")}>
-            <option value="">Elegir categoría...</option>
-            {categorias.map((c) => (
-              <option key={c.id} value={c.id}>
-                {"— ".repeat(c.nivel - 1)}
-                {c.codigo} {c.nombre}
-              </option>
-            ))}
-          </select>
+          <SelectorCategoria categorias={categorias} value={categoriaId} onChange={setCategoriaId} required />
           <select value={tipo} onChange={(e) => setTipo(e.target.value as "porcentaje" | "monto_fijo")}>
             <option value="porcentaje">Porcentaje (%)</option>
             <option value="monto_fijo">Monto fijo ($)</option>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, formatoCLP, type Categoria, type FilaImportacionProductos, type Producto } from "../api";
+import SelectorCategoria from "../components/SelectorCategoria";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 
 export default function Productos() {
@@ -160,18 +161,7 @@ export default function Productos() {
           {mensajeCategorizar && <p className="exito">{mensajeCategorizar}</p>}
           <div className="fila-inline">
             <span>{seleccionados.size} seleccionado(s)</span>
-            <select
-              value={categoriaDestino}
-              onChange={(e) => setCategoriaDestino(e.target.value ? Number(e.target.value) : "")}
-            >
-              <option value="">Elegir categoría destino...</option>
-              {categorias.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {"— ".repeat(c.nivel - 1)}
-                  {c.codigo} {c.nombre}
-                </option>
-              ))}
-            </select>
+            <SelectorCategoria categorias={categorias} value={categoriaDestino} onChange={setCategoriaDestino} />
             <button
               type="button"
               className="boton boton-primario"
@@ -255,15 +245,12 @@ export default function Productos() {
           value={buscar}
           onChange={(e) => setBuscar(e.target.value)}
         />
-        <select value={categoriaId} onChange={(e) => setCategoriaId(e.target.value ? Number(e.target.value) : "")}>
-          <option value="">Todas las categorías</option>
-          {categorias.map((c) => (
-            <option key={c.id} value={c.id}>
-              {"— ".repeat(c.nivel - 1)}
-              {c.codigo} {c.nombre}
-            </option>
-          ))}
-        </select>
+        <SelectorCategoria
+          categorias={categorias}
+          value={categoriaId}
+          onChange={setCategoriaId}
+          etiquetaTodas="Todas las categorías"
+        />
       </div>
 
       {error && <p className="error">{error}</p>}

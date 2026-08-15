@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, formatoCLP, type Categoria, type FlagBalanza, type Producto } from "../api";
+import SelectorCategoria from "../components/SelectorCategoria";
 import { useUsuario } from "../context/UsuarioContext";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 
@@ -225,19 +226,12 @@ export default function ProductoForm() {
         </label>
         <label>
           Categoría
-          <select
+          <SelectorCategoria
+            categorias={categorias}
             value={form.categoriaId}
-            onChange={(e) => actualizarCampo("categoriaId", e.target.value ? Number(e.target.value) : "")}
+            onChange={(v) => actualizarCampo("categoriaId", v)}
             required
-          >
-            <option value="">Elegir categoría...</option>
-            {categorias.map((c) => (
-              <option key={c.id} value={c.id}>
-                {"— ".repeat(c.nivel - 1)}
-                {c.codigo} {c.nombre}
-              </option>
-            ))}
-          </select>
+          />
         </label>
         <label>
           Flag balanza

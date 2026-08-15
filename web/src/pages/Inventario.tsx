@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, type Categoria, type ProductoConStock } from "../api";
+import SelectorCategoria from "../components/SelectorCategoria";
 
 export default function Inventario() {
   const [productos, setProductos] = useState<ProductoConStock[]>([]);
@@ -46,15 +47,12 @@ export default function Inventario() {
       {error && <p className="error">{error}</p>}
 
       <div className="filtros">
-        <select value={categoriaId} onChange={(e) => setCategoriaId(e.target.value ? Number(e.target.value) : "")}>
-          <option value="">Todas las categorías</option>
-          {categorias.map((c) => (
-            <option key={c.id} value={c.id}>
-              {"— ".repeat(c.nivel - 1)}
-              {c.codigo} {c.nombre}
-            </option>
-          ))}
-        </select>
+        <SelectorCategoria
+          categorias={categorias}
+          value={categoriaId}
+          onChange={setCategoriaId}
+          etiquetaTodas="Todas las categorías"
+        />
         <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
           <input type="checkbox" checked={soloBajoStock} onChange={(e) => setSoloBajoStock(e.target.checked)} />
           Mostrar solo productos con stock bajo

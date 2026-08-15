@@ -48,6 +48,12 @@ button:disabled {
   background: var(--color-primario-hover);
 }
 
+.selector-categoria-cascada {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
 .boton-peligro {
   background: var(--color-error);
   color: white;

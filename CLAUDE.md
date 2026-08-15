@@ -422,6 +422,43 @@ reales de la base de datos de prueba se filtran con el buscador, se
 seleccionan con "todos" y se eliminan en un solo clic — confirmado que
 dejan de aparecer en el listado normal de productos.
 
+## Selector de categoría en cascada (en vez de una lista larga)
+El usuario reportó que mover productos entre categorías (ej. pescados
+congelados que habían quedado mal puestos en "Artesanales") ya era posible
+con "Seleccionar varios" (funciona para mover productos que YA tienen
+categoría, no solo para categorizar los que no tienen ninguna), pero el
+selector en sí era una sola lista larga con guiones indicando el nivel
+("— 0501 Mariscos", "— — 050201 Atun") — con varias categorías y
+subcategorías se volvía "un listado interminable" difícil de leer.
+
+**Elegido junto al usuario (entre 3 opciones)**: reemplazar esa lista larga
+por un selector en cascada de hasta 3 listas cortas — nivel 1, luego nivel 2
+(solo las hijas de lo elegido en nivel 1), luego nivel 3 (solo las hijas de
+lo elegido en nivel 2) — en vez de mantener una sola lista con indentado
+visual, o construir un árbol desplegable tipo explorador de archivos (las
+otras dos opciones ofrecidas, descartadas por menor beneficio o mayor
+esfuerzo respectivamente).
+
+Componente nuevo y reutilizable (`web/src/components/SelectorCategoria.tsx`)
+usado en las 4 pantallas que antes tenían la lista larga con guiones:
+filtro de categoría en Productos, categoría destino al mover productos en
+lote (Productos), filtro de categoría en Inventario, categoría por producto
+en el formulario de producto (ProductoForm), y categoría en Cambio masivo
+por categoría. Se puede elegir una categoría y quedarse en cualquier nivel
+(ej. asignar directo a "Vacuno" sin necesidad de elegir una subcategoría) —
+cada lista intermedia trae una opción "(toda la categoría X)" para eso.
+Cambiar una lista de más arriba reinicia las de más abajo. Donde hace falta
+un filtro de "ver todo" (Productos, Inventario) el primer selector incluye
+una opción "Todas las categorías"; donde se exige elegir una categoría
+concreta (ProductoForm, Cambio masivo, destino al mover en lote) no la
+incluye. Probado end-to-end con una jerarquía de prueba de 3 niveles
+(Congelados > Mariscos > Atún): guardar un producto en cualquier nivel
+queda con el `categoriaId` correcto, el filtro jerárquico de Productos
+sigue mostrando también las categorías hijas al filtrar por una categoría
+padre (reutiliza `obtenerIdsCategoriaYDescendientes`, ya existente), y
+cambiar la selección de nivel 1 colapsa correctamente las listas de niveles
+inferiores si la nueva categoría no tiene hijas.
+
 ## Decisiones tomadas en el módulo de inventario
 - La merma hoy no se registra formalmente (confirmado con el usuario) — este
   módulo es el primer registro formal de ese dato.
