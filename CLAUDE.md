@@ -298,6 +298,24 @@ app abre sin crashear. **Pendiente:** confirmación del usuario probándolo en
 su propia PC — crear un producto de prueba y usar el sistema con normalidad
 desde el programa instalado.
 
+### "Se pega" al usar el programa — diagnosticado y corregido
+El usuario reportó que la ventana se quedaba congelada de vez en cuando (ej.
+categorizando productos uno por uno), y que un click en la pantalla de inicio
+de Windows la "descongelaba" al toque. Se le pidió revisar la consola de
+Chrome DevTools (Ctrl+Shift+I / F12, ya funciona en el programa instalado
+porque Electron trae el menú por defecto) la próxima vez que pasara: la
+pestaña Console no mostró ningún error, y la pestaña Network mostró que todas
+las llamadas al servidor (`categorizar-masivo`, `productos?categoriaId=...`)
+respondieron 200 (éxito) sin ninguna quedar pendiente — descartando un
+cuelgue real del servidor o la base de datos. Combinado con el detalle de que
+un click afuera lo destraba, esto apunta a un problema conocido de
+Chromium/Electron en Windows: la ventana deja de redibujarse por un problema
+de aceleración por hardware (GPU/drivers), no un cuelgue del programa en sí.
+**Corregido** agregando `app.disableHardwareAcceleration()` en
+`electron/main.js` — la ventana se dibuja por CPU en vez de GPU, imperceptible
+para una pantalla simple como esta. **Pendiente:** confirmación del usuario
+de que el problema no vuelve a aparecer con la próxima versión instalada.
+
 ## Decisiones tomadas en el módulo de caja
 - Clave de supervisor: una sola clave compartida (no hay cuentas ni
   contraseñas por persona en el sistema), guardada hasheada. Se pide solo

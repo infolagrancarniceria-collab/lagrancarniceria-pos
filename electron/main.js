@@ -7,6 +7,16 @@ const fs = require("node:fs");
 
 const URL_DESARROLLO = process.env.ELECTRON_START_URL;
 
+// La ventana se veía "pegada" (dejaba de redibujarse) hasta que algo forzaba
+// un repintado, como hacer click en la pantalla de inicio de Windows — un
+// problema conocido de Chromium/Electron con la aceleración por hardware en
+// ciertas tarjetas gráficas/drivers de Windows, no un cuelgue real del
+// programa (la app seguía respondiendo por dentro). Desactivarla antes de
+// que la app esté lista evita el problema a costa de un poco más de uso de
+// CPU en vez de GPU para dibujar la ventana, algo imperceptible para una
+// pantalla simple como esta.
+app.disableHardwareAcceleration();
+
 function crearVentana(url) {
   const ventana = new BrowserWindow({
     width: 1280,
