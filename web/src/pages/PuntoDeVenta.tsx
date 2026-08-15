@@ -29,9 +29,11 @@ export default function PuntoDeVenta() {
   const [procesando, setProcesando] = useState(false);
   const [itemAAnular, setItemAAnular] = useState<number | null>(null);
   const [cancelandoVenta, setCancelandoVenta] = useState(false);
+  const [mostrarBuscarProducto, setMostrarBuscarProducto] = useState(false);
 
   const inputCantidadRef = useRef<HTMLInputElement>(null);
   const inputMontoPagoRef = useRef<HTMLInputElement>(null);
+  const inputBuscarRef = useRef<HTMLInputElement>(null);
   const ventaRef = useRef<Venta | null>(null);
 
   useEffect(() => {
@@ -46,6 +48,33 @@ export default function PuntoDeVenta() {
   useEffect(() => {
     iniciarVenta();
     api.comunas.listar().then(setComunas).catch((e) => setError(e.message));
+  }, []);
+
+  // Atajos de teclado para no ocupar espacio en pantalla con secciones que
+  // no se usan en cada venta: F2 abre el buscador de productos, F3 el
+  // despacho a domicilio, F4 el descuento. Las teclas de función no afectan
+  // al lector de código de barras (ignora todo lo que no sea un solo
+  // carácter, ver useEscanerCodigoBarras) ni interfieren con el tipeo normal.
+  useEffect(() => {
+    function manejarAtajos(e: KeyboardEvent) {
+      if (e.key === "F2") {
+        e.preventDefault();
+        setMostrarBuscarProducto(true);
+        setTimeout(() => inputBuscarRef.current?.focus(), 0);
+      } else if (e.key === "F3") {
+        e.preventDefault();
+        setMostrarSelectorComuna((actual) => {
+          const nuevo = !actual;
+          if (!nuevo) actualizarDespacho(false, null);
+          return nuevo;
+        });
+      } else if (e.key === "F4") {
+        e.preventDefault();
+        setMostrarFormDescuento((actual) => !actual);
+      }
+    }
+    window.addEventListener("keydown", manejarAtajos);
+    return () => window.removeEventListener("keydown", manejarAtajos);
   }, []);
 
   useEffect(() => {
@@ -291,57 +320,65 @@ export default function PuntoDeVenta() {
       <div className="punto-de-venta-layout">
       <div className="columna-izquierda">
 
-      <section className="tarjeta">
-        <p className="ayuda">
-          🔦 Lector de código de barras listo — escanea en cualquier momento en esta pantalla, no hace falta hacer
-          clic en ningún campo primero. Funciona con el código de fábrica (productos normales) y con el que
-          imprime la balanza (productos pesables).
-        </p>
-      </section>
+      <p className="ayuda ayuda-linea">🔦 Lector de código de barras listo — escanea en cualquier momento.</p>
 
-      <section className="tarjeta">
-        <h2>Agregar producto manualmente</h2>
-        <form onSubmit={agregarItem} onKeyDown={manejarEnterComoTab} className="fila-inline">
-          <div className="buscador-producto">
-            <input
-              type="text"
-              placeholder="Buscar por PLU o nombre..."
-              value={buscar}
-              onChange={(e) => {
-                setBuscar(e.target.value);
-                setProductoSeleccionado(null);
-              }}
-            />
-            {buscar.trim() && (
-              <div className="resultados-busqueda">
-                {productos.length === 0 && <div className="resultado-item ayuda">Sin resultados</div>}
-                {productos.map((p) => (
-                  <button key={p.id} type="button" className="resultado-item" onClick={() => elegirProducto(p)}>
-                    {p.plu} — {p.descripcion} ({formatoCLP(p.precio)}, stock: {p.stockActual})
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-          {productoSeleccionado && (
-            <span className="exito">
-              Vendiendo: {productoSeleccionado.descripcion} ({formatoCLP(productoSeleccionado.precio)})
-            </span>
-          )}
-          <input
-            ref={inputCantidadRef}
-            type="number"
-            min="0.001"
-            step="0.001"
-            placeholder="Cantidad"
-            value={cantidad}
-            onChange={(e) => setCantidad(e.target.value)}
-          />
-          <TecladoNumerico valor={cantidad} onCambiar={setCantidad} />
-          <button type="submit" className="boton boton-primario">
-            Agregar al carrito
+      <section className="tarjeta tarjeta-compacta">
+        {!mostrarBuscarProducto ? (
+          <button type="button" onClick={() => { setMostrarBuscarProducto(true); setTimeout(() => inputBuscarRef.current?.focus(), 0); }}>
+            + Buscar producto (F2)
           </button>
-        </form>
+        ) : (
+          <>
+            <div className="fila-inline" style={{ justifyContent: "space-between" }}>
+              <h2>Agregar producto manualmente</h2>
+              <button type="button" onClick={() => setMostrarBuscarProducto(false)}>
+                Cerrar
+              </button>
+            </div>
+            <form onSubmit={agregarItem} onKeyDown={manejarEnterComoTab} className="fila-inline">
+              <div className="buscador-producto">
+                <input
+                  ref={inputBuscarRef}
+                  type="text"
+                  placeholder="Buscar por PLU o nombre..."
+                  value={buscar}
+                  onChange={(e) => {
+                    setBuscar(e.target.value);
+                    setProductoSeleccionado(null);
+                  }}
+                />
+                {buscar.trim() && (
+                  <div className="resultados-busqueda">
+                    {productos.length === 0 && <div className="resultado-item ayuda">Sin resultados</div>}
+                    {productos.map((p) => (
+                      <button key={p.id} type="button" className="resultado-item" onClick={() => elegirProducto(p)}>
+                        {p.plu} — {p.descripcion} ({formatoCLP(p.precio)}, stock: {p.stockActual})
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {productoSeleccionado && (
+                <span className="exito">
+                  Vendiendo: {productoSeleccionado.descripcion} ({formatoCLP(productoSeleccionado.precio)})
+                </span>
+              )}
+              <input
+                ref={inputCantidadRef}
+                type="number"
+                min="0.001"
+                step="0.001"
+                placeholder="Cantidad"
+                value={cantidad}
+                onChange={(e) => setCantidad(e.target.value)}
+              />
+              <TecladoNumerico valor={cantidad} onCambiar={setCantidad} />
+              <button type="submit" className="boton boton-primario">
+                Agregar al carrito
+              </button>
+            </form>
+          </>
+        )}
       </section>
 
       <section className="tarjeta">
@@ -401,7 +438,7 @@ export default function PuntoDeVenta() {
       <section className="tarjeta tarjeta-compacta">
         {!mostrarSelectorComuna ? (
           <button type="button" onClick={() => setMostrarSelectorComuna(true)}>
-            + Despacho a domicilio
+            + Despacho a domicilio (F3)
           </button>
         ) : (
           <>
@@ -452,7 +489,7 @@ export default function PuntoDeVenta() {
           </>
         ) : !mostrarFormDescuento ? (
           <button type="button" onClick={() => setMostrarFormDescuento(true)}>
-            + Agregar descuento
+            + Agregar descuento (F4)
           </button>
         ) : (
           <>

@@ -22,6 +22,7 @@ import CerrarCaja from "./pages/CerrarCaja";
 import SesionesCaja from "./pages/SesionesCaja";
 import CreditosPendientes from "./pages/CreditosPendientes";
 import BuscarVenta from "./pages/BuscarVenta";
+import Anulaciones from "./pages/Anulaciones";
 import Gastos from "./pages/Gastos";
 import Comunas from "./pages/Comunas";
 import Configuracion from "./pages/Configuracion";
@@ -55,6 +56,7 @@ export default function App() {
             <Route path="/caja/sesiones" element={<SesionesCaja />} />
             <Route path="/caja/creditos" element={<CreditosPendientes />} />
             <Route path="/caja/buscar" element={<BuscarVenta />} />
+            <Route path="/caja/anulaciones" element={<Anulaciones />} />
             <Route path="/gastos" element={<Gastos />} />
             <Route path="/comunas" element={<Comunas />} />
             <Route path="/asistente" element={<Asistente />} />

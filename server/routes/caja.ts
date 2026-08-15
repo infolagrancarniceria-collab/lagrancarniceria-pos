@@ -354,12 +354,10 @@ async function agregarItemAVenta(
   const producto = await prisma.producto.findUnique({ where: { id: productoId } });
   if (!producto) return { status: 404, error: "Producto no encontrado" };
 
-  const yaEnCarrito = venta.items
-    .filter((i) => i.productoId === productoId && !i.anulado)
-    .reduce((suma, i) => suma + i.cantidad, 0);
-  if (producto.stockActual < yaEnCarrito + cantidad) {
-    return { status: 400, error: `Stock insuficiente: quedan ${producto.stockActual - yaEnCarrito} disponibles` };
-  }
+  // No se bloquea por falta de stock — a veces el producto físico está
+  // disponible pero el stock del sistema todavía no refleja una entrada
+  // reciente (ej. una res recién despostada). El stock puede quedar
+  // negativo y se corrige después con un ajuste manual en Inventario.
 
   // El peso pesable viene con decimales (gramos), así que precio * cantidad
   // puede dar centavos que no existen en pesos chilenos — se redondea igual
@@ -592,12 +590,12 @@ cajaRouter.post("/ventas/:id/confirmar", async (req, res) => {
   for (const item of itemsActivos) {
     cantidadPorProducto.set(item.productoId, (cantidadPorProducto.get(item.productoId) ?? 0) + item.cantidad);
   }
-  for (const [productoId, cantidad] of cantidadPorProducto) {
+  // No se bloquea por falta de stock (ver agregarItemAVenta) — el stock
+  // puede quedar negativo y se corrige después con un ajuste manual.
+  for (const productoId of cantidadPorProducto.keys()) {
     const producto = await prisma.producto.findUnique({ where: { id: productoId } });
-    if (!producto || producto.stockActual < cantidad) {
-      return res.status(400).json({
-        error: `Stock insuficiente para ${producto?.descripcion ?? "un producto"}: quedan ${producto?.stockActual ?? 0}`,
-      });
+    if (!producto) {
+      return res.status(400).json({ error: "Uno de los productos de la venta ya no existe" });
     }
   }
 
@@ -696,4 +694,25 @@ cajaRouter.post("/creditos/:pagoId/cobrar", async (req, res) => {
     },
   });
   res.json(pagoActualizado);
+});
+
+// --- Registro de anulaciones (pantalla aparte, para verlas todas juntas sin
+// tener que abrir venta por venta en "Buscar venta") ---
+
+cajaRouter.get("/anulaciones", async (req, res) => {
+  const { desde, hasta } = rangoFechasDesdeTexto(req.query.desde, req.query.hasta);
+
+  const items = await prisma.itemVenta.findMany({
+    where: { anulado: true, fechaAnulacion: { gte: desde, lte: hasta } },
+    include: { producto: true, usuarioAnulacion: true, venta: true },
+    orderBy: { fechaAnulacion: "desc" },
+  });
+
+  const ventas = await prisma.venta.findMany({
+    where: { estado: "anulada", fechaAnulacion: { gte: desde, lte: hasta } },
+    include: { usuarioAnulacion: true, items: { include: { producto: true } } },
+    orderBy: { fechaAnulacion: "desc" },
+  });
+
+  res.json({ items, ventas });
 });

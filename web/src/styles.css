@@ -224,6 +224,15 @@ select {
   font-size: 0.95rem;
 }
 
+.ayuda-linea {
+  color: #665f57;
+  font-size: 0.85rem;
+  margin: 0 0 0.75rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .tabla {
   width: 100%;
   border-collapse: collapse;

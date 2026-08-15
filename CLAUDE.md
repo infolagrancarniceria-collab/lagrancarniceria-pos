@@ -481,6 +481,39 @@ de que el problema no vuelve a aparecer con la próxima versión instalada.
   descuento" hasta que se necesitan. Se agregó `overflow-x: auto` a
   `.tarjeta` de paso, porque con la columna más angosta alguna tabla se
   recortaba visualmente.
+- **Atajos de teclado (F2/F3/F4) y aviso del lector en una sola línea**:
+  feedback del papá del usuario usando la Caja real — el texto de aviso del
+  lector de código de barras ocupaba 3 líneas, y quería que Despacho,
+  Descuento y el buscador de productos no ocuparan espacio en pantalla.
+  Se acortó el aviso a una sola línea, y el buscador de productos ("Agregar
+  producto manualmente") ahora también empieza plegado igual que Despacho y
+  Descuento (tiene sentido porque el lector de código de barras es la forma
+  principal de agregar productos — el buscador manual es el respaldo, no
+  hace falta tenerlo siempre abierto). Se agregaron atajos de teclado
+  globales: **F2** abre el buscador y deja el foco listo para escribir,
+  **F3** abre/cierra Despacho, **F4** abre/cierra Descuento — no chocan con
+  el lector de código de barras (que ignora teclas que no sean un solo
+  carácter, ver `useEscanerCodigoBarras`) ni con el tipeo normal en otros
+  campos.
+- **Vender sin stock disponible, corrigiendo después con un ajuste
+  manual**: a pedido del usuario, se sacó la validación que bloqueaba
+  agregar un producto al carrito (o confirmar la venta) si el stock
+  registrado en el sistema no alcanzaba. Caso real: a veces el producto
+  físico sí está disponible pero el stock del sistema todavía no refleja
+  una entrada reciente (ej. una res recién despostada, antes de registrar
+  la entrada formal). El stock puede quedar en negativo tras confirmar la
+  venta — se corrige después con un ajuste manual en Inventario, como ya
+  se hacía para otros casos de descuadre. Probado end-to-end: agregar y
+  confirmar una venta de un producto con stock 0 no bloquea nada, y el
+  stock queda en negativo, listo para ajustar.
+- **Pantalla aparte "Anulaciones"**: a pedido del usuario, para ver de un
+  vistazo todos los productos anulados y ventas canceladas de un rango de
+  fechas, sin tener que abrir venta por venta en "Buscar venta". Nueva
+  pantalla (enlazada desde Caja) con dos tablas — productos anulados
+  (fecha, N° de venta, producto, cantidad, motivo, quién anuló) y ventas
+  canceladas completas (fecha, N° de venta, total que tenía, motivo, quién
+  anuló) — filtrables por rango de fechas, reutilizando el mismo patrón de
+  fechas que Reportes/Buscar venta. Nuevo endpoint `GET /api/caja/anulaciones`.
 
 ## Conectar otro equipo por WiFi (sin instalar el programa ahí)
 El usuario instaló el programa completo en un segundo PC/monitor (el del

@@ -215,10 +215,20 @@ export interface Venta {
   descuentoTipo: "porcentaje" | "monto_fijo" | null;
   descuentoValor: number | null;
   usuarioAnulacionId: number | null;
+  usuarioAnulacion?: Usuario | null;
   motivoAnulacion: string | null;
   fechaAnulacion: string | null;
   items: ItemVenta[];
   pagos: PagoVenta[];
+}
+
+export interface ItemVentaAnulado extends ItemVenta {
+  venta: { id: number; fecha: string };
+}
+
+export interface ReporteAnulaciones {
+  items: ItemVentaAnulado[];
+  ventas: Venta[];
 }
 
 export interface SesionCaja {
@@ -566,6 +576,12 @@ export const api = {
       put<Venta>(`/api/caja/ventas/${ventaId}/despacho`, data),
     actualizarDescuento: (ventaId: number, data: { tipo: "porcentaje" | "monto_fijo" | null; valor: number | null }) =>
       put<Venta>(`/api/caja/ventas/${ventaId}/descuento`, data),
+    anulaciones: (params: { desde?: string; hasta?: string }) => {
+      const query = new URLSearchParams();
+      if (params.desde) query.set("desde", params.desde);
+      if (params.hasta) query.set("hasta", params.hasta);
+      return get<ReporteAnulaciones>(`/api/caja/anulaciones?${query.toString()}`);
+    },
   },
   configuracion: {
     estadoIA: () => get<{ configurada: boolean }>("/api/configuracion/ia/estado"),
