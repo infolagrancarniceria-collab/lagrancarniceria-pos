@@ -23,6 +23,7 @@ import SesionesCaja from "./pages/SesionesCaja";
 import CreditosPendientes from "./pages/CreditosPendientes";
 import BuscarVenta from "./pages/BuscarVenta";
 import Anulaciones from "./pages/Anulaciones";
+import Revisiones from "./pages/Revisiones";
 import Gastos from "./pages/Gastos";
 import Comunas from "./pages/Comunas";
 import Configuracion from "./pages/Configuracion";
@@ -46,6 +47,7 @@ export default function App() {
             <Route path="/inventario/entrada" element={<RegistrarEntrada />} />
             <Route path="/inventario/salida" element={<RegistrarSalida />} />
             <Route path="/inventario/movimientos" element={<MovimientosInventario />} />
+            <Route path="/inventario/revisiones" element={<Revisiones />} />
             <Route path="/proveedores" element={<Proveedores />} />
             <Route path="/reportes" element={<Reportes />} />
             <Route path="/caja" element={<Caja />} />

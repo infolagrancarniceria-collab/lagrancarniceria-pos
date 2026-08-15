@@ -514,6 +514,15 @@ de que el problema no vuelve a aparecer con la próxima versión instalada.
   canceladas completas (fecha, N° de venta, total que tenía, motivo, quién
   anuló) — filtrables por rango de fechas, reutilizando el mismo patrón de
   fechas que Reportes/Buscar venta. Nuevo endpoint `GET /api/caja/anulaciones`.
+- **Pantalla aparte "Revisiones"**: a pedido del usuario, para revisar los
+  productos que quedaron con stock negativo tras venderse sin stock
+  suficiente (ver "Vender sin stock disponible" arriba). Nueva pantalla
+  (enlazada desde Inventario y desde Caja, porque el caso se origina ahí)
+  que lista los productos con `stockActual < 0` — es una lista de
+  pendientes, no un historial: apenas alguien corrige el stock con un
+  ajuste, el producto deja de aparecer solo. Reutiliza el endpoint
+  `GET /api/productos` existente con un filtro nuevo (`?stockNegativo=true`)
+  en vez de crear un endpoint aparte.
 
 ## Conectar otro equipo por WiFi (sin instalar el programa ahí)
 El usuario instaló el programa completo en un segundo PC/monitor (el del

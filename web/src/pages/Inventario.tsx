@@ -38,6 +38,9 @@ export default function Inventario() {
           <Link to="/inventario/movimientos" className="boton">
             Historial
           </Link>
+          <Link to="/inventario/revisiones" className="boton">
+            Revisiones
+          </Link>
           <Link to="/proveedores" className="boton">
             Proveedores
           </Link>

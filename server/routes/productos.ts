@@ -11,6 +11,7 @@ const upload = multer({ storage: multer.memoryStorage() });
 productosRouter.get("/", async (req, res) => {
   const buscar = typeof req.query.buscar === "string" ? req.query.buscar.trim() : "";
   const categoriaId = req.query.categoriaId ? Number(req.query.categoriaId) : undefined;
+  const stockNegativo = req.query.stockNegativo === "true";
 
   let categoriaIds: number[] | undefined;
   if (categoriaId) {
@@ -21,6 +22,7 @@ productosRouter.get("/", async (req, res) => {
     where: {
       activo: true,
       ...(categoriaIds ? { categoriaId: { in: categoriaIds } } : {}),
+      ...(stockNegativo ? { stockActual: { lt: 0 } } : {}),
       ...(buscar
         ? {
             OR: [
@@ -32,7 +34,7 @@ productosRouter.get("/", async (req, res) => {
         : {}),
     },
     include: { categoria: true },
-    orderBy: { descripcion: "asc" },
+    orderBy: stockNegativo ? { stockActual: "asc" } : { descripcion: "asc" },
   });
   res.json(productos);
 });

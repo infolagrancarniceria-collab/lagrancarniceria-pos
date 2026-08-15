@@ -79,6 +79,9 @@ export default function Caja() {
           <Link to="/caja/anulaciones" className="boton">
             Anulaciones
           </Link>
+          <Link to="/inventario/revisiones" className="boton">
+            Revisiones
+          </Link>
           <Link to="/comunas" className="boton">
             Comunas de despacho
           </Link>

@@ -384,10 +384,11 @@ export const api = {
       post<Categoria>("/api/categorias", data),
   },
   productos: {
-    listar: (params: { buscar?: string; categoriaId?: number } = {}) => {
+    listar: (params: { buscar?: string; categoriaId?: number; stockNegativo?: boolean } = {}) => {
       const qs = new URLSearchParams();
       if (params.buscar) qs.set("buscar", params.buscar);
       if (params.categoriaId) qs.set("categoriaId", String(params.categoriaId));
+      if (params.stockNegativo) qs.set("stockNegativo", "true");
       const query = qs.toString();
       return get<Producto[]>(`/api/productos${query ? `?${query}` : ""}`);
     },
