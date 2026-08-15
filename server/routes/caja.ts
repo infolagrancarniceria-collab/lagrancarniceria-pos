@@ -293,6 +293,45 @@ cajaRouter.put("/ventas/:id/despacho", async (req, res) => {
   res.json(ventaActualizada);
 });
 
+const descuentoSchema = z
+  .object({
+    tipo: z.enum(["porcentaje", "monto_fijo"]).nullable(),
+    valor: z.number().positive().nullable(),
+  })
+  .refine((d) => (d.tipo === null) === (d.valor === null), {
+    message: "Falta el valor del descuento",
+  })
+  .refine((d) => d.tipo !== "porcentaje" || (d.valor ?? 0) <= 100, {
+    message: "El descuento en porcentaje no puede ser mayor a 100",
+  });
+
+// Descuento manual (opcional): reemplaza el descuento actual de la venta —
+// mandar tipo/valor en null lo quita. Solo aplica sobre el subtotal de los
+// productos, no sobre el costo de envío (ver recalcularTotal).
+cajaRouter.put("/ventas/:id/descuento", async (req, res) => {
+  const ventaId = Number(req.params.id);
+  const parsed = descuentoSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0].message });
+  }
+
+  const venta = await prisma.venta.findUnique({ where: { id: ventaId } });
+  if (!venta) return res.status(404).json({ error: "Venta no encontrada" });
+  if (venta.estado !== "abierta") return res.status(400).json({ error: "Esta venta ya no admite cambios" });
+
+  await prisma.venta.update({
+    where: { id: ventaId },
+    data: { descuentoTipo: parsed.data.tipo, descuentoValor: parsed.data.valor },
+  });
+  await recalcularTotal(ventaId);
+
+  const ventaActualizada = await prisma.venta.findUnique({
+    where: { id: ventaId },
+    include: { items: { include: { producto: true } }, pagos: true, comuna: true },
+  });
+  res.json(ventaActualizada);
+});
+
 const agregarItemSchema = z.object({
   productoId: z.number().int().positive(),
   cantidad: z.number().positive("La cantidad debe ser mayor a 0"),
@@ -395,7 +434,17 @@ cajaRouter.post("/ventas/:id/items/escanear", async (req, res) => {
 async function recalcularTotal(ventaId: number) {
   const venta = await prisma.venta.findUnique({ where: { id: ventaId } });
   const items = await prisma.itemVenta.findMany({ where: { ventaId, anulado: false } });
-  const total = items.reduce((suma, i) => suma + i.subtotal, 0) + (venta?.costoEnvio ?? 0);
+  const subtotalItems = items.reduce((suma, i) => suma + i.subtotal, 0);
+
+  let descuentoMonto = 0;
+  if (venta?.descuentoTipo === "porcentaje" && venta.descuentoValor) {
+    descuentoMonto = Math.round(subtotalItems * (venta.descuentoValor / 100));
+  } else if (venta?.descuentoTipo === "monto_fijo" && venta.descuentoValor) {
+    descuentoMonto = venta.descuentoValor;
+  }
+  descuentoMonto = Math.min(descuentoMonto, subtotalItems);
+
+  const total = subtotalItems - descuentoMonto + (venta?.costoEnvio ?? 0);
   await prisma.venta.update({ where: { id: ventaId }, data: { total } });
 }
 

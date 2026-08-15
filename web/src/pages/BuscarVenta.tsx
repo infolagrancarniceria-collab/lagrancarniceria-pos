@@ -147,6 +147,14 @@ export default function BuscarVenta() {
               ))}
             </tbody>
           </table>
+          {ventaDetalle.descuentoTipo && (
+            <p>
+              Subtotal: {formatoCLP(itemsActivos.reduce((s, i) => s + i.subtotal, 0))} · Descuento:{" "}
+              {ventaDetalle.descuentoTipo === "porcentaje"
+                ? `${ventaDetalle.descuentoValor}%`
+                : formatoCLP(ventaDetalle.descuentoValor ?? 0)}
+            </p>
+          )}
           <h2>Total: {formatoCLP(ventaDetalle.total)}</h2>
           <h3>Pagos</h3>
           <ul>

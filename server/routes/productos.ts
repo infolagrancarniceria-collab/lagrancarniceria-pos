@@ -43,7 +43,20 @@ productosRouter.get("/:id", async (req, res) => {
     include: { categoria: true },
   });
   if (!producto) return res.status(404).json({ error: "Producto no encontrado" });
-  res.json(producto);
+
+  // Para mostrar el margen (%) al cambiar el precio: el costo más reciente
+  // registrado en una entrada por compra de este producto (no hay un campo
+  // "costo" fijo en la ficha — el costo real viene del inventario).
+  const ultimaCompra = await prisma.movimientoInventario.findFirst({
+    where: { productoId: producto.id, tipo: "entrada", motivo: "compra", costoUnitario: { not: null } },
+    orderBy: { fecha: "desc" },
+  });
+
+  res.json({
+    ...producto,
+    ultimoCosto: ultimaCompra?.costoUnitario ?? null,
+    ultimoCostoFecha: ultimaCompra?.fecha ?? null,
+  });
 });
 
 const flagBalanzaEnum = z.enum(["NORMAL", "PESABLE", "IMPORTE"]);

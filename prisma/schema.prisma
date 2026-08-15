@@ -242,6 +242,12 @@ model Venta {
   comuna     Comuna? @relation(fields: [comunaId], references: [id])
   costoEnvio Float?
 
+  // Descuento manual (opcional): aplica sobre el subtotal de los productos,
+  // no sobre el costo de envío. "porcentaje" se recalcula solo si el
+  // carrito cambia después; "monto_fijo" es un número fijo de pesos.
+  descuentoTipo  String? // "porcentaje" | "monto_fijo"
+  descuentoValor Float?
+
   items ItemVenta[]
   pagos PagoVenta[]
 }

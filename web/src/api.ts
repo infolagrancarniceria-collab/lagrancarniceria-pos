@@ -51,6 +51,23 @@ export interface ProductoConStock extends Producto {
   bajoStock: boolean;
 }
 
+export interface ProductoConCosto extends Producto {
+  ultimoCosto: number | null;
+  ultimoCostoFecha: string | null;
+}
+
+// Margen (%) al estilo del sistema anterior (Gexus): markup sobre el costo,
+// usando el precio de venta SIN IVA (el precio que carga el sistema incluye
+// IVA). Confirmado reproduciendo un caso real: costo $11.190, precio venta
+// $18.980 → 42,53% (mismo número que mostraba Gexus).
+const IVA = 1.19;
+
+export function calcularMargen(precioVenta: number, costo: number | null): number | null {
+  if (!costo || costo <= 0) return null;
+  const precioVentaNeto = precioVenta / IVA;
+  return ((precioVentaNeto - costo) / costo) * 100;
+}
+
 export interface Comuna {
   id: number;
   nombre: string;
@@ -194,6 +211,8 @@ export interface Venta {
   comunaId: number | null;
   comuna: Comuna | null;
   costoEnvio: number | null;
+  descuentoTipo: "porcentaje" | "monto_fijo" | null;
+  descuentoValor: number | null;
   items: ItemVenta[];
   pagos: PagoVenta[];
 }
@@ -358,7 +377,7 @@ export const api = {
       const query = qs.toString();
       return get<Producto[]>(`/api/productos${query ? `?${query}` : ""}`);
     },
-    obtener: (id: number) => get<Producto>(`/api/productos/${id}`),
+    obtener: (id: number) => get<ProductoConCosto>(`/api/productos/${id}`),
     crear: (data: Omit<Producto, "id" | "categoria" | "activo" | "stockActual">) =>
       post<Producto>("/api/productos", data),
     actualizar: (
@@ -540,6 +559,8 @@ export const api = {
       post<PagoVenta>(`/api/caja/creditos/${pagoId}/cobrar`, data),
     actualizarDespacho: (ventaId: number, data: { esDespacho: boolean; comunaId?: number | null }) =>
       put<Venta>(`/api/caja/ventas/${ventaId}/despacho`, data),
+    actualizarDescuento: (ventaId: number, data: { tipo: "porcentaje" | "monto_fijo" | null; valor: number | null }) =>
+      put<Venta>(`/api/caja/ventas/${ventaId}/descuento`, data),
   },
   configuracion: {
     estadoIA: () => get<{ configurada: boolean }>("/api/configuracion/ia/estado"),

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { api, formatoCLP, type Categoria, type FlagBalanza, type Producto } from "../api";
+import { api, calcularMargen, formatoCLP, type Categoria, type FlagBalanza, type ProductoConCosto } from "../api";
 import SelectorCategoria from "../components/SelectorCategoria";
 import { useUsuario } from "../context/UsuarioContext";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
@@ -49,7 +49,7 @@ export default function ProductoForm() {
 
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [form, setForm] = useState<FormState>(formVacio);
-  const [productoActual, setProductoActual] = useState<Producto | null>(null);
+  const [productoActual, setProductoActual] = useState<ProductoConCosto | null>(null);
   const [precioNuevo, setPrecioNuevo] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
@@ -168,6 +168,12 @@ export default function ProductoForm() {
     }
   }
 
+  const margenActual = productoActual ? calcularMargen(productoActual.precio, productoActual.ultimoCosto) : null;
+  const margenNuevo =
+    productoActual && precioNuevo && Number(precioNuevo) > 0
+      ? calcularMargen(Number(precioNuevo), productoActual.ultimoCosto)
+      : null;
+
   return (
     <div>
       <h1>{esNuevo ? "Nuevo producto" : `Editar producto: ${productoActual?.descripcion ?? ""}`}</h1>
@@ -177,6 +183,23 @@ export default function ProductoForm() {
       {!esNuevo && productoActual && (
         <div className="tarjeta cambio-precio">
           <h2>Precio actual: {formatoCLP(productoActual.precio)}</h2>
+          {productoActual.ultimoCosto == null ? (
+            <p className="ayuda">
+              Sin costo registrado — registra una entrada de compra para este producto en Inventario para ver el
+              margen (%).
+            </p>
+          ) : (
+            <p>
+              Costo: {formatoCLP(productoActual.ultimoCosto)} · Margen actual:{" "}
+              <strong>{margenActual?.toFixed(2)}%</strong>
+              {margenNuevo != null && (
+                <>
+                  {" "}
+                  → con el precio nuevo: <strong>{margenNuevo.toFixed(2)}%</strong>
+                </>
+              )}
+            </p>
+          )}
           <form onSubmit={cambiarPrecio} onKeyDown={manejarEnterComoTab} className="fila-inline">
             <input
               type="number"

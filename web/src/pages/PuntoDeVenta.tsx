@@ -20,6 +20,8 @@ export default function PuntoDeVenta() {
   const [medioPago, setMedioPago] = useState<MedioPago>("efectivo");
   const [montoPago, setMontoPago] = useState("");
   const [clienteNombre, setClienteNombre] = useState("");
+  const [descuentoTipo, setDescuentoTipo] = useState<"porcentaje" | "monto_fijo">("porcentaje");
+  const [descuentoValor, setDescuentoValor] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
   const [procesando, setProcesando] = useState(false);
@@ -72,6 +74,17 @@ export default function PuntoDeVenta() {
   const totalPagado = venta?.pagos.reduce((s, p) => s + p.monto, 0) ?? 0;
   const totalVenta = venta?.total ?? 0;
   const faltaPagar = Math.round((totalVenta - totalPagado) * 100) / 100;
+
+  // Solo para mostrar el monto del descuento ya aplicado — el cálculo real
+  // (el que define el total) lo hace el servidor.
+  const subtotalItems = itemsActivos.reduce((s, i) => s + i.subtotal, 0);
+  let descuentoAplicadoMonto = 0;
+  if (venta?.descuentoTipo === "porcentaje" && venta.descuentoValor) {
+    descuentoAplicadoMonto = Math.round(subtotalItems * (venta.descuentoValor / 100));
+  } else if (venta?.descuentoTipo === "monto_fijo" && venta.descuentoValor) {
+    descuentoAplicadoMonto = venta.descuentoValor;
+  }
+  descuentoAplicadoMonto = Math.min(descuentoAplicadoMonto, subtotalItems);
 
   function elegirProducto(p: Producto) {
     setProductoSeleccionado(p);
@@ -195,6 +208,35 @@ export default function PuntoDeVenta() {
     setError(null);
     try {
       const actualizada = await api.caja.actualizarDespacho(venta.id, { esDespacho, comunaId });
+      setVenta(actualizada);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function aplicarDescuento(e: React.FormEvent) {
+    e.preventDefault();
+    if (!venta) return;
+    setError(null);
+    const valor = Number(descuentoValor);
+    if (!valor || valor <= 0) {
+      setError("Ingresa un descuento válido");
+      return;
+    }
+    try {
+      const actualizada = await api.caja.actualizarDescuento(venta.id, { tipo: descuentoTipo, valor });
+      setVenta(actualizada);
+      setDescuentoValor("");
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function quitarDescuento() {
+    if (!venta) return;
+    setError(null);
+    try {
+      const actualizada = await api.caja.actualizarDescuento(venta.id, { tipo: null, valor: null });
       setVenta(actualizada);
     } catch (e) {
       setError((e as Error).message);
@@ -351,6 +393,12 @@ export default function PuntoDeVenta() {
             )}
           </tbody>
         </table>
+        {venta.descuentoTipo && (
+          <p>
+            Subtotal: {formatoCLP(subtotalItems)} · Descuento: -{formatoCLP(descuentoAplicadoMonto)}
+            {venta.costoEnvio ? ` · Envío: ${formatoCLP(venta.costoEnvio)}` : ""}
+          </p>
+        )}
         <h2>Total: {formatoCLP(totalVenta)}</h2>
       </section>
 
@@ -386,6 +434,37 @@ export default function PuntoDeVenta() {
       </section>
 
       <section className="tarjeta">
+        <h2>Descuento</h2>
+        {venta.descuentoTipo ? (
+          <p className="fila-inline">
+            <span className="exito">
+              Descuento aplicado:{" "}
+              {venta.descuentoTipo === "porcentaje" ? `${venta.descuentoValor}%` : formatoCLP(venta.descuentoValor!)}{" "}
+              (-{formatoCLP(descuentoAplicadoMonto)})
+            </span>
+            <button type="button" onClick={quitarDescuento}>
+              Quitar descuento
+            </button>
+          </p>
+        ) : (
+          <form onSubmit={aplicarDescuento} onKeyDown={manejarEnterComoTab} className="fila-inline">
+            <select value={descuentoTipo} onChange={(e) => setDescuentoTipo(e.target.value as "porcentaje" | "monto_fijo")}>
+              <option value="porcentaje">Porcentaje (%)</option>
+              <option value="monto_fijo">Monto fijo ($)</option>
+            </select>
+            <input
+              type="number"
+              min="1"
+              placeholder={descuentoTipo === "porcentaje" ? "Ej: 10" : "Ej: 2000"}
+              value={descuentoValor}
+              onChange={(e) => setDescuentoValor(e.target.value)}
+            />
+            <button type="submit">Aplicar descuento</button>
+          </form>
+        )}
+      </section>
+
+      <section className="tarjeta">
         <h2>Pagos</h2>
         <div className="medios-pago">
           <button
@@ -399,7 +478,12 @@ export default function PuntoDeVenta() {
           <button
             type="button"
             className={`medio-pago-tile ${medioPago === "tarjeta" ? "activo" : ""}`}
-            onClick={() => setMedioPago("tarjeta")}
+            onClick={() => {
+              setMedioPago("tarjeta");
+              // En tarjeta siempre se cobra el monto exacto — se autocompleta
+              // lo que falta pagar para no tener que escribirlo a mano.
+              if (faltaPagarPositivo > 0) setMontoPago(String(faltaPagarPositivo));
+            }}
           >
             <span className="medio-pago-icono">💳</span>
             Tarjeta

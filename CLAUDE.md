@@ -419,6 +419,45 @@ de que el problema no vuelve a aparecer con la próxima versión instalada.
   que imprime en su propio ticket. Probado end-to-end con los números
   reales del caso reportado (Choclillo a $13.980/kg × 1,382 kg): el sistema
   ahora da exactamente $19.320, igual que el ticket de la balanza.
+- **Tarjeta autocompleta el monto**: a pedido del usuario, al hacer clic en
+  el botón "💳 Tarjeta" el campo Monto se llena solo con lo que falta pagar
+  de la venta — en tarjeta siempre se cobra el monto exacto (a diferencia de
+  efectivo, donde el cajero escribe lo que el cliente entregó en la mano),
+  así que no tiene sentido escribirlo a mano cada vez.
+- **Descuento manual (opcional), en porcentaje o en monto fijo**: a pedido
+  del usuario, nueva sección "Descuento" en Punto de Venta (entre Despacho y
+  Pagos). Se elige el tipo (Porcentaje / Monto fijo) y el valor, y se aplica
+  con un botón — solo puede haber un descuento a la vez por venta, con
+  botón "Quitar descuento" para sacarlo. El descuento aplica solo sobre el
+  subtotal de los productos, no sobre el costo de envío. El de porcentaje
+  se recalcula solo si el carrito cambia después de aplicado (ej. se agrega
+  otro producto); el de monto fijo es un número fijo de pesos que no
+  cambia. El vale de una venta ya confirmada (pantalla "Buscar venta")
+  también muestra el descuento aplicado, si tuvo uno.
+
+## Margen (%) al cambiar el precio de un producto
+A pedido del usuario, que mostró una captura real del sistema anterior
+(Gexus) donde la pantalla de cambio de precio/costo mostraba un "Margen
+(%)" junto al precio de venta. Se agregó lo mismo a la pantalla de editar
+producto (junto al campo de cambiar precio): muestra el costo más reciente
+registrado (la última entrada por compra de ese producto en Inventario —
+no hay un campo "costo" fijo en la ficha del producto, así que se usa el
+dato real más reciente) y el margen (%) actual, más un preview en vivo del
+margen que quedaría si se aplica el precio nuevo que se está escribiendo.
+Si el producto no tiene ninguna compra registrada todavía, se avisa en vez
+de mostrar un número inventado.
+
+**Fórmula, reproducida a partir de la captura real** (no está documentada
+en ningún lado, se dedujo comparando los números exactos de la foto):
+margen (%) = ((precio de venta ÷ 1,19) − costo) ÷ costo × 100 — es decir,
+el margen de Gexus es un *markup sobre el costo*, calculado con el precio
+de venta *sin IVA* (el precio que se carga en el sistema incluye IVA).
+Verificado con el caso real de la captura (costo $11.190, precio venta
+$18.980) — la fórmula da 42,53%, el mismo número exacto que mostraba
+Gexus. **Pendiente de confirmar con el usuario** si esta fórmula (markup
+sobre costo, con IVA 19% descontado del precio de venta) es efectivamente
+la que quiere usar en general, ya que se dedujo de un solo ejemplo — fácil
+de ajustar si no es exactamente así.
 
 ## Eliminar productos rápidamente (limpieza de datos)
 A pedido del usuario, para limpiar productos basura que quedaron del CSV
