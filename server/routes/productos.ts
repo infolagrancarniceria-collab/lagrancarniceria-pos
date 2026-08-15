@@ -176,6 +176,27 @@ productosRouter.post("/categorizar-masivo", async (req, res) => {
   res.json({ actualizados: resultado.count });
 });
 
+// --- Eliminar varios productos a la vez (ej. limpiar productos basura de
+// una importación) — mismo borrado lógico (activo: false) que el DELETE de
+// un solo producto, no borra filas de la base de datos.
+
+const eliminarMasivoSchema = z.object({
+  productoIds: z.array(z.number().int().positive()).min(1, "Elige al menos un producto"),
+});
+
+productosRouter.post("/eliminar-masivo", async (req, res) => {
+  const parsed = eliminarMasivoSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0].message });
+  }
+
+  const resultado = await prisma.producto.updateMany({
+    where: { id: { in: parsed.data.productoIds } },
+    data: { activo: false },
+  });
+  res.json({ eliminados: resultado.count });
+});
+
 // --- Importar catálogo desde CSV (crear productos nuevos, no cambia precios
 // de productos existentes) — columnas: plu,descripcion,precio,flag_balanza,
 // categoria_codigo (categoria_codigo es opcional: si se deja vacío, el

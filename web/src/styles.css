@@ -48,6 +48,15 @@ button:disabled {
   background: var(--color-primario-hover);
 }
 
+.boton-peligro {
+  background: var(--color-error);
+  color: white;
+  border-color: var(--color-error);
+}
+.boton-peligro:hover {
+  background: #8f1e18;
+}
+
 a.boton {
   text-decoration: none;
   display: inline-block;

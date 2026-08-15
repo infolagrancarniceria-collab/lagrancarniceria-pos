@@ -388,6 +388,22 @@ desde el programa instalado.
   especial; `window.print()` con estilos propios para que solo se imprima
   el vale, no el resto de la pantalla).
 
+## Eliminar productos rápidamente (limpieza de datos)
+A pedido del usuario, para limpiar productos basura que quedaron del CSV
+importado inicial (ej. 13 productos con descripción literal "NULO" y
+precios sin sentido), la pantalla Productos reutiliza el mismo modo de
+selección que ya existía para categorizar varios a la vez (ahora llamado
+"Seleccionar varios", en vez de "Categorizar varios" — mismo
+checkbox por fila + "seleccionar todos"), agregando un botón "Eliminar
+seleccionados" junto al de asignar categoría. Elimina (soft-delete,
+`activo: false`, igual que el borrado individual desde la ficha del
+producto) todos los productos marcados de una vez, con una confirmación
+que aclara que no se puede deshacer desde la pantalla y que no borra
+movimientos ya registrados. Probado end-to-end: los 13 productos "NULO"
+reales de la base de datos de prueba se filtran con el buscador, se
+seleccionan con "todos" y se eliminan en un solo clic — confirmado que
+dejan de aparecer en el listado normal de productos.
+
 ## Decisiones tomadas en el módulo de inventario
 - La merma hoy no se registra formalmente (confirmado con el usuario) — este
   módulo es el primer registro formal de ese dato.

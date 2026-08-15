@@ -94,6 +94,22 @@ export default function Productos() {
     }
   }
 
+  async function eliminarSeleccionados() {
+    if (seleccionados.size === 0) return;
+    const confirmado = window.confirm(
+      `¿Eliminar ${seleccionados.size} producto(s)? No se podrán deshacer desde esta pantalla — quedan ocultos del sistema, no se borran sus movimientos ya registrados.`
+    );
+    if (!confirmado) return;
+    try {
+      const resultado = await api.productos.eliminarMasivo(Array.from(seleccionados));
+      setMensajeCategorizar(`${resultado.eliminados} producto(s) eliminado(s)`);
+      setSeleccionados(new Set());
+      recargarProductos();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
   useEffect(() => {
     api.categorias.listar().then(setCategorias).catch((e) => setError(e.message));
   }, []);
@@ -126,7 +142,7 @@ export default function Productos() {
               setMensajeCategorizar(null);
             }}
           >
-            {modoCategorizar ? "Cerrar categorizar varios" : "Categorizar varios"}
+            {modoCategorizar ? "Cerrar selección" : "Seleccionar varios"}
           </button>
           <Link to="/productos/nuevo" className="boton boton-primario">
             + Nuevo producto
@@ -136,10 +152,10 @@ export default function Productos() {
 
       {modoCategorizar && (
         <section className="tarjeta">
-          <h2>Categorizar varios productos</h2>
+          <h2>Seleccionar varios productos</h2>
           <p className="ayuda">
-            Marca los productos de la lista de abajo (tip: filtra por "Sin categorizar" para ordenarlos más rápido)
-            y elige la categoría que quieres asignarles a todos de una vez.
+            Marca los productos de la lista de abajo (tip: busca "nulo" o filtra por "Sin categorizar" para
+            encontrarlos más rápido) y luego asígnales una categoría o elimínalos, todos de una vez.
           </p>
           {mensajeCategorizar && <p className="exito">{mensajeCategorizar}</p>}
           <div className="fila-inline">
@@ -162,7 +178,15 @@ export default function Productos() {
               disabled={!categoriaDestino || seleccionados.size === 0}
               onClick={aplicarCategorizarMasivo}
             >
-              Aplicar
+              Asignar categoría
+            </button>
+            <button
+              type="button"
+              className="boton boton-peligro"
+              disabled={seleccionados.size === 0}
+              onClick={eliminarSeleccionados}
+            >
+              Eliminar seleccionados
             </button>
           </div>
         </section>

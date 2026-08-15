@@ -368,6 +368,8 @@ export const api = {
     eliminar: (id: number) => del<void>(`/api/productos/${id}`),
     categorizarMasivo: (productoIds: number[], categoriaId: number) =>
       post<{ actualizados: number }>("/api/productos/categorizar-masivo", { productoIds, categoriaId }),
+    eliminarMasivo: (productoIds: number[]) =>
+      post<{ eliminados: number }>("/api/productos/eliminar-masivo", { productoIds }),
     importarCsv: async (archivo: File, confirmar: boolean) => {
       const form = new FormData();
       form.append("archivo", archivo);
