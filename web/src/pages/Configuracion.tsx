@@ -8,12 +8,14 @@ export default function Configuracion() {
   const [error, setError] = useState<string | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
+  const [direccionRed, setDireccionRed] = useState<{ direcciones: string[]; puerto: number } | null>(null);
 
   useEffect(() => {
     api.configuracion
       .estadoIA()
       .then((r) => setConfigurada(r.configurada))
       .catch((e) => setError(e.message));
+    api.configuracion.direccionRed().then(setDireccionRed).catch(() => {});
   }, []);
 
   async function guardar(e: React.FormEvent) {
@@ -40,6 +42,36 @@ export default function Configuracion() {
   return (
     <div>
       <h1>Configuración</h1>
+
+      <section className="tarjeta">
+        <h2>Conectar otro equipo (ej. un monitor en el mesón)</h2>
+        <p className="ayuda">
+          Este computador tiene que quedar prendido y con el programa abierto — actúa como el servidor para
+          los demás equipos. En el otro equipo (conectado a la misma red WiFi), abre Chrome o Edge y entra a
+          una de estas direcciones:
+        </p>
+        {direccionRed && direccionRed.direcciones.length > 0 ? (
+          <ul>
+            {direccionRed.direcciones.map((ip) => (
+              <li key={ip}>
+                <strong>
+                  http://{ip}:{direccionRed.puerto}
+                </strong>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="ayuda">
+            No se detectó una red local todavía — revisa que este computador esté conectado por WiFi o cable de
+            red.
+          </p>
+        )}
+        <p className="ayuda">
+          Si no carga, puede que el Firewall de Windows esté bloqueando la conexión: ve a "Firewall de Windows
+          Defender" → "Permitir una aplicación a través del firewall" y marca "La Gran Carnicería POS" en
+          redes privadas.
+        </p>
+      </section>
 
       <section className="tarjeta">
         <h2>Asistente de IA</h2>

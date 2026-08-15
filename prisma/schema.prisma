@@ -26,6 +26,7 @@ model Usuario {
   sesionesAbiertas SesionCaja[] @relation("SesionesAbiertasPorUsuario")
   sesionesCerradas SesionCaja[] @relation("SesionesCerradasPorUsuario")
   ventas           Venta[]
+  ventasAnuladas   Venta[]      @relation("VentasAnuladasPorUsuario")
   itemsAnulados    ItemVenta[]  @relation("ItemsAnuladosPorUsuario")
   cobrosDeCreditoRegistrados PagoVenta[] @relation("CobrosDeCreditoRegistradosPorUsuario")
   gastos           Gasto[]
@@ -247,6 +248,12 @@ model Venta {
   // carrito cambia después; "monto_fijo" es un número fijo de pesos.
   descuentoTipo  String? // "porcentaje" | "monto_fijo"
   descuentoValor Float?
+
+  // Si la venta se cancela completa (botón "Cancelar venta", antes de
+  // confirmarla) — igual que anular un ítem, deja rastro de quién autorizó.
+  usuarioAnulacionId Int?
+  usuarioAnulacion   Usuario?  @relation("VentasAnuladasPorUsuario", fields: [usuarioAnulacionId], references: [id])
+  fechaAnulacion     DateTime?
 
   items ItemVenta[]
   pagos PagoVenta[]

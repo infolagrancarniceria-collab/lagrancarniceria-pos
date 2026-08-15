@@ -1,8 +1,26 @@
 import { Router } from "express";
+import { networkInterfaces } from "node:os";
 import { z } from "zod";
 import { prisma } from "../db";
 
 export const configuracionRouter = Router();
+
+// Para poder conectar otro equipo (ej. un monitor en el mesón) por WiFi al
+// mismo servidor, sin tener que buscar la IP a mano con "ipconfig" — se
+// descartan direcciones internas/loopback, solo interesan las de la red
+// local real.
+configuracionRouter.get("/direccion-red", async (_req, res) => {
+  const interfaces = networkInterfaces();
+  const direcciones: string[] = [];
+  for (const detalles of Object.values(interfaces)) {
+    for (const info of detalles ?? []) {
+      if (info.family === "IPv4" && !info.internal) {
+        direcciones.push(info.address);
+      }
+    }
+  }
+  res.json({ direcciones, puerto: Number(process.env.PORT) || 5175 });
+});
 
 configuracionRouter.get("/ia/estado", async (_req, res) => {
   const config = await prisma.configuracionIA.findFirst();

@@ -181,6 +181,7 @@ export interface ItemVenta {
   subtotal: number;
   anulado: boolean;
   usuarioAnulacionId: number | null;
+  usuarioAnulacion: Usuario | null;
   motivoAnulacion: string | null;
   fechaAnulacion: string | null;
 }
@@ -213,6 +214,8 @@ export interface Venta {
   costoEnvio: number | null;
   descuentoTipo: "porcentaje" | "monto_fijo" | null;
   descuentoValor: number | null;
+  usuarioAnulacionId: number | null;
+  fechaAnulacion: string | null;
   items: ItemVenta[];
   pagos: PagoVenta[];
 }
@@ -545,7 +548,7 @@ export const api = {
     anularItem: (
       ventaId: number,
       itemId: number,
-      data: { clave?: string; usuarioId: number; motivo?: string }
+      data: { clave: string; usuarioId: number; motivo?: string }
     ) => delConBody<Venta>(`/api/caja/ventas/${ventaId}/items/${itemId}`, data),
     agregarPago: (ventaId: number, data: { medio: MedioPago; monto: number; clienteNombre?: string }) =>
       post<Venta>(`/api/caja/ventas/${ventaId}/pagos`, data),
@@ -553,7 +556,8 @@ export const api = {
       del<Venta>(`/api/caja/ventas/${ventaId}/pagos/${pagoId}`),
     confirmarVenta: (ventaId: number, usuarioId: number) =>
       post<Venta>(`/api/caja/ventas/${ventaId}/confirmar`, { usuarioId }),
-    cancelarVenta: (ventaId: number) => post<Venta>(`/api/caja/ventas/${ventaId}/cancelar`, {}),
+    cancelarVenta: (ventaId: number, data: { clave: string; usuarioId: number }) =>
+      post<Venta>(`/api/caja/ventas/${ventaId}/cancelar`, data),
     creditosPendientes: () => get<PagoVenta[]>("/api/caja/creditos-pendientes"),
     cobrarCredito: (pagoId: number, data: { medioCobro: MedioCobro; usuarioId: number }) =>
       post<PagoVenta>(`/api/caja/creditos/${pagoId}/cobrar`, data),
@@ -566,6 +570,7 @@ export const api = {
     estadoIA: () => get<{ configurada: boolean }>("/api/configuracion/ia/estado"),
     guardarClaveIA: (claveApiAnthropic: string) =>
       post<void>("/api/configuracion/ia", { claveApiAnthropic }),
+    direccionRed: () => get<{ direcciones: string[]; puerto: number }>("/api/configuracion/direccion-red"),
   },
   asistente: {
     enviarMensaje: (mensaje: string, historial: unknown[]) =>

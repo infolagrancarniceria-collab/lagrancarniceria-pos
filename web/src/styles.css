@@ -48,6 +48,37 @@ button:disabled {
   background: var(--color-primario-hover);
 }
 
+.modal-fondo {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal-contenido {
+  width: min(420px, 90vw);
+}
+
+.punto-de-venta-layout {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  align-items: flex-start;
+}
+
+.columna-izquierda,
+.columna-derecha {
+  flex: 1 1 420px;
+  min-width: 0;
+}
+
+.tarjeta-compacta {
+  padding: 0.75rem 1.25rem;
+}
+
 .selector-categoria-cascada {
   display: inline-flex;
   flex-wrap: wrap;
@@ -186,6 +217,7 @@ select {
   border-radius: 10px;
   padding: 1.25rem;
   margin-bottom: 1.5rem;
+  overflow-x: auto;
 }
 .ayuda {
   color: #665f57;

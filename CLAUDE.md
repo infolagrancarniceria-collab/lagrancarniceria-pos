@@ -439,6 +439,53 @@ de que el problema no vuelve a aparecer con la próxima versión instalada.
   otro producto); el de monto fijo es un número fijo de pesos que no
   cambia. El vale de una venta ya confirmada (pantalla "Buscar venta")
   también muestra el descuento aplicado, si tuvo uno.
+- **Anular SIEMPRE pide clave de supervisor (decisión revisada), y ahora
+  también pide el nombre de quien autoriza**: a pedido del usuario, tanto
+  quitar un producto del carrito (✕) como cancelar la venta completa piden
+  clave en todos los casos — se saca la excepción que existía ("no hace
+  falta clave si la venta todavía no tiene ningún pago registrado"). Además,
+  el modal nuevo (`ModalConfirmarClave`, reutilizado en ambas acciones) pide
+  elegir **el nombre de quien autoriza** de una lista, no solo la clave —
+  así el registro queda a nombre de la persona real que aprobó la
+  anulación, que no necesariamente es quien tiene la sesión de caja abierta
+  (ej. un cajero junior pide la anulación, un supervisor la autoriza con su
+  nombre y clave). `ItemVenta` ya guardaba `usuarioAnulacionId` /
+  `motivoAnulacion` / `fechaAnulacion` desde el principio pero no se
+  mostraban en ningún lado; se agregaron los mismos campos a `Venta` para
+  cuando se cancela la venta completa. La pantalla "Buscar venta" ahora
+  muestra una sección "Productos anulados" (no se imprime en el vale del
+  cliente, solo visible en pantalla) con producto, cantidad, quién anuló y
+  cuándo — el "registro" que pidió el usuario. Probado end-to-end: anular
+  un ítem sin pagos registrados igual pide el modal, clave incorrecta la
+  rechaza con error sin cerrar el modal, y el registro aparece correctamente
+  en el detalle de la venta confirmada.
+- **Pantalla más compacta, en 2 columnas**: el usuario (con feedback de su
+  papá probando el sistema) encontró que había que bajar mucho con el mouse
+  para llegar a Pagos. Se reorganizó en dos columnas — izquierda: buscador +
+  Carrito (lo que más se usa); derecha: Despacho, Descuento y Pagos — y
+  Despacho/Descuento (que no se usan en cada venta) quedan plegados por
+  defecto, mostrando solo un botón "+ Despacho a domicilio" / "+ Agregar
+  descuento" hasta que se necesitan. Se agregó `overflow-x: auto` a
+  `.tarjeta` de paso, porque con la columna más angosta alguna tabla se
+  recortaba visualmente.
+
+## Conectar otro equipo por WiFi (sin instalar el programa ahí)
+El usuario instaló el programa completo en un segundo PC/monitor (el del
+mesón de atención) para probar la Caja ahí, y no tenía ningún dato — porque
+cada instalación crea su propia base de datos vacía, por diseño (para poder
+funcionar sin internet). La arquitectura ya estaba pensada para este caso
+desde el principio (ver "Arquitectura y stack"): el servidor escucha en la
+red local, no solo en el PC, para que otros equipos se conecten **por
+navegador**, sin instalar nada — el PC principal actúa de servidor mientras
+el programa esté abierto ahí.
+
+Como encontrar la IP a mano con `ipconfig` es incómodo, se agregó una
+sección "Conectar otro equipo" en Configuración que detecta y muestra
+automáticamente la dirección (ej. `http://192.168.1.15:5175`) usando
+`os.networkInterfaces()` de Node (se descartan direcciones internas/
+loopback). También recuerda que hay que revisar el Firewall de Windows si
+la conexión no carga desde el otro equipo (bloquea conexiones entrantes por
+defecto en algunas configuraciones).
 
 ## Margen (%) al cambiar el precio de un producto
 A pedido del usuario, que mostró una captura real del sistema anterior

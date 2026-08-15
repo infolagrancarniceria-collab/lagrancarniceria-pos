@@ -5,6 +5,7 @@ import { useUsuario } from "../context/UsuarioContext";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 import { useEscanerCodigoBarras } from "../hooks/useEscanerCodigoBarras";
 import { TecladoNumerico } from "../components/TecladoNumerico";
+import ModalConfirmarClave from "../components/ModalConfirmarClave";
 
 export default function PuntoDeVenta() {
   const { usuario } = useUsuario();
@@ -22,9 +23,12 @@ export default function PuntoDeVenta() {
   const [clienteNombre, setClienteNombre] = useState("");
   const [descuentoTipo, setDescuentoTipo] = useState<"porcentaje" | "monto_fijo">("porcentaje");
   const [descuentoValor, setDescuentoValor] = useState("");
+  const [mostrarFormDescuento, setMostrarFormDescuento] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
   const [procesando, setProcesando] = useState(false);
+  const [itemAAnular, setItemAAnular] = useState<number | null>(null);
+  const [cancelandoVenta, setCancelandoVenta] = useState(false);
 
   const inputCantidadRef = useRef<HTMLInputElement>(null);
   const inputMontoPagoRef = useRef<HTMLInputElement>(null);
@@ -135,28 +139,16 @@ export default function PuntoDeVenta() {
 
   useEscanerCodigoBarras(escanearCodigo, !!venta);
 
-  async function anularItem(itemId: number) {
-    if (!venta || !usuario) return;
-    setError(null);
+  // Anular un ítem del carrito siempre pide clave de supervisor y el nombre
+  // de quien autoriza (no necesariamente el cajero con la sesión abierta),
+  // vía el modal ModalConfirmarClave — se abre marcando itemAAnular.
+  async function confirmarAnularItem(usuarioId: number, clave: string) {
+    if (!venta || itemAAnular == null) return;
     setMensaje(null);
-    // Antes de registrar cualquier pago, quitar un ítem es solo corregir el
-    // carrito (ej. el cliente cambia de opinión) — no hace falta clave.
-    // Una vez que hay pagos registrados, sí se pide, para dejar rastro.
-    let clave: string | null = null;
-    if (venta.pagos.length > 0) {
-      clave = window.prompt("Clave de supervisor para anular este ítem:");
-      if (!clave) return;
-    }
-    try {
-      const actualizada = await api.caja.anularItem(venta.id, itemId, {
-        clave: clave ?? undefined,
-        usuarioId: usuario.id,
-      });
-      setVenta(actualizada);
-      setMensaje("Ítem anulado");
-    } catch (e) {
-      setError((e as Error).message);
-    }
+    const actualizada = await api.caja.anularItem(venta.id, itemAAnular, { clave, usuarioId });
+    setVenta(actualizada);
+    setMensaje("Ítem anulado");
+    setItemAAnular(null);
   }
 
   // En efectivo, el cajero escribe lo que el cliente entregó en la mano — no
@@ -239,6 +231,7 @@ export default function PuntoDeVenta() {
     try {
       const actualizada = await api.caja.actualizarDescuento(venta.id, { tipo: null, valor: null });
       setVenta(actualizada);
+      setMostrarFormDescuento(false);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -271,16 +264,12 @@ export default function PuntoDeVenta() {
     }
   }
 
-  async function cancelarVenta() {
+  // Igual que anular un ítem, cancelar toda la venta pide clave de
+  // supervisor y el nombre de quien autoriza, vía ModalConfirmarClave.
+  async function confirmarCancelarVenta(usuarioId: number, clave: string) {
     if (!venta) return;
-    const confirmado = window.confirm("¿Cancelar toda la venta? No se guardará nada.");
-    if (!confirmado) return;
-    try {
-      await api.caja.cancelarVenta(venta.id);
-      navigate("/caja");
-    } catch (e) {
-      setError((e as Error).message);
-    }
+    await api.caja.cancelarVenta(venta.id, { usuarioId, clave });
+    navigate("/caja");
   }
 
   if (!venta) {
@@ -298,6 +287,9 @@ export default function PuntoDeVenta() {
       <h1>Punto de venta</h1>
       {error && <p className="error">{error}</p>}
       {mensaje && <p className="exito">{mensaje}</p>}
+
+      <div className="punto-de-venta-layout">
+      <div className="columna-izquierda">
 
       <section className="tarjeta">
         <p className="ayuda">
@@ -379,7 +371,7 @@ export default function PuntoDeVenta() {
                       type="button"
                       className="boton-quitar-item"
                       title="Quitar del carrito"
-                      onClick={() => anularItem(item.id)}
+                      onClick={() => setItemAAnular(item.id)}
                     >
                       ✕
                     </button>
@@ -403,65 +395,83 @@ export default function PuntoDeVenta() {
         <h2>Total: {formatoCLP(totalVenta)}</h2>
       </section>
 
-      <section className="tarjeta">
-        <h2>Despacho</h2>
-        <label className="fila-inline" style={{ marginBottom: mostrarSelectorComuna ? "0.75rem" : 0 }}>
-          <input
-            type="checkbox"
-            checked={mostrarSelectorComuna}
-            onChange={(e) => {
-              setMostrarSelectorComuna(e.target.checked);
-              if (!e.target.checked) actualizarDespacho(false, null);
-            }}
-          />
-          Es despacho a domicilio
-        </label>
-        {mostrarSelectorComuna && (
-          <select
-            value={venta.comunaId ?? ""}
-            onChange={(e) => {
-              const comunaId = e.target.value ? Number(e.target.value) : null;
-              if (comunaId) actualizarDespacho(true, comunaId);
-            }}
-          >
-            <option value="">Elegir comuna...</option>
-            {comunas.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.nombre} ({formatoCLP(c.costoEnvio)})
-              </option>
-            ))}
-          </select>
+      </div>
+      <div className="columna-derecha">
+
+      <section className="tarjeta tarjeta-compacta">
+        {!mostrarSelectorComuna ? (
+          <button type="button" onClick={() => setMostrarSelectorComuna(true)}>
+            + Despacho a domicilio
+          </button>
+        ) : (
+          <>
+            <h2>Despacho</h2>
+            <label className="fila-inline" style={{ marginBottom: "0.75rem" }}>
+              <input
+                type="checkbox"
+                checked={mostrarSelectorComuna}
+                onChange={(e) => {
+                  setMostrarSelectorComuna(e.target.checked);
+                  if (!e.target.checked) actualizarDespacho(false, null);
+                }}
+              />
+              Es despacho a domicilio
+            </label>
+            <select
+              value={venta.comunaId ?? ""}
+              onChange={(e) => {
+                const comunaId = e.target.value ? Number(e.target.value) : null;
+                if (comunaId) actualizarDespacho(true, comunaId);
+              }}
+            >
+              <option value="">Elegir comuna...</option>
+              {comunas.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.nombre} ({formatoCLP(c.costoEnvio)})
+                </option>
+              ))}
+            </select>
+          </>
         )}
       </section>
 
-      <section className="tarjeta">
-        <h2>Descuento</h2>
+      <section className="tarjeta tarjeta-compacta">
         {venta.descuentoTipo ? (
-          <p className="fila-inline">
-            <span className="exito">
-              Descuento aplicado:{" "}
-              {venta.descuentoTipo === "porcentaje" ? `${venta.descuentoValor}%` : formatoCLP(venta.descuentoValor!)}{" "}
-              (-{formatoCLP(descuentoAplicadoMonto)})
-            </span>
-            <button type="button" onClick={quitarDescuento}>
-              Quitar descuento
-            </button>
-          </p>
+          <>
+            <h2>Descuento</h2>
+            <p className="fila-inline">
+              <span className="exito">
+                Descuento aplicado:{" "}
+                {venta.descuentoTipo === "porcentaje" ? `${venta.descuentoValor}%` : formatoCLP(venta.descuentoValor!)}{" "}
+                (-{formatoCLP(descuentoAplicadoMonto)})
+              </span>
+              <button type="button" onClick={quitarDescuento}>
+                Quitar descuento
+              </button>
+            </p>
+          </>
+        ) : !mostrarFormDescuento ? (
+          <button type="button" onClick={() => setMostrarFormDescuento(true)}>
+            + Agregar descuento
+          </button>
         ) : (
-          <form onSubmit={aplicarDescuento} onKeyDown={manejarEnterComoTab} className="fila-inline">
-            <select value={descuentoTipo} onChange={(e) => setDescuentoTipo(e.target.value as "porcentaje" | "monto_fijo")}>
-              <option value="porcentaje">Porcentaje (%)</option>
-              <option value="monto_fijo">Monto fijo ($)</option>
-            </select>
-            <input
-              type="number"
-              min="1"
-              placeholder={descuentoTipo === "porcentaje" ? "Ej: 10" : "Ej: 2000"}
-              value={descuentoValor}
-              onChange={(e) => setDescuentoValor(e.target.value)}
-            />
-            <button type="submit">Aplicar descuento</button>
-          </form>
+          <>
+            <h2>Descuento</h2>
+            <form onSubmit={aplicarDescuento} onKeyDown={manejarEnterComoTab} className="fila-inline">
+              <select value={descuentoTipo} onChange={(e) => setDescuentoTipo(e.target.value as "porcentaje" | "monto_fijo")}>
+                <option value="porcentaje">Porcentaje (%)</option>
+                <option value="monto_fijo">Monto fijo ($)</option>
+              </select>
+              <input
+                type="number"
+                min="1"
+                placeholder={descuentoTipo === "porcentaje" ? "Ej: 10" : "Ej: 2000"}
+                value={descuentoValor}
+                onChange={(e) => setDescuentoValor(e.target.value)}
+              />
+              <button type="submit">Aplicar descuento</button>
+            </form>
+          </>
         )}
       </section>
 
@@ -566,10 +576,31 @@ export default function PuntoDeVenta() {
         >
           {procesando ? "Confirmando..." : "Confirmar venta"}
         </button>
-        <button type="button" onClick={cancelarVenta}>
+        <button type="button" onClick={() => setCancelandoVenta(true)}>
           Cancelar venta
         </button>
       </div>
+
+      </div>
+      </div>
+
+      {itemAAnular != null && (
+        <ModalConfirmarClave
+          titulo="Anular producto"
+          descripcion="Elige quién autoriza y escribe la clave de supervisor."
+          onConfirmar={confirmarAnularItem}
+          onCancelar={() => setItemAAnular(null)}
+        />
+      )}
+
+      {cancelandoVenta && (
+        <ModalConfirmarClave
+          titulo="Cancelar toda la venta"
+          descripcion="No se guardará nada de esta venta. Elige quién autoriza y escribe la clave de supervisor."
+          onConfirmar={confirmarCancelarVenta}
+          onCancelar={() => setCancelandoVenta(false)}
+        />
+      )}
     </div>
   );
 }

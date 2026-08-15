@@ -213,7 +213,7 @@ cajaRouter.get("/ventas/abierta", async (_req, res) => {
 
   const venta = await prisma.venta.findFirst({
     where: { sesionCajaId: sesion.id, estado: "abierta" },
-    include: { items: { include: { producto: true } }, pagos: true, comuna: true },
+    include: { items: { include: { producto: true, usuarioAnulacion: true } }, pagos: true, comuna: true },
   });
   res.json(venta);
 });
@@ -221,7 +221,7 @@ cajaRouter.get("/ventas/abierta", async (_req, res) => {
 cajaRouter.get("/ventas/:id", async (req, res) => {
   const venta = await prisma.venta.findUnique({
     where: { id: Number(req.params.id) },
-    include: { items: { include: { producto: true } }, pagos: true, usuario: true, comuna: true },
+    include: { items: { include: { producto: true, usuarioAnulacion: true } }, pagos: true, usuario: true, comuna: true },
   });
   if (!venta) return res.status(404).json({ error: "Venta no encontrada" });
   res.json(venta);
@@ -288,7 +288,7 @@ cajaRouter.put("/ventas/:id/despacho", async (req, res) => {
 
   const ventaActualizada = await prisma.venta.findUnique({
     where: { id: ventaId },
-    include: { items: { include: { producto: true } }, pagos: true, comuna: true },
+    include: { items: { include: { producto: true, usuarioAnulacion: true } }, pagos: true, comuna: true },
   });
   res.json(ventaActualizada);
 });
@@ -327,7 +327,7 @@ cajaRouter.put("/ventas/:id/descuento", async (req, res) => {
 
   const ventaActualizada = await prisma.venta.findUnique({
     where: { id: ventaId },
-    include: { items: { include: { producto: true } }, pagos: true, comuna: true },
+    include: { items: { include: { producto: true, usuarioAnulacion: true } }, pagos: true, comuna: true },
   });
   res.json(ventaActualizada);
 });
@@ -384,7 +384,7 @@ cajaRouter.post("/ventas/:id/items", async (req, res) => {
 
   const ventaActualizada = await prisma.venta.findUnique({
     where: { id: ventaId },
-    include: { items: { include: { producto: true } }, pagos: true, comuna: true },
+    include: { items: { include: { producto: true, usuarioAnulacion: true } }, pagos: true, comuna: true },
   });
   res.status(201).json(ventaActualizada);
 });
@@ -426,7 +426,7 @@ cajaRouter.post("/ventas/:id/items/escanear", async (req, res) => {
 
   const ventaActualizada = await prisma.venta.findUnique({
     where: { id: ventaId },
-    include: { items: { include: { producto: true } }, pagos: true, comuna: true },
+    include: { items: { include: { producto: true, usuarioAnulacion: true } }, pagos: true, comuna: true },
   });
   res.status(201).json(ventaActualizada);
 });
@@ -449,7 +449,7 @@ async function recalcularTotal(ventaId: number) {
 }
 
 const anularItemSchema = z.object({
-  clave: z.string().trim().optional().nullable(),
+  clave: z.string().trim().min(1, "Falta la clave de supervisor"),
   usuarioId: z.number().int().positive(),
   motivo: z.string().trim().optional().nullable(),
 });
@@ -463,27 +463,23 @@ cajaRouter.delete("/ventas/:id/items/:itemId", async (req, res) => {
   }
   const { clave, usuarioId, motivo } = parsed.data;
 
+  // usuarioId es quien anula (elegido en el momento, con su clave) — no
+  // necesariamente el usuario con la sesión de caja abierta, para que el
+  // registro quede a nombre de quien realmente autorizó la anulación.
   const usuario = await validarUsuario(usuarioId);
   if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
 
   const item = await prisma.itemVenta.findUnique({ where: { id: itemId } });
   if (!item || item.ventaId !== ventaId) return res.status(404).json({ error: "Ítem no encontrado" });
 
-  const venta = await prisma.venta.findUnique({ where: { id: ventaId }, include: { pagos: true } });
+  const venta = await prisma.venta.findUnique({ where: { id: ventaId } });
   if (!venta || venta.estado !== "abierta") {
     return res.status(400).json({ error: "Esta venta ya no admite cambios" });
   }
 
-  // Si todavía no se registró ningún pago, no hay plata ni stock comprometido
-  // — se puede sacar el ítem del carrito sin pedir clave de supervisor
-  // (ej. el cliente cambia de opinión antes de pagar). Una vez que empezó a
-  // registrarse el pago, sí se pide clave, para dejar rastro de auditoría.
-  if (venta.pagos.length > 0) {
-    if (!clave) return res.status(400).json({ error: "Falta la clave de supervisor" });
-    const claveSupervisor = await prisma.claveSupervisor.findFirst();
-    if (!claveSupervisor || !verificarClave(clave, claveSupervisor.hashClave)) {
-      return res.status(403).json({ error: "Clave de supervisor incorrecta" });
-    }
+  const claveSupervisor = await prisma.claveSupervisor.findFirst();
+  if (!claveSupervisor || !verificarClave(clave, claveSupervisor.hashClave)) {
+    return res.status(403).json({ error: "Clave de supervisor incorrecta" });
   }
 
   await prisma.itemVenta.update({
@@ -499,7 +495,7 @@ cajaRouter.delete("/ventas/:id/items/:itemId", async (req, res) => {
 
   const ventaActualizada = await prisma.venta.findUnique({
     where: { id: ventaId },
-    include: { items: { include: { producto: true } }, pagos: true, comuna: true },
+    include: { items: { include: { producto: true, usuarioAnulacion: true } }, pagos: true, comuna: true },
   });
   res.json(ventaActualizada);
 });
@@ -533,7 +529,7 @@ cajaRouter.post("/ventas/:id/pagos", async (req, res) => {
 
   const ventaActualizada = await prisma.venta.findUnique({
     where: { id: ventaId },
-    include: { items: { include: { producto: true } }, pagos: true, comuna: true },
+    include: { items: { include: { producto: true, usuarioAnulacion: true } }, pagos: true, comuna: true },
   });
   res.status(201).json(ventaActualizada);
 });
@@ -554,7 +550,7 @@ cajaRouter.delete("/ventas/:id/pagos/:pagoId", async (req, res) => {
 
   const ventaActualizada = await prisma.venta.findUnique({
     where: { id: ventaId },
-    include: { items: { include: { producto: true } }, pagos: true, comuna: true },
+    include: { items: { include: { producto: true, usuarioAnulacion: true } }, pagos: true, comuna: true },
   });
   res.json(ventaActualizada);
 });
@@ -574,7 +570,7 @@ cajaRouter.post("/ventas/:id/confirmar", async (req, res) => {
 
   const venta = await prisma.venta.findUnique({
     where: { id: ventaId },
-    include: { items: { include: { producto: true } }, pagos: true, comuna: true },
+    include: { items: { include: { producto: true, usuarioAnulacion: true } }, pagos: true, comuna: true },
   });
   if (!venta) return res.status(404).json({ error: "Venta no encontrada" });
   if (venta.estado !== "abierta") return res.status(400).json({ error: "Esta venta ya fue procesada" });
@@ -617,19 +613,40 @@ cajaRouter.post("/ventas/:id/confirmar", async (req, res) => {
 
   const ventaFinal = await prisma.venta.findUnique({
     where: { id: ventaId },
-    include: { items: { include: { producto: true } }, pagos: true, comuna: true },
+    include: { items: { include: { producto: true, usuarioAnulacion: true } }, pagos: true, comuna: true },
   });
   res.json(ventaFinal);
 });
 
+const cancelarVentaSchema = z.object({
+  clave: z.string().trim().min(1, "Falta la clave de supervisor"),
+  usuarioId: z.number().int().positive(),
+});
+
 cajaRouter.post("/ventas/:id/cancelar", async (req, res) => {
   const ventaId = Number(req.params.id);
+  const parsed = cancelarVentaSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0].message });
+  }
+  const { clave, usuarioId } = parsed.data;
+
+  const usuario = await validarUsuario(usuarioId);
+  if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
 
   const venta = await prisma.venta.findUnique({ where: { id: ventaId } });
   if (!venta) return res.status(404).json({ error: "Venta no encontrada" });
   if (venta.estado !== "abierta") return res.status(400).json({ error: "Esta venta ya fue procesada" });
 
-  const ventaCancelada = await prisma.venta.update({ where: { id: ventaId }, data: { estado: "anulada" } });
+  const claveSupervisor = await prisma.claveSupervisor.findFirst();
+  if (!claveSupervisor || !verificarClave(clave, claveSupervisor.hashClave)) {
+    return res.status(403).json({ error: "Clave de supervisor incorrecta" });
+  }
+
+  const ventaCancelada = await prisma.venta.update({
+    where: { id: ventaId },
+    data: { estado: "anulada", usuarioAnulacionId: usuarioId, fechaAnulacion: new Date() },
+  });
   res.json(ventaCancelada);
 });
 

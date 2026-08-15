@@ -56,6 +56,7 @@ export default function BuscarVenta() {
   }
 
   const itemsActivos = ventaDetalle?.items.filter((i) => !i.anulado) ?? [];
+  const itemsAnulados = ventaDetalle?.items.filter((i) => i.anulado) ?? [];
 
   return (
     <div>
@@ -147,6 +148,31 @@ export default function BuscarVenta() {
               ))}
             </tbody>
           </table>
+          {itemsAnulados.length > 0 && (
+            <div className="no-imprimir">
+              <h3>Productos anulados</h3>
+              <table className="tabla">
+                <thead>
+                  <tr>
+                    <th>Producto</th>
+                    <th>Cantidad</th>
+                    <th>Anulado por</th>
+                    <th>Fecha</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {itemsAnulados.map((item) => (
+                    <tr key={item.id}>
+                      <td>{item.producto.descripcion}</td>
+                      <td>{item.cantidad}</td>
+                      <td>{item.usuarioAnulacion?.nombre ?? "—"}</td>
+                      <td>{item.fechaAnulacion ? new Date(item.fechaAnulacion).toLocaleString("es-CL") : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
           {ventaDetalle.descuentoTipo && (
             <p>
               Subtotal: {formatoCLP(itemsActivos.reduce((s, i) => s + i.subtotal, 0))} · Descuento:{" "}
