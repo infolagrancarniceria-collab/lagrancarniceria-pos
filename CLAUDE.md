@@ -405,6 +405,20 @@ de que el problema no vuelve a aparecer con la próxima versión instalada.
   ya esté configurada en Windows (sin integrar una impresora térmica
   especial; `window.print()` con estilos propios para que solo se imprima
   el vale, no el resto de la pantalla).
+- **Cantidad de productos pesables con 3 decimales (gramos), no 2**:
+  probando una venta real, un Choclillo pesó 1,382 kg en la balanza física
+  ($19.320), pero el sistema solo dejaba ingresar 1,38 o 1,39 kg — una
+  diferencia de $28, significativa para el usuario. El campo Cantidad (en
+  Punto de Venta, y también en Registrar entrada/salida de inventario) tenía
+  `step="0.01"` (dos decimales, o sea precisión de 10 gramos); se cambió a
+  `step="0.001"` (precisión de 1 gramo) para que coincida con lo que
+  realmente muestra la balanza. Además, ya que el peso pesado trae
+  decimales, `precio × cantidad` puede dar centavos que no existen en pesos
+  chilenos (ej. $19.320,36) — se agregó redondeo a peso entero al calcular
+  el subtotal de cada ítem, igual que la balanza física redondea el total
+  que imprime en su propio ticket. Probado end-to-end con los números
+  reales del caso reportado (Choclillo a $13.980/kg × 1,382 kg): el sistema
+  ahora da exactamente $19.320, igual que el ticket de la balanza.
 
 ## Eliminar productos rápidamente (limpieza de datos)
 A pedido del usuario, para limpiar productos basura que quedaron del CSV

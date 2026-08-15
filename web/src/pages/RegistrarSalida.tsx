@@ -79,7 +79,7 @@ export default function RegistrarSalida() {
         {productoSeleccionado && <p className="ayuda">Stock actual: {productoSeleccionado.stockActual}</p>}
         <label>
           Cantidad
-          <input type="number" min="0.01" step="0.01" value={cantidad} onChange={(e) => setCantidad(e.target.value)} required />
+          <input type="number" min="0.001" step="0.001" value={cantidad} onChange={(e) => setCantidad(e.target.value)} required />
         </label>
         <label>
           Motivo

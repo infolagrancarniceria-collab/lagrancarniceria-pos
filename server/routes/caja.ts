@@ -322,7 +322,10 @@ async function agregarItemAVenta(
     return { status: 400, error: `Stock insuficiente: quedan ${producto.stockActual - yaEnCarrito} disponibles` };
   }
 
-  const subtotal = producto.precio * cantidad;
+  // El peso pesable viene con decimales (gramos), así que precio * cantidad
+  // puede dar centavos que no existen en pesos chilenos — se redondea igual
+  // que la balanza física redondea el total que imprime en su ticket.
+  const subtotal = Math.round(producto.precio * cantidad);
   await prisma.itemVenta.create({
     data: { ventaId, productoId, cantidad, precioUnitario: producto.precio, subtotal },
   });

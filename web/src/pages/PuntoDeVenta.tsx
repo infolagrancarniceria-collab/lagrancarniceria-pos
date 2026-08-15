@@ -296,8 +296,8 @@ export default function PuntoDeVenta() {
           <input
             ref={inputCantidadRef}
             type="number"
-            min="0.01"
-            step="0.01"
+            min="0.001"
+            step="0.001"
             placeholder="Cantidad"
             value={cantidad}
             onChange={(e) => setCantidad(e.target.value)}
