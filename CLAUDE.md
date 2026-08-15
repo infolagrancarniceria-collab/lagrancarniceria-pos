@@ -423,7 +423,12 @@ de que el problema no vuelve a aparecer con la próxima versión instalada.
   el botón "💳 Tarjeta" el campo Monto se llena solo con lo que falta pagar
   de la venta — en tarjeta siempre se cobra el monto exacto (a diferencia de
   efectivo, donde el cajero escribe lo que el cliente entregó en la mano),
-  así que no tiene sentido escribirlo a mano cada vez.
+  así que no tiene sentido escribirlo a mano cada vez. Además, a pedido del
+  usuario, el foco queda listo en ese campo para que apretar Enter agregue
+  el pago al toque, sin soltar el teclado (reutiliza el mismo mecanismo de
+  "Enter manda el formulario en el último campo" ya usado en el resto del
+  sistema — con tarjeta, el campo Monto es el único campo del formulario de
+  pago, así que Enter ahí ya lo manda).
 - **Descuento manual (opcional), en porcentaje o en monto fijo**: a pedido
   del usuario, nueva sección "Descuento" en Punto de Venta (entre Despacho y
   Pagos). Se elige el tipo (Porcentaje / Monto fijo) y el valor, y se aplica

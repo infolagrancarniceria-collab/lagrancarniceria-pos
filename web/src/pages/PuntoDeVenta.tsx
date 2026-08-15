@@ -27,6 +27,7 @@ export default function PuntoDeVenta() {
   const [procesando, setProcesando] = useState(false);
 
   const inputCantidadRef = useRef<HTMLInputElement>(null);
+  const inputMontoPagoRef = useRef<HTMLInputElement>(null);
   const ventaRef = useRef<Venta | null>(null);
 
   useEffect(() => {
@@ -481,8 +482,10 @@ export default function PuntoDeVenta() {
             onClick={() => {
               setMedioPago("tarjeta");
               // En tarjeta siempre se cobra el monto exacto — se autocompleta
-              // lo que falta pagar para no tener que escribirlo a mano.
+              // lo que falta pagar para no tener que escribirlo a mano, y se
+              // deja el foco listo para que Enter agregue el pago al toque.
               if (faltaPagarPositivo > 0) setMontoPago(String(faltaPagarPositivo));
+              setTimeout(() => inputMontoPagoRef.current?.focus(), 0);
             }}
           >
             <span className="medio-pago-icono">💳</span>
@@ -507,6 +510,7 @@ export default function PuntoDeVenta() {
             />
           )}
           <input
+            ref={inputMontoPagoRef}
             type="number"
             min="1"
             placeholder={medioPago === "efectivo" ? "Efectivo recibido" : "Monto"}
