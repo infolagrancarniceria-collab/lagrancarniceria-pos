@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { api, type PropuestaAsistente } from "../api";
+import { api, formatoCLP, type PropuestaAsistente } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 
@@ -57,9 +57,94 @@ async function ejecutarPropuesta(accion: PropuestaAsistente["accion"], usuarioId
         usuarioId,
       });
       return;
+    case "proponer_categorizar_masivo": {
+      const items = (d.items as { productoId: number }[]) ?? [];
+      await api.productos.categorizarMasivo(
+        items.map((i) => Number(i.productoId)),
+        Number(d.categoriaId)
+      );
+      return;
+    }
+    case "proponer_cambios_precio_masivos": {
+      const items = (d.items as { productoId: number; precioNuevo: number }[]) ?? [];
+      // Secuencial (no en paralelo) para que quede un orden claro en el
+      // historial de precios y para no saturar al servidor con N pedidos
+      // a la vez.
+      for (const item of items) {
+        await api.precios.cambiarIndividual({
+          productoId: Number(item.productoId),
+          precioNuevo: Number(item.precioNuevo),
+          usuarioId,
+        });
+      }
+      return;
+    }
+    case "proponer_entradas_inventario_masivas": {
+      const items = (d.items as { productoId: number; cantidad: number; costoUnitario?: number }[]) ?? [];
+      for (const item of items) {
+        await api.inventario.entrada({
+          productoId: Number(item.productoId),
+          cantidad: Number(item.cantidad),
+          motivo: "compra",
+          proveedorId: d.proveedorId != null ? Number(d.proveedorId) : null,
+          costoUnitario: item.costoUnitario != null ? Number(item.costoUnitario) : null,
+          numeroFactura: d.numeroFactura != null ? String(d.numeroFactura) : null,
+          usuarioId,
+        });
+      }
+      return;
+    }
     default:
       throw new Error(`Acción desconocida: ${accion.tipo}`);
   }
+}
+
+const HERRAMIENTAS_MASIVAS = new Set([
+  "proponer_categorizar_masivo",
+  "proponer_cambios_precio_masivos",
+  "proponer_entradas_inventario_masivas",
+]);
+
+const ETIQUETAS_COLUMNA: Record<string, string> = {
+  descripcion: "Producto",
+  cantidad: "Cantidad",
+  costoUnitario: "Costo unitario",
+  precioActual: "Precio actual",
+  precioNuevo: "Precio nuevo",
+};
+
+const COLUMNAS_CLP = new Set(["costoUnitario", "precioActual", "precioNuevo"]);
+
+// Tabla de revisión para propuestas masivas: muestra cada línea que se va a
+// aplicar (producto, cantidad, precio, etc.) antes de confirmar — el resumen
+// en texto no alcanza para revisar con confianza un lote de varios cambios.
+function TablaRevisionMasiva({ items }: { items: Record<string, unknown>[] }) {
+  if (items.length === 0) return null;
+  const columnas = Object.keys(items[0]).filter((k) => k !== "productoId");
+  return (
+    <table className="tabla">
+      <thead>
+        <tr>
+          {columnas.map((c) => (
+            <th key={c}>{ETIQUETAS_COLUMNA[c] ?? c}</th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {items.map((item, i) => (
+          <tr key={i}>
+            {columnas.map((c) => (
+              <td key={c}>
+                {COLUMNAS_CLP.has(c) && typeof item[c] === "number"
+                  ? formatoCLP(item[c] as number)
+                  : String(item[c] ?? "—")}
+              </td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
 }
 
 export default function Asistente() {
@@ -142,6 +227,9 @@ export default function Asistente() {
             <p>
               <strong>La IA propone:</strong> {propuesta.descripcion}
             </p>
+            {HERRAMIENTAS_MASIVAS.has(propuesta.accion.tipo) && Array.isArray(propuesta.accion.datos.items) && (
+              <TablaRevisionMasiva items={propuesta.accion.datos.items as Record<string, unknown>[]} />
+            )}
             <div className="fila-inline">
               <button type="button" className="boton boton-primario" onClick={confirmar} disabled={confirmando}>
                 {confirmando ? "Aplicando..." : "Confirmar"}

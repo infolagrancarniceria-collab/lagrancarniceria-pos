@@ -475,3 +475,46 @@ Sheets, sin relación con este sistema).
 - La conversación con la IA no se guarda en la base de datos — el historial
   vive en el frontend mientras la pantalla esté abierta, y se manda de
   vuelta en cada mensaje nuevo (patrón sin estado, más simple).
+- **Herramientas de escritura masivas**, a pedido del usuario, para pedidos
+  del tipo "pégale el texto de una factura y que la registre" o "cambia el
+  precio/categoría de esta lista de productos" — sin esto, cada gestión
+  necesitaba una propuesta separada por producto, muy lento para lotes.
+  Tres herramientas nuevas, todas dentro de la misma regla de "propone,
+  la persona confirma" (siguen contando como **una sola** propuesta por
+  pedido, solo que ahora una propuesta puede traer varias líneas adentro):
+  - `proponer_entradas_inventario_masivas`: para pegar el texto de una
+    factura y registrar todas sus líneas de una vez (mismo proveedor y N°
+    de factura, cada línea con su propio producto/cantidad/costo).
+  - `proponer_categorizar_masivo`: asignar la misma categoría a varios
+    productos a la vez (reutiliza el endpoint `categorizar-masivo` del
+    módulo de precios).
+  - `proponer_cambios_precio_masivos`: cambiar el precio de varios
+    productos DISTINTOS a la vez, cada uno a su propio precio nuevo (para
+    una lista de precios pegada, a diferencia de
+    `proponer_cambio_precio_masivo_categoria` que aplica el mismo % a toda
+    una categoría).
+  Para las tres, el frontend ejecuta la confirmación llamando el mismo
+  endpoint de un solo producto que usaría una persona a mano, una vez por
+  cada línea (o el endpoint ya masivo, en el caso de categorizar) — nunca
+  un camino de escritura aparte.
+  **Salvaguarda clave para la parte de "leer factura":** el prompt le
+  exige a la IA usar `buscar_productos` para encontrar el `productoId`
+  real de cada línea, y **nunca adivinar** — si el nombre de una línea no
+  tiene un match único y claro en el catálogo, tiene que preguntarle a la
+  persona en vez de incluirlo en la propuesta (evita que, por ejemplo, un
+  "Arrollado" ambiguo entre "ARROLLADO DE HUASO" y "ARROLLADO DE HUASO
+  INTERNET" se resuelva mal solo).
+  **Pantalla de confirmación mejorada:** para estas tres herramientas, la
+  propuesta ahora muestra una tabla con el detalle línea por línea
+  (producto, cantidad, precio/costo) además del resumen en texto — antes
+  solo se mostraba una frase, insuficiente para revisar un lote de varios
+  cambios con confianza.
+  **Probado con respuestas simuladas del asistente** (este entorno de
+  desarrollo no tiene una clave de Anthropic real configurada) contra el
+  backend real: entrada masiva con proveedor/factura, categorización
+  masiva y cambio de precios masivo — los tres aplicaron los cambios
+  correctamente y quedaron reflejados en la base de datos. **Pendiente:**
+  confirmar con el usuario que el modelo real (Claude) arma bien las
+  propuestas a partir de texto de factura real, con su propia clave de
+  API — el comportamiento de la IA en sí no se pudo probar en este
+  entorno.

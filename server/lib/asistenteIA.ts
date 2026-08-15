@@ -9,8 +9,11 @@ import { rangoFechasDesdeTexto, calcularReporteVentas } from "../routes/reportes
 const HERRAMIENTAS_PROPONER = new Set([
   "proponer_cambio_precio",
   "proponer_cambio_precio_masivo_categoria",
+  "proponer_cambios_precio_masivos",
   "proponer_crear_categoria",
+  "proponer_categorizar_masivo",
   "proponer_entrada_inventario",
+  "proponer_entradas_inventario_masivas",
   "proponer_salida_inventario",
 ]);
 
@@ -118,6 +121,57 @@ const herramientas: Anthropic.Tool[] = [
     },
   },
   {
+    name: "proponer_categorizar_masivo",
+    description:
+      "Propone asignar la MISMA categoría a varios productos a la vez (ej. ordenar productos que quedaron 'Sin categorizar'). No cambia nada todavía. Usa buscar_productos y listar_categorias primero para tener los ids exactos — nunca adivines un productoId o categoriaId.",
+    input_schema: {
+      type: "object",
+      properties: {
+        categoriaId: { type: "integer" },
+        categoriaNombre: { type: "string", description: "Nombre de la categoría destino, para mostrarlo en la revisión" },
+        items: {
+          type: "array",
+          description: "Productos a los que se les asignará la categoría",
+          items: {
+            type: "object",
+            properties: {
+              productoId: { type: "integer" },
+              descripcion: { type: "string", description: "Nombre del producto, para mostrarlo en la revisión" },
+            },
+            required: ["productoId", "descripcion"],
+          },
+        },
+        resumen: { type: "string" },
+      },
+      required: ["categoriaId", "categoriaNombre", "items", "resumen"],
+    },
+  },
+  {
+    name: "proponer_cambios_precio_masivos",
+    description:
+      "Propone cambiar el precio de varios productos DISTINTOS a la vez, cada uno con su propio precio nuevo (a diferencia de proponer_cambio_precio_masivo_categoria, que aplica el mismo % o monto fijo a toda una categoría). Útil cuando la persona pega una lista de precios nuevos. No cambia nada todavía. Usa buscar_productos primero para tener el productoId y precio actual de cada uno — si no encuentras un producto con confianza (nombre ambiguo o no existe), pregunta antes de proponer nada.",
+    input_schema: {
+      type: "object",
+      properties: {
+        items: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              productoId: { type: "integer" },
+              descripcion: { type: "string", description: "Nombre del producto, para mostrarlo en la revisión" },
+              precioActual: { type: "number" },
+              precioNuevo: { type: "number" },
+            },
+            required: ["productoId", "descripcion", "precioNuevo"],
+          },
+        },
+        resumen: { type: "string" },
+      },
+      required: ["items", "resumen"],
+    },
+  },
+  {
     name: "proponer_entrada_inventario",
     description:
       "Propone registrar una entrada de mercadería (compra a proveedor, o ajuste positivo por conteo físico). No la registra todavía.",
@@ -132,6 +186,33 @@ const herramientas: Anthropic.Tool[] = [
         resumen: { type: "string" },
       },
       required: ["productoId", "cantidad", "motivo", "resumen"],
+    },
+  },
+  {
+    name: "proponer_entradas_inventario_masivas",
+    description:
+      "Propone registrar varias entradas de mercadería a la vez (ej. todas las líneas de la factura de un proveedor que la persona pegó en el chat). No registra nada todavía. Para cada línea, usa buscar_productos para encontrar el productoId — si un producto de la factura no aparece con un match claro y único, NO lo incluyas ni adivines: pregunta a la persona qué producto es antes de proponer el resto.",
+    input_schema: {
+      type: "object",
+      properties: {
+        proveedorId: { type: "integer", description: "Opcional — usa listar_proveedores para encontrarlo" },
+        numeroFactura: { type: "string", description: "Opcional" },
+        items: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              productoId: { type: "integer" },
+              descripcion: { type: "string", description: "Nombre del producto, para mostrarlo en la revisión" },
+              cantidad: { type: "number" },
+              costoUnitario: { type: "number", description: "Opcional, costo unitario de esta línea" },
+            },
+            required: ["productoId", "descripcion", "cantidad"],
+          },
+        },
+        resumen: { type: "string" },
+      },
+      required: ["items", "resumen"],
     },
   },
   {
@@ -169,7 +250,7 @@ async function ejecutarHerramientaLectura(nombre: string, input: Record<string, 
             : {}),
         },
         include: { categoria: true },
-        take: 20,
+        take: 40,
       });
       return productos.map((p) => ({
         id: p.id,
@@ -250,7 +331,13 @@ Reglas:
 - Los precios son pesos chilenos (CLP), sin decimales.
 - Antes de responder preguntas sobre productos, categorías, inventario, precios o ventas, usa las herramientas de consulta — nunca inventes datos ni respondas de memoria.
 - Si la persona pide un cambio (precio, categoría, inventario), usa la herramienta "proponer_*" correspondiente. Nunca digas que ya hiciste el cambio: solo se aplica si la persona lo confirma en pantalla después.
-- Llama como máximo una herramienta "proponer_*" por pedido. Si falta información para proponer el cambio (ej. no sabes a qué producto se refiere), pregunta primero en vez de adivinar.
+- Llama como máximo una herramienta "proponer_*" por pedido — pero esa herramienta puede ser una de las masivas (proponer_entradas_inventario_masivas, proponer_categorizar_masivo, proponer_cambios_precio_masivos) para proponer varios cambios de una vez como un solo lote que la persona revisa y confirma junto.
+- Si falta información para proponer el cambio (ej. no sabes a qué producto se refiere), pregunta primero en vez de adivinar.
+
+Sobre pedidos con varias líneas (ej. la persona pega el texto de una factura, o pide categorizar/cambiar precio a una lista de productos):
+- Identifica cada línea/producto por separado y usa buscar_productos para encontrar su productoId real — nunca inventes un id ni asumas cuál es sin buscarlo.
+- Si el nombre de una línea no tiene un match único y claro en el catálogo (no aparece, o hay varios productos parecidos y no es obvio cuál es), NO lo incluyas en la propuesta ni elijas uno al azar: dile a la persona qué línea(s) no pudiste identificar con confianza y pregúntale a cuál producto corresponde, antes de proponer el resto.
+- Arma la propuesta final (una sola llamada a la herramienta "proponer_*" masiva correspondiente) solo con las líneas que sí identificaste con confianza.
 - Sé breve. No hace falta repetir toda la data cruda de una consulta, resume lo relevante.`;
 
 export async function procesarMensaje(
@@ -264,11 +351,14 @@ export async function procesarMensaje(
     { role: "user", content: mensajeUsuario },
   ];
 
-  const MAX_VUELTAS = 6;
+  // Más vueltas que antes porque una factura con varias líneas puede
+  // necesitar varias idas y vueltas de búsqueda de productos antes de
+  // armar la propuesta final.
+  const MAX_VUELTAS = 12;
   for (let vuelta = 0; vuelta < MAX_VUELTAS; vuelta++) {
     const respuesta = await client.messages.create({
       model: "claude-sonnet-5",
-      max_tokens: 2048,
+      max_tokens: 4096, // más margen que antes: una propuesta masiva (ej. factura con varias líneas) puede ser larga
       system: SYSTEM_PROMPT,
       tools: herramientas,
       messages,
