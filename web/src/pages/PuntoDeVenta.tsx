@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, formatoCLP, type Comuna, type MedioPago, type Producto, type Venta } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
@@ -38,6 +38,7 @@ export default function PuntoDeVenta() {
 
   const inputCantidadRef = useRef<HTMLInputElement>(null);
   const inputMontoPagoRef = useRef<HTMLInputElement>(null);
+  const inputClienteNombreRef = useRef<HTMLInputElement>(null);
   const inputBuscarRef = useRef<HTMLInputElement>(null);
   const ventaRef = useRef<Venta | null>(null);
 
@@ -557,7 +558,16 @@ export default function PuntoDeVenta() {
               <button
                 type="button"
                 className={`medio-pago-tile ${medioPago === "credito" ? "activo" : ""}`}
-                onClick={() => setMedioPago("credito")}
+                onClick={() => {
+                  setMedioPago("credito");
+                  // Igual que Tarjeta: el crédito también se deja siempre por
+                  // el monto exacto que falta, no tiene sentido escribirlo a
+                  // mano cada vez. El foco queda en el nombre del cliente (el
+                  // único dato que falta completar) para que Enter ahí mismo
+                  // agregue el pago.
+                  if (faltaPagarPositivo > 0) setMontoPago(String(faltaPagarPositivo));
+                  setTimeout(() => inputClienteNombreRef.current?.focus(), 0);
+                }}
               >
                 <span className="medio-pago-icono">🧾</span>
                 Crédito
@@ -567,6 +577,7 @@ export default function PuntoDeVenta() {
             <form onSubmit={agregarPago} onKeyDown={manejarEnterComoTab} className="fila-inline">
               {medioPago === "credito" && (
                 <input
+                  ref={inputClienteNombreRef}
                   type="text"
                   placeholder="Nombre del cliente"
                   value={clienteNombre}
@@ -643,12 +654,11 @@ export default function PuntoDeVenta() {
             <table className="tabla">
               <thead>
                 <tr>
-                  <th>Producto</th>
-                  <th>Cantidad</th>
-                  <th>Precio unitario</th>
-                  <th>Descuento</th>
-                  <th>Subtotal</th>
-                  <th></th>
+                  <th className="col-producto">Producto</th>
+                  <th className="col-cant">Cant.</th>
+                  <th className="col-precio">Precio</th>
+                  <th className="col-subtotal">Subtotal</th>
+                  <th className="col-acciones"></th>
                 </tr>
               </thead>
               <tbody>
@@ -656,81 +666,97 @@ export default function PuntoDeVenta() {
                   const rawSubtotal = Math.round(item.precioUnitario * item.cantidad);
                   const descuentoMontoItem = rawSubtotal - item.subtotal;
                   return (
-                    <tr key={item.id} className={item.anulado ? "fila-error" : ""}>
-                      <td>{item.producto.descripcion}</td>
-                      <td>{item.cantidad}</td>
-                      <td>{formatoCLP(item.precioUnitario)}</td>
-                      <td>
-                        {item.anulado ? (
-                          "—"
-                        ) : item.descuentoTipo ? (
-                          <span className="fila-inline">
-                            -{formatoCLP(descuentoMontoItem)}
-                            <button type="button" className="boton-chico" onClick={() => quitarDescuentoItem(item.id)}>
-                              Quitar
-                            </button>
-                          </span>
-                        ) : itemDescuentoEditando === item.id ? (
-                          <span className="fila-inline">
-                            <select
-                              value={itemDescuentoTipo}
-                              onChange={(e) => setItemDescuentoTipo(e.target.value as "porcentaje" | "monto_fijo")}
-                            >
-                              <option value="porcentaje">%</option>
-                              <option value="monto_fijo">$</option>
-                            </select>
-                            <input
-                              type="number"
-                              min="1"
-                              className="input-chico"
-                              placeholder={itemDescuentoTipo === "porcentaje" ? "10" : "500"}
-                              value={itemDescuentoValor}
-                              onChange={(e) => setItemDescuentoValor(e.target.value)}
-                              autoFocus
-                            />
-                            <button type="button" className="boton-chico" onClick={() => aplicarDescuentoItem(item.id)}>
-                              OK
-                            </button>
-                            <button type="button" className="boton-chico" onClick={() => setItemDescuentoEditando(null)}>
-                              ✕
-                            </button>
-                          </span>
-                        ) : hayDescuentoVenta ? (
-                          "—"
-                        ) : (
-                          <button
-                            type="button"
-                            className="boton-chico"
-                            onClick={() => {
-                              setItemDescuentoEditando(item.id);
-                              setItemDescuentoValor("");
-                            }}
-                          >
-                            + Desc.
-                          </button>
-                        )}
-                      </td>
-                      <td>{formatoCLP(item.subtotal)}</td>
-                      <td>
-                        {item.anulado ? (
-                          "Anulado"
-                        ) : (
-                          <button
-                            type="button"
-                            className="boton-quitar-item"
-                            title="Quitar del carrito"
-                            onClick={() => setItemAAnular(item.id)}
-                          >
-                            ✕
-                          </button>
-                        )}
-                      </td>
-                    </tr>
+                    <Fragment key={item.id}>
+                      <tr className={item.anulado ? "fila-error" : ""}>
+                        <td className="col-producto celda-truncada" title={item.producto.descripcion}>
+                          {item.producto.descripcion}
+                        </td>
+                        <td>{item.cantidad}</td>
+                        <td>{formatoCLP(item.precioUnitario)}</td>
+                        <td>
+                          {formatoCLP(item.subtotal)}
+                          {!item.anulado && item.descuentoTipo && (
+                            <div className="ayuda">-{formatoCLP(descuentoMontoItem)} desc.</div>
+                          )}
+                        </td>
+                        <td>
+                          {item.anulado ? (
+                            "Anulado"
+                          ) : (
+                            <span className="fila-inline" style={{ flexWrap: "nowrap" }}>
+                              {item.descuentoTipo ? (
+                                <button
+                                  type="button"
+                                  className="boton-chico"
+                                  title="Quitar descuento"
+                                  onClick={() => quitarDescuentoItem(item.id)}
+                                >
+                                  🏷️✕
+                                </button>
+                              ) : (
+                                !hayDescuentoVenta && (
+                                  <button
+                                    type="button"
+                                    className="boton-chico"
+                                    title="Agregar descuento"
+                                    onClick={() => {
+                                      setItemDescuentoEditando(itemDescuentoEditando === item.id ? null : item.id);
+                                      setItemDescuentoValor("");
+                                    }}
+                                  >
+                                    🏷️
+                                  </button>
+                                )
+                              )}
+                              <button
+                                type="button"
+                                className="boton-quitar-item"
+                                title="Quitar del carrito"
+                                onClick={() => setItemAAnular(item.id)}
+                              >
+                                ✕
+                              </button>
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                      {itemDescuentoEditando === item.id && (
+                        <tr>
+                          <td colSpan={5}>
+                            <span className="fila-inline">
+                              Descuento para {item.producto.descripcion}:
+                              <select
+                                value={itemDescuentoTipo}
+                                onChange={(e) => setItemDescuentoTipo(e.target.value as "porcentaje" | "monto_fijo")}
+                              >
+                                <option value="porcentaje">%</option>
+                                <option value="monto_fijo">$</option>
+                              </select>
+                              <input
+                                type="number"
+                                min="1"
+                                className="input-chico"
+                                placeholder={itemDescuentoTipo === "porcentaje" ? "10" : "500"}
+                                value={itemDescuentoValor}
+                                onChange={(e) => setItemDescuentoValor(e.target.value)}
+                                autoFocus
+                              />
+                              <button type="button" className="boton-chico" onClick={() => aplicarDescuentoItem(item.id)}>
+                                OK
+                              </button>
+                              <button type="button" className="boton-chico" onClick={() => setItemDescuentoEditando(null)}>
+                                Cancelar
+                              </button>
+                            </span>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
                   );
                 })}
                 {itemsActivos.length === 0 && (
                   <tr>
-                    <td colSpan={6}>Todavía no hay productos en el carrito.</td>
+                    <td colSpan={5}>Todavía no hay productos en el carrito.</td>
                   </tr>
                 )}
               </tbody>

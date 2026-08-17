@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
+import { modoCajaActivo, setModoCajaActivo } from "../lib/modoCaja";
 
 export default function Configuracion() {
   const [configurada, setConfigurada] = useState<boolean | null>(null);
@@ -9,6 +10,15 @@ export default function Configuracion() {
   const [mensaje, setMensaje] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
   const [direccionRed, setDireccionRed] = useState<{ direcciones: string[]; puerto: number } | null>(null);
+  const [modoCaja, setModoCaja] = useState(() => modoCajaActivo());
+
+  function cambiarModoCaja(activo: boolean) {
+    setModoCajaActivo(activo);
+    setModoCaja(activo);
+    // El menú y la pantalla de inicio se arman al cargar la página — un
+    // recargue simple asegura que el cambio se vea de inmediato en este PC.
+    window.location.reload();
+  }
 
   useEffect(() => {
     api.configuracion
@@ -71,6 +81,20 @@ export default function Configuracion() {
           Defender" → "Permitir una aplicación a través del firewall" y marca "La Gran Carnicería POS" en
           redes privadas.
         </p>
+      </section>
+
+      <section className="tarjeta">
+        <h2>Modo caja exclusiva</h2>
+        <p className="ayuda">
+          Pensado para un PC que se usa solo para cobrar (ej. el mesón de atención): esconde el resto del menú
+          (Productos, Inventario, Reportes, etc.) y deja solo Caja, Créditos y esta pantalla de Configuración —
+          así se puede volver a desactivarlo cuando haga falta. Es una preferencia de <strong>este PC</strong>{" "}
+          nada más (no afecta a otros equipos ni queda guardada en la base de datos).
+        </p>
+        <label className="fila-inline">
+          <input type="checkbox" checked={modoCaja} onChange={(e) => cambiarModoCaja(e.target.checked)} />
+          Activar modo caja exclusiva en este PC
+        </label>
       </section>
 
       <section className="tarjeta">

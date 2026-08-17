@@ -395,13 +395,50 @@ select {
    pasa de cierta altura. Con un carrito normal de pocos productos no aparece
    ningún scroll. */
 .carrito-scroll {
-  max-height: 15rem;
+  max-height: 18rem;
   overflow-y: auto;
+  overflow-x: hidden;
+}
+.carrito-scroll .tabla {
+  table-layout: fixed;
+  width: 100%;
 }
 .carrito-scroll .tabla thead th {
   position: sticky;
   top: 0;
   z-index: 1;
+}
+.carrito-scroll .col-producto {
+  width: 32%;
+}
+.carrito-scroll .col-cant {
+  width: 11%;
+}
+.carrito-scroll .col-precio {
+  width: 17%;
+}
+.carrito-scroll .col-subtotal {
+  width: 21%;
+}
+.carrito-scroll .col-acciones {
+  width: 19%;
+}
+.carrito-scroll .boton-chico,
+.carrito-scroll .boton-quitar-item {
+  width: 1.8rem;
+  height: 1.8rem;
+  padding: 0;
+  font-size: 0.85rem;
+  line-height: 1;
+}
+.carrito-scroll td .fila-inline {
+  gap: 0.3rem;
+  margin-bottom: 0;
+}
+.celda-truncada {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .buscador-producto {

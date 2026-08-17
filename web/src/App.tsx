@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { UsuarioProvider } from "./context/UsuarioContext";
+import { modoCajaActivo } from "./lib/modoCaja";
 import RequireUsuario from "./components/RequireUsuario";
 import Layout from "./components/Layout";
 import Login from "./pages/Login";
@@ -31,6 +32,10 @@ import Asistente from "./pages/Asistente";
 import Balanza from "./pages/Balanza";
 
 export default function App() {
+  // En "modo caja exclusiva" (ver web/src/lib/modoCaja.ts), este PC arranca
+  // directo en Caja en vez de Productos.
+  const inicio = modoCajaActivo() ? "/caja" : "/productos";
+
   return (
     <UsuarioProvider>
       <Routes>
@@ -66,8 +71,8 @@ export default function App() {
             <Route path="/configuracion" element={<Configuracion />} />
           </Route>
         </Route>
-        <Route path="/" element={<Navigate to="/productos" replace />} />
-        <Route path="*" element={<Navigate to="/productos" replace />} />
+        <Route path="/" element={<Navigate to={inicio} replace />} />
+        <Route path="*" element={<Navigate to={inicio} replace />} />
       </Routes>
     </UsuarioProvider>
   );

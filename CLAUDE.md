@@ -704,6 +704,59 @@ por seguridad) — la idea era que fuera 100% sin intervención.
   confirmar con el usuario el tamaño de pantalla real que usan para seguir
   ajustando si hace falta.
 
+## Ajustes tras la primera semana de uso real: crédito, carrito y modo caja
+Feedback del usuario tras usar el sistema unos días, comparándolo con
+Gexus (con fotos de ambos). Antes de tocar nada se le hicieron preguntas —
+ver el detalle de cada decisión abajo.
+
+- **Tarjeta autocompleta el monto**: a pedido del usuario, al hacer clic en
+  el botón "💳 Tarjeta" el campo Monto se llena solo con lo que falta pagar
+  de la venta — en tarjeta siempre se cobra el monto exacto (a diferencia de
+  efectivo, donde el cajero escribe lo que el cliente entregó en la mano),
+  así que no tiene sentido escribirlo a mano cada vez. Además, a pedido del
+  usuario, el foco queda listo en ese campo para que apretar Enter agregue
+  el pago al toque, sin soltar el teclado (reutiliza el mismo mecanismo de
+  "Enter manda el formulario en el último campo" ya usado en el resto del
+  sistema — con tarjeta, el campo Monto es el único campo del formulario de
+  pago, así que Enter ahí ya lo manda).
+- **Crédito también autocompleta el monto**: mismo patrón que Tarjeta — el
+  usuario notó que Crédito no lo hacía y pidió igualarlo. El foco queda en
+  el nombre del cliente (el único dato que falta) en vez del monto.
+- **Carrito simplificado, sin scroll ni horizontal ni vertical con un
+  carrito normal**: el usuario reportó que después de la última compactación
+  el carrito quedaba "peor" — con 5-6 columnas apretadas en la columna
+  angosta de la derecha, hacía falta scrollear tanto para el costado (para
+  ver Subtotal, que quedaba cortado) como para abajo (para ver los
+  siguientes productos). Diagnóstico: el nombre del producto se cortaba en
+  dos líneas por falta de espacio, inflando la altura de cada fila.
+  **Elegido junto al usuario** (entre mantener 6 columnas comprimidas o
+  simplificar la tabla): se sacó la columna "Descuento" como columna
+  aparte — ahora el descuento por producto se ve como una anotación chica
+  bajo el Subtotal (ej. "-$500 desc.") cuando está aplicado, y el botón para
+  agregarlo/quitarlo es un ícono (🏷️) junto al de quitar el producto (✕),
+  no una columna propia. Las columnas de la tabla ahora tienen un ancho fijo
+  (`table-layout: fixed`) en vez de ajustarse solas, y el nombre del
+  producto se corta con "..." si no cabe (con el nombre completo disponible
+  al pasar el mouse encima, `title`) en vez de partirse en dos líneas.
+  Probado con Playwright: un carrito de 3 productos (tamaño típico, según
+  una boleta real que mostró el usuario) ya no necesita scroll en ninguna
+  dirección, en monitor grande y en notebook.
+- **"Modo caja exclusiva" para el PC del mesón**: el papá del usuario pidió
+  que el PC que se usa solo para cobrar en el mesón no muestre el resto del
+  menú (Productos, Inventario, Reportes, etc.), para que ese equipo quede
+  dedicado solo a la Caja. **Elegido junto al usuario** (entre esconder solo
+  el menú vs. bloquear también el acceso escribiendo la URL a mano): por
+  ahora la versión simple — nuevo toggle "Activar modo caja exclusiva en
+  este PC" en Configuración (`web/src/lib/modoCaja.ts`, guardado en
+  `localStorage`, o sea es una preferencia de ESE navegador/PC puntual, no
+  de la base de datos ni de una cuenta). Activado, el menú de arriba se
+  reduce a "Caja", "Créditos" y "Configuración" (esta última se deja
+  disponible a propósito, para poder volver a desactivarlo desde ahí
+  mismo), y la pantalla de inicio pasa a ser Caja en vez de Productos. No es
+  un bloqueo real — alguien que escriba otra dirección a mano igual podría
+  entrar — el usuario prefirió empezar por lo simple y pidió ajustarlo
+  después si hace falta más seguridad.
+
 ## Conectar otro equipo por WiFi (sin instalar el programa ahí)
 El usuario instaló el programa completo en un segundo PC/monitor (el del
 mesón de atención) para probar la Caja ahí, y no tenía ningún dato — porque
