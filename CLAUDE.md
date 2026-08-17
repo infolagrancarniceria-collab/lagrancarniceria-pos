@@ -270,7 +270,7 @@ Todo corre **local**, en el PC de la carnicería, sin depender de internet:
    confirma lo contrario. **Pendiente la prueba real** contra las
    balanzas físicas del local (todo lo anterior se probó contra una
    balanza falsa simulada, replicando el protocolo capturado).
-5. **Caja / punto de venta** — listo (apertura con fondo fijo, punto de venta con carrito y pagos combinados efectivo/tarjeta/crédito, anulación de ítems y cancelación de venta completa siempre con clave de supervisor + nombre de quien autoriza + motivo, cierre con reporte X/Z y diferencia de efectivo). Crédito (fiado) agregado luego a pedido del usuario — ver "Decisiones tomadas en el módulo de caja" para el detalle (solo pide nombre del cliente, pantalla aparte de "Créditos pendientes" para cobrar después). También "Buscar venta" (por fecha o N° de venta), "Anulaciones" (historial de productos anulados/ventas canceladas) y "Revisiones" (productos con stock negativo pendientes de ajustar). Cada venta confirmada genera automáticamente movimientos de inventario (motivo "venta") — no bloquea por falta de stock, se corrige después con un ajuste manual si queda negativo.
+5. **Caja / punto de venta** — listo (apertura con fondo fijo, punto de venta con carrito y pagos combinados efectivo/tarjeta/crédito, anulación de ítems y cancelación de venta completa siempre con clave de supervisor + nombre de quien autoriza + motivo, cierre con reporte X/Z y diferencia de efectivo). Crédito (fiado) agregado luego a pedido del usuario — ver "Decisiones tomadas en el módulo de caja" para el detalle (solo pide nombre del cliente, pantalla aparte de "Créditos pendientes" para cobrar después). También "Buscar venta" (por fecha o N° de venta, con opción de anular ahí mismo una venta ya pagada — devuelve el stock, ver "Anular una venta ya confirmada" más abajo), "Anulaciones" (historial de productos anulados/ventas canceladas, antes o después de pagar) y "Revisiones" (productos con stock negativo pendientes de ajustar). Cada venta confirmada genera automáticamente movimientos de inventario (motivo "venta") — no bloquea por falta de stock, se corrige después con un ajuste manual si queda negativo.
 6. **Asistente de IA** — listo y **confirmado funcionando con una clave de API real** por el usuario. Ver "Decisiones tomadas en el asistente de IA" más abajo.
 7. **Gastos generales** — listo: registro de gastos del negocio (sueldos, luz, agua, etc., separado de las compras de mercadería) con resumen por categoría y total por rango de fechas. Ver "Módulo de gastos generales" más abajo.
 8. **Despachos a domicilio** — listo: comunas con costo de envío fijo, marcar una venta como despacho (suma el costo al total), y reporte por comuna. Ver "Módulo de despachos a domicilio" más abajo.
@@ -594,6 +594,49 @@ una venta real de reposición:
   para imprimir a mano — usa la impresora que ya esté configurada en
   Windows). Probado con Playwright: `window.print()` se llama exactamente
   una vez apenas se carga el detalle de la venta recién confirmada.
+
+## Anular una venta ya confirmada (pagada), devolviendo el stock
+El usuario preguntó si al anular una venta el stock volvía al inventario.
+Revisando el código se encontró que **no siempre** — anular un producto del
+carrito o cancelar la venta completa *antes de confirmarla* (antes de
+pagar) siempre estuvo bien, porque el stock recién se descuenta al
+confirmar, así que ahí no hay nada que devolver. Pero **una vez que la
+venta ya estaba confirmada (pagada), el sistema no tenía ninguna forma de
+anularla** — si un cliente devolvía algo después de pagar, había que
+corregir el stock a mano en Inventario, sin dejar registro de que fue por
+una devolución.
+
+**Decidido junto al usuario (entre las opciones más simples y las más
+completas):** por ahora, anular una venta ya pagada solo se puede hacer
+**completa** (no producto por producto — una devolución parcial requeriría
+además decidir qué hacer con la plata ya cobrada de más, que queda para
+más adelante si hace falta), y **solo mientras la caja del día en que se
+hizo siga abierta** (para no reescribir el total de un cierre X/Z de un
+día ya cerrado — si hace falta corregir algo de un día viejo, se sigue
+pudiendo hacer a mano con un ajuste en Inventario).
+
+Nuevo botón **"Anular venta"** en el detalle de una venta pagada (pantalla
+"Buscar venta"), junto a "Imprimir" — mismo `ModalConfirmarClave` que ya se
+usa para anular un producto o cancelar una venta sin pagar (motivo + quién
+autoriza + clave de supervisor). Al confirmar: la venta pasa a estado
+"anulada" (se saca automáticamente de los reportes y del cálculo del
+cierre X/Z de esa caja, igual que ya pasaba con las cancelaciones antes de
+pagar) y se devuelve el stock de cada producto activo de la venta, con un
+movimiento de inventario nuevo por cada uno (motivo **"Devolución (venta
+anulada)"**, visible en "Movimientos de inventario"). La pantalla
+"Anulaciones" ya mostraba ventas canceladas antes de pagar — como
+reutiliza el mismo campo `estado: "anulada"`, automáticamente también
+muestra estas anulaciones de ventas ya pagadas, sin cambios ahí. El vale
+de una venta anulada muestra un aviso ("Venta anulada — motivo, quién
+autorizó, fecha") en pantalla (no se imprime).
+
+Probado end-to-end: confirmar una venta de 2 kg de un producto, anularla
+con clave de supervisor, y verificar que el stock quedó exactamente igual
+que antes de la venta (con un movimiento "salida/venta" y uno "entrada/
+venta_anulada" de la misma cantidad); intentar anular una venta de una
+caja ya cerrada lo rechaza con el mensaje explicando que hay que corregirlo
+a mano; intentar anular una venta que ya estaba anulada también se
+rechaza.
 
 ## Conectar otro equipo por WiFi (sin instalar el programa ahí)
 El usuario instaló el programa completo en un segundo PC/monitor (el del

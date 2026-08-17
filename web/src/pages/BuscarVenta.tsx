@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api, formatoCLP, type Venta } from "../api";
+import ModalConfirmarClave from "../components/ModalConfirmarClave";
 
 function fechaHace(dias: number): string {
   const d = new Date();
@@ -26,6 +27,7 @@ export default function BuscarVenta() {
   const [ventaDetalle, setVentaDetalle] = useState<Venta | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(false);
+  const [anulandoVenta, setAnulandoVenta] = useState(false);
 
   // Confirmar una venta en Punto de Venta redirige acá con ?imprimir=<id>
   // para imprimir el vale automáticamente, sin tener que buscarla a mano
@@ -84,6 +86,21 @@ export default function BuscarVenta() {
   const itemsActivos = ventaDetalle?.items.filter((i) => !i.anulado) ?? [];
   const itemsAnulados = ventaDetalle?.items.filter((i) => i.anulado) ?? [];
 
+  // Anular una venta YA pagada devuelve el stock de todos sus productos —
+  // por eso pide clave de supervisor igual que anular un ítem o cancelar una
+  // venta antes de pagar (mismo modal, ModalConfirmarClave). Solo funciona
+  // mientras la caja del día en que se hizo la venta siga abierta (lo valida
+  // el servidor); para ventas de un día ya cerrado, el error explica que hay
+  // que corregir el stock a mano en Inventario.
+  async function confirmarAnularVenta(usuarioId: number, clave: string, motivo?: string) {
+    if (!ventaDetalle) return;
+    setError(null);
+    await api.caja.cancelarVenta(ventaDetalle.id, { usuarioId, clave, motivo });
+    const actualizada = await api.caja.obtenerVenta(ventaDetalle.id);
+    setVentaDetalle(actualizada);
+    setAnulandoVenta(false);
+  }
+
   return (
     <div>
       <div className="no-imprimir">
@@ -141,9 +158,23 @@ export default function BuscarVenta() {
 
       {ventaDetalle && (
         <div className="vale">
-          <button type="button" className="no-imprimir" onClick={() => window.print()}>
-            Imprimir
-          </button>
+          <div className="no-imprimir fila-inline">
+            <button type="button" onClick={() => window.print()}>
+              Imprimir
+            </button>
+            {ventaDetalle.estado === "pagada" && (
+              <button type="button" onClick={() => setAnulandoVenta(true)}>
+                Anular venta
+              </button>
+            )}
+          </div>
+          {ventaDetalle.estado === "anulada" && (
+            <p className="error no-imprimir">
+              Venta anulada — {ventaDetalle.motivoAnulacion ?? "sin motivo especificado"}
+              {ventaDetalle.usuarioAnulacion ? ` (autorizó: ${ventaDetalle.usuarioAnulacion.nombre})` : ""}
+              {ventaDetalle.fechaAnulacion ? `, ${new Date(ventaDetalle.fechaAnulacion).toLocaleString("es-CL")}` : ""}
+            </p>
+          )}
           <h2>La Gran Carnicería</h2>
           <p>
             Venta #{ventaDetalle.id} — {new Date(ventaDetalle.fecha).toLocaleString("es-CL")}
@@ -229,6 +260,16 @@ export default function BuscarVenta() {
             ))}
           </ul>
         </div>
+      )}
+
+      {anulandoVenta && (
+        <ModalConfirmarClave
+          titulo="Anular venta"
+          descripcion="Se devuelve el stock de todos los productos de esta venta. Elige el motivo, quién autoriza y la clave de supervisor."
+          motivoOpciones={["Cliente devolvió la compra", "Venta duplicada", "Error del cajero"]}
+          onConfirmar={confirmarAnularVenta}
+          onCancelar={() => setAnulandoVenta(false)}
+        />
       )}
     </div>
   );

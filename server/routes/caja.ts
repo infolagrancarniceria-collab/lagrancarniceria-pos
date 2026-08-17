@@ -221,7 +221,13 @@ cajaRouter.get("/ventas/abierta", async (_req, res) => {
 cajaRouter.get("/ventas/:id", async (req, res) => {
   const venta = await prisma.venta.findUnique({
     where: { id: Number(req.params.id) },
-    include: { items: { include: { producto: true, usuarioAnulacion: true } }, pagos: true, usuario: true, comuna: true },
+    include: {
+      items: { include: { producto: true, usuarioAnulacion: true } },
+      pagos: true,
+      usuario: true,
+      comuna: true,
+      usuarioAnulacion: true,
+    },
   });
   if (!venta) return res.status(404).json({ error: "Venta no encontrada" });
   res.json(venta);
@@ -724,6 +730,15 @@ const cancelarVentaSchema = z.object({
   motivo: z.string().trim().optional().nullable(),
 });
 
+// Anular una venta: funciona tanto para una venta todavía "abierta" (antes
+// de pagar — el stock nunca se descontó, no hay nada que devolver) como para
+// una ya "pagada" (confirmada) — en ese caso se devuelve el stock de cada
+// producto (quedó descontado al confirmar) y se registra un movimiento de
+// inventario de entrada por cada uno, para que quede el rastro de por qué
+// volvió ese stock. Una venta pagada solo se puede anular mientras la caja
+// del día en que se hizo siga abierta — evita reescribir el total de un
+// cierre X/Z de un día ya cerrado; para corregir algo de un día viejo, se
+// sigue pudiendo hacer a mano con un ajuste en Inventario.
 cajaRouter.post("/ventas/:id/cancelar", async (req, res) => {
   const ventaId = Number(req.params.id);
   const parsed = cancelarVentaSchema.safeParse(req.body);
@@ -735,19 +750,45 @@ cajaRouter.post("/ventas/:id/cancelar", async (req, res) => {
   const usuario = await validarUsuario(usuarioId);
   if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
 
-  const venta = await prisma.venta.findUnique({ where: { id: ventaId } });
+  const venta = await prisma.venta.findUnique({
+    where: { id: ventaId },
+    include: { items: true, sesionCaja: true },
+  });
   if (!venta) return res.status(404).json({ error: "Venta no encontrada" });
-  if (venta.estado !== "abierta") return res.status(400).json({ error: "Esta venta ya fue procesada" });
+  if (venta.estado === "anulada") return res.status(400).json({ error: "Esta venta ya estaba anulada" });
+  if (venta.estado === "pagada" && venta.sesionCaja.estado !== "abierta") {
+    return res.status(400).json({
+      error: "Esta venta es de una caja ya cerrada y no se puede anular desde acá — corrige el stock a mano en Inventario",
+    });
+  }
 
   const claveSupervisor = await prisma.claveSupervisor.findFirst();
   if (!claveSupervisor || !verificarClave(clave, claveSupervisor.hashClave)) {
     return res.status(403).json({ error: "Clave de supervisor incorrecta" });
   }
 
-  const ventaCancelada = await prisma.venta.update({
-    where: { id: ventaId },
-    data: { estado: "anulada", usuarioAnulacionId: usuarioId, motivoAnulacion: motivo || null, fechaAnulacion: new Date() },
-  });
+  const datosAnulacion = { estado: "anulada", usuarioAnulacionId: usuarioId, motivoAnulacion: motivo || null, fechaAnulacion: new Date() };
+
+  if (venta.estado === "pagada") {
+    const itemsActivos = venta.items.filter((i) => !i.anulado);
+    const cantidadPorProducto = new Map<number, number>();
+    for (const item of itemsActivos) {
+      cantidadPorProducto.set(item.productoId, (cantidadPorProducto.get(item.productoId) ?? 0) + item.cantidad);
+    }
+    await prisma.$transaction([
+      prisma.venta.update({ where: { id: ventaId }, data: datosAnulacion }),
+      ...Array.from(cantidadPorProducto.entries()).flatMap(([productoId, cantidad]) => [
+        prisma.producto.update({ where: { id: productoId }, data: { stockActual: { increment: cantidad } } }),
+        prisma.movimientoInventario.create({
+          data: { productoId, usuarioId, tipo: "entrada", motivo: "venta_anulada", cantidad },
+        }),
+      ]),
+    ]);
+  } else {
+    await prisma.venta.update({ where: { id: ventaId }, data: datosAnulacion });
+  }
+
+  const ventaCancelada = await prisma.venta.findUnique({ where: { id: ventaId } });
   res.json(ventaCancelada);
 });
 

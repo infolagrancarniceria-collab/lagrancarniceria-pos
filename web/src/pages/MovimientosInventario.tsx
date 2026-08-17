@@ -6,6 +6,7 @@ const etiquetasMotivo: Record<string, string> = {
   venta: "Venta",
   descarte: "Descarte / merma",
   ajuste: "Ajuste",
+  venta_anulada: "Devolución (venta anulada)",
 };
 
 export default function MovimientosInventario() {
