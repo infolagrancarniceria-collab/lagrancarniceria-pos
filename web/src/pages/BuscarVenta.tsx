@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api, formatoCLP, type Venta } from "../api";
 
 function fechaHace(dias: number): string {
@@ -25,6 +26,31 @@ export default function BuscarVenta() {
   const [ventaDetalle, setVentaDetalle] = useState<Venta | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(false);
+
+  // Confirmar una venta en Punto de Venta redirige acá con ?imprimir=<id>
+  // para imprimir el vale automáticamente, sin tener que buscarla a mano
+  // después. Se captura el ID una sola vez al montar (no se vuelve a leer
+  // de la URL) para no reintentar la impresión si el usuario navega o
+  // refresca la pantalla — el parámetro se limpia de la URL apenas se usa.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [idAImprimir] = useState(() => searchParams.get("imprimir"));
+
+  useEffect(() => {
+    if (!idAImprimir) return;
+    api.caja
+      .obtenerVenta(Number(idAImprimir))
+      .then(setVentaDetalle)
+      .catch((e) => setError((e as Error).message));
+    setSearchParams({}, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (idAImprimir && ventaDetalle?.id === Number(idAImprimir)) {
+      window.print();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ventaDetalle]);
 
   async function buscar(e: React.FormEvent) {
     e.preventDefault();
@@ -123,6 +149,7 @@ export default function BuscarVenta() {
             Venta #{ventaDetalle.id} — {new Date(ventaDetalle.fecha).toLocaleString("es-CL")}
           </p>
           <p>Vendedor: {ventaDetalle.usuario?.nombre ?? "—"}</p>
+          {ventaDetalle.comentario && <p>Comentario: {ventaDetalle.comentario}</p>}
           {ventaDetalle.esDespacho && (
             <p>
               Despacho a {ventaDetalle.comuna?.nombre ?? "—"} ({formatoCLP(ventaDetalle.costoEnvio ?? 0)})

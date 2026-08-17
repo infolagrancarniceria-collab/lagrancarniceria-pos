@@ -33,6 +33,8 @@ export default function PuntoDeVenta() {
   const [itemAAnular, setItemAAnular] = useState<number | null>(null);
   const [cancelandoVenta, setCancelandoVenta] = useState(false);
   const [mostrarBuscarProducto, setMostrarBuscarProducto] = useState(false);
+  const [mostrarFormComentario, setMostrarFormComentario] = useState(false);
+  const [comentarioValor, setComentarioValor] = useState("");
 
   const inputCantidadRef = useRef<HTMLInputElement>(null);
   const inputMontoPagoRef = useRef<HTMLInputElement>(null);
@@ -43,6 +45,8 @@ export default function PuntoDeVenta() {
   const seccionPagosRef = useRef<HTMLElement>(null);
   const seccionDespachoRef = useRef<HTMLElement>(null);
   const seccionDescuentoRef = useRef<HTMLElement>(null);
+  const seccionComentarioRef = useRef<HTMLElement>(null);
+  const mediosPagoRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     ventaRef.current = venta;
@@ -50,6 +54,7 @@ export default function PuntoDeVenta() {
 
   useEffect(() => {
     setMostrarSelectorComuna(venta?.esDespacho ?? false);
+    setComentarioValor(venta?.comentario ?? "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [venta?.id]);
 
@@ -60,14 +65,21 @@ export default function PuntoDeVenta() {
 
   // Atajos de teclado para no ocupar espacio en pantalla ni depender del
   // mouse: F2 abre el buscador de productos, F3 el despacho a domicilio, F4
-  // el descuento. Las flechas ↑/↓ saltan directo entre las secciones
-  // completas (Buscar, Despacho, Descuento, Pagos) — pero se ignoran si el
-  // foco está en un campo de texto/select/número, para no pisar el
-  // comportamiento nativo (flechas del spinner, cambiar de opción). Ninguno
-  // de estos atajos afecta al lector de código de barras (ignora todo lo
-  // que no sea un solo carácter, ver useEscanerCodigoBarras).
+  // el descuento, F5 el comentario. Las flechas ↑/↓ saltan directo entre las
+  // secciones completas (Buscar, Despacho, Descuento, Comentario, Pagos) —
+  // pero se ignoran si el foco está en un campo de texto/select/número, para
+  // no pisar el comportamiento nativo (flechas del spinner, cambiar de
+  // opción). Las flechas ←/→ eligen el medio de pago (Efectivo/Tarjeta/
+  // Crédito) cuando el foco está sobre esos botones — se simula un click
+  // sobre el botón correspondiente para reusar exactamente la misma lógica
+  // que un click con mouse (ej. autocompletar el monto en Tarjeta), leyendo
+  // cuál está activo desde el DOM en vez del estado de React (evita usar un
+  // valor de medioPago "viejo" capturado por este efecto, que solo se
+  // registra una vez al montar la pantalla). Ninguno de estos atajos afecta
+  // al lector de código de barras (ignora todo lo que no sea un solo
+  // carácter, ver useEscanerCodigoBarras).
   useEffect(() => {
-    const secciones = [seccionBuscarRef, seccionDespachoRef, seccionDescuentoRef, seccionPagosRef];
+    const secciones = [seccionBuscarRef, seccionDespachoRef, seccionDescuentoRef, seccionComentarioRef, seccionPagosRef];
 
     function enfocarPrimerCampo(el: HTMLElement | null) {
       if (!el) return;
@@ -96,6 +108,29 @@ export default function PuntoDeVenta() {
       if (e.key === "F4") {
         e.preventDefault();
         setMostrarFormDescuento((actual) => !actual);
+        return;
+      }
+      if (e.key === "F5") {
+        e.preventDefault();
+        setMostrarFormComentario(true);
+        return;
+      }
+      if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        const activo = document.activeElement as HTMLElement | null;
+        if (!mediosPagoRef.current?.contains(activo)) return;
+        e.preventDefault();
+        const botones = Array.from(mediosPagoRef.current.querySelectorAll("button"));
+        const indiceActivo = botones.findIndex((b) => b.classList.contains("activo"));
+        const total = botones.length;
+        const siguiente = e.key === "ArrowRight" ? (indiceActivo + 1) % total : (indiceActivo - 1 + total) % total;
+        const boton = botones[siguiente] as HTMLButtonElement | undefined;
+        boton?.click();
+        // El botón de Tarjeta mueve el foco al campo Monto con su propio
+        // setTimeout(0) (para que Enter cobre al toque con mouse) — se
+        // registra un setTimeout(0) propio después del click para recuperar
+        // el foco en el botón y que las flechas sigan funcionando en cadena
+        // (mismo delay, así que corre justo después por orden de registro).
+        setTimeout(() => boton?.focus(), 0);
         return;
       }
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -340,6 +375,31 @@ export default function PuntoDeVenta() {
     }
   }
 
+  async function guardarComentario(e: React.FormEvent) {
+    e.preventDefault();
+    if (!venta) return;
+    setError(null);
+    try {
+      const actualizada = await api.caja.actualizarComentario(venta.id, comentarioValor.trim() || null);
+      setVenta(actualizada);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function quitarComentario() {
+    if (!venta) return;
+    setError(null);
+    try {
+      const actualizada = await api.caja.actualizarComentario(venta.id, null);
+      setVenta(actualizada);
+      setComentarioValor("");
+      setMostrarFormComentario(false);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
   async function quitarPago(pagoId: number) {
     if (!venta) return;
     setError(null);
@@ -359,7 +419,7 @@ export default function PuntoDeVenta() {
     setProcesando(true);
     try {
       await api.caja.confirmarVenta(venta.id, usuario.id);
-      navigate("/caja");
+      navigate(`/caja/buscar?imprimir=${venta.id}`);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -462,7 +522,7 @@ export default function PuntoDeVenta() {
 
           <section ref={seccionPagosRef} className="tarjeta">
             <h2>Pagos</h2>
-            <div className="medios-pago">
+            <div className="medios-pago" ref={mediosPagoRef}>
               <button
                 type="button"
                 className={`medio-pago-tile ${medioPago === "efectivo" ? "activo" : ""}`}
@@ -495,6 +555,7 @@ export default function PuntoDeVenta() {
                 Crédito
               </button>
             </div>
+            <p className="ayuda ayuda-linea">Usa ← → sobre un medio de pago para cambiarlo.</p>
             <form onSubmit={agregarPago} onKeyDown={manejarEnterComoTab} className="fila-inline">
               {medioPago === "credito" && (
                 <input
@@ -748,6 +809,47 @@ export default function PuntoDeVenta() {
                     onChange={(e) => setDescuentoValor(e.target.value)}
                   />
                   <button type="submit">Aplicar descuento</button>
+                </form>
+              </>
+            )}
+          </section>
+
+          <section ref={seccionComentarioRef} className="tarjeta tarjeta-mini">
+            {venta.comentario ? (
+              <>
+                <h2>Comentario</h2>
+                <p className="fila-inline">
+                  <span>{venta.comentario}</span>
+                  <button type="button" className="boton-chico" onClick={() => setMostrarFormComentario(true)}>
+                    Editar
+                  </button>
+                  <button type="button" className="boton-chico" onClick={quitarComentario}>
+                    Quitar
+                  </button>
+                </p>
+              </>
+            ) : !mostrarFormComentario ? (
+              <button type="button" className="boton-chico" onClick={() => setMostrarFormComentario(true)}>
+                + Comentario (F5)
+              </button>
+            ) : (
+              <>
+                <h2>Comentario</h2>
+                <form onSubmit={guardarComentario} onKeyDown={manejarEnterComoTab} className="fila-inline">
+                  <input
+                    type="text"
+                    placeholder="Ej: cliente pidió sin hueso"
+                    maxLength={500}
+                    value={comentarioValor}
+                    onChange={(e) => setComentarioValor(e.target.value)}
+                    autoFocus
+                  />
+                  <button type="submit" className="boton-chico">
+                    Guardar
+                  </button>
+                  <button type="button" className="boton-chico" onClick={() => setMostrarFormComentario(false)}>
+                    Cerrar
+                  </button>
                 </form>
               </>
             )}

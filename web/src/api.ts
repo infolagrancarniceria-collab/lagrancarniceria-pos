@@ -210,6 +210,7 @@ export interface Venta {
   fecha: string;
   estado: "abierta" | "pagada" | "anulada";
   total: number;
+  comentario: string | null;
   esDespacho: boolean;
   comunaId: number | null;
   comuna: Comuna | null;
@@ -575,6 +576,8 @@ export const api = {
     creditosPendientes: () => get<PagoVenta[]>("/api/caja/creditos-pendientes"),
     cobrarCredito: (pagoId: number, data: { medioCobro: MedioCobro; usuarioId: number }) =>
       post<PagoVenta>(`/api/caja/creditos/${pagoId}/cobrar`, data),
+    actualizarComentario: (ventaId: number, comentario: string | null) =>
+      put<Venta>(`/api/caja/ventas/${ventaId}/comentario`, { comentario }),
     actualizarDespacho: (ventaId: number, data: { esDespacho: boolean; comunaId?: number | null }) =>
       put<Venta>(`/api/caja/ventas/${ventaId}/despacho`, data),
     actualizarDescuento: (ventaId: number, data: { tipo: "porcentaje" | "monto_fijo" | null; valor: number | null }) =>

@@ -252,6 +252,35 @@ cajaRouter.post("/ventas", async (req, res) => {
   res.status(201).json(venta);
 });
 
+const comentarioSchema = z.object({
+  comentario: z.string().trim().max(500, "El comentario es muy largo").optional().nullable(),
+});
+
+// Comentario libre y opcional sobre la venta (ej. "cliente pidió sin
+// hueso") — no afecta el total, solo queda guardado y se muestra en el vale.
+cajaRouter.put("/ventas/:id/comentario", async (req, res) => {
+  const ventaId = Number(req.params.id);
+  const parsed = comentarioSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0].message });
+  }
+
+  const venta = await prisma.venta.findUnique({ where: { id: ventaId } });
+  if (!venta) return res.status(404).json({ error: "Venta no encontrada" });
+  if (venta.estado !== "abierta") return res.status(400).json({ error: "Esta venta ya no admite cambios" });
+
+  await prisma.venta.update({
+    where: { id: ventaId },
+    data: { comentario: parsed.data.comentario?.trim() || null },
+  });
+
+  const ventaActualizada = await prisma.venta.findUnique({
+    where: { id: ventaId },
+    include: { items: { include: { producto: true, usuarioAnulacion: true } }, pagos: true, comuna: true },
+  });
+  res.json(ventaActualizada);
+});
+
 const despachoSchema = z.object({
   esDespacho: z.boolean(),
   comunaId: z.number().int().positive().optional().nullable(),

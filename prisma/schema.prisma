@@ -234,6 +234,10 @@ model Venta {
   estado String   @default("abierta") // "abierta" | "pagada" | "anulada"
   total  Float    @default(0)
 
+  // Comentario libre y opcional sobre la venta (ej. "cliente pidió sin
+  // hueso", "entregar mañana") — se muestra también en el vale impreso.
+  comentario String?
+
   // Despacho (opcional): si la venta se despacha a domicilio, se marca con
   // una comuna de la lista fija — el costo de envío se copia a la venta al
   // elegir la comuna (no cambia después si el costo de esa comuna se

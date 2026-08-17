@@ -562,6 +562,39 @@ de que el problema no vuelve a aparecer con la próxima versión instalada.
   (backend y frontend), y aplicar descuento a toda la venta oculta el botón
   de descuento por producto en cada fila.
 
+## Comentario opcional, medio de pago con flechas, e impresión automática del vale
+Tres ajustes a Punto de Venta, a pedido del usuario, tras probar la caja con
+una venta real de reposición:
+- **Comentario opcional en la venta**: nueva sección "Comentario" (igual de
+  compacta que Despacho/Descuento, atajo **F5**) para anotar algo libre sobre
+  la venta (ej. "cliente pidió sin hueso", "entregar mañana"). Campo nuevo
+  `Venta.comentario` (texto libre, opcional, máx. 500 caracteres), endpoint
+  `PUT /api/caja/ventas/:id/comentario`. Se muestra también en el vale
+  impreso (pantalla "Buscar venta"), justo debajo del vendedor.
+- **Medio de pago (Efectivo/Tarjeta/Crédito) con flechas ←/→**: parado sobre
+  cualquiera de los tres botones grandes, las flechas izquierda/derecha
+  cambian el medio de pago seleccionado sin necesitar el mouse — simulan un
+  click sobre el botón correspondiente para reusar exactamente la misma
+  lógica que un click real (ej. autocompletar el monto en Tarjeta), leyendo
+  cuál está activo desde el HTML en vez de depender del estado de React (el
+  atajo de teclado se registra una sola vez al abrir la pantalla, así que
+  guardarse el medio de pago "de memoria" ahí quedaría desactualizado).
+  **Detalle técnico corregido durante la prueba:** el botón de Tarjeta ya
+  movía el foco al campo Monto automáticamente (para que Enter cobre al
+  toque) — eso hacía que, tras llegar a Tarjeta con las flechas, seguir
+  presionando flecha se quedara "pegado" ahí, porque las flechas se ignoran
+  a propósito cuando el foco está en un campo de texto (para no pisar el
+  cursor). Se corrigió devolviendo el foco al botón justo después, así las
+  flechas se pueden seguir usando en cadena (Efectivo → Tarjeta → Crédito y
+  viceversa) sin quedar atascadas.
+- **Impresión automática del vale al confirmar la venta**: antes solo se
+  podía imprimir volviendo a buscar la venta a mano en "Buscar venta". Ahora,
+  al confirmar, la pantalla salta directo a "Buscar venta" con esa venta ya
+  abierta y **la manda a imprimir sola** (mismo botón/estilo que ya existía
+  para imprimir a mano — usa la impresora que ya esté configurada en
+  Windows). Probado con Playwright: `window.print()` se llama exactamente
+  una vez apenas se carga el detalle de la venta recién confirmada.
+
 ## Conectar otro equipo por WiFi (sin instalar el programa ahí)
 El usuario instaló el programa completo en un segundo PC/monitor (el del
 mesón de atención) para probar la Caja ahí, y no tenía ningún dato — porque
