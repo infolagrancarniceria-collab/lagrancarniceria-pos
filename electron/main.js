@@ -1,7 +1,7 @@
 // Proceso principal de Electron. Se escribe en JavaScript plano (no TypeScript)
 // porque Electron ejecuta este archivo con su propio Node.js interno, sin pasar
 // por un compilador — mantenerlo simple evita configuración adicional.
-const { app, BrowserWindow } = require("electron");
+const { app, BrowserWindow, ipcMain } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 
@@ -25,10 +25,25 @@ function crearVentana(url) {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      preload: path.join(__dirname, "preload.js"),
     },
   });
   ventana.loadURL(url);
 }
+
+// Imprime el vale directo en la impresora predeterminada de Windows, sin
+// mostrar el diálogo de impresión — a diferencia de window.print() en un
+// navegador normal (usado en equipos conectados por WiFi sin el programa
+// instalado), acá sí se puede saltar el diálogo porque es la propia app,
+// no una página web cualquiera.
+ipcMain.handle("imprimir-silencioso", (evento) => {
+  const ventana = BrowserWindow.fromWebContents(evento.sender);
+  return new Promise((resolve) => {
+    ventana.webContents.print({ silent: true, printBackground: true }, (exito, razonError) => {
+      resolve({ exito, razonError });
+    });
+  });
+});
 
 // La carpeta donde se instala el programa queda de solo lectura una vez
 // instalado en Windows, así que la base de datos real no puede vivir ahí.

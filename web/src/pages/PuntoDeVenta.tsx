@@ -226,6 +226,11 @@ export default function PuntoDeVenta() {
       setProductoSeleccionado(null);
       setCantidad("");
       setBuscar("");
+      // Se cierra solo, igual que Despacho/Descuento/Comentario cuando no se
+      // están usando — el buscador manual es el respaldo del lector de
+      // código de barras, no hace falta dejarlo abierto ocupando espacio
+      // después de agregar el producto (F2 lo vuelve a abrir al toque).
+      setMostrarBuscarProducto(false);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -447,7 +452,10 @@ export default function PuntoDeVenta() {
 
   return (
     <div className="punto-de-venta">
-      <h1>Punto de venta</h1>
+      <div className="encabezado-venta">
+        <h1>Punto de venta</h1>
+        <div className="total-venta-destacado">Total: {formatoCLP(totalVenta)}</div>
+      </div>
       {error && <p className="error">{error}</p>}
       {mensaje && <p className="exito">{mensaje}</p>}
 
@@ -631,6 +639,7 @@ export default function PuntoDeVenta() {
         <div className="columna-derecha">
           <section className="tarjeta">
             <h2>Carrito</h2>
+            <div className="carrito-scroll">
             <table className="tabla">
               <thead>
                 <tr>
@@ -726,13 +735,13 @@ export default function PuntoDeVenta() {
                 )}
               </tbody>
             </table>
+            </div>
             {venta.descuentoTipo && (
               <p>
                 Subtotal: {formatoCLP(subtotalItems)} · Descuento: -{formatoCLP(descuentoAplicadoMonto)}
                 {venta.costoEnvio ? ` · Envío: ${formatoCLP(venta.costoEnvio)}` : ""}
               </p>
             )}
-            <h2>Total: {formatoCLP(totalVenta)}</h2>
           </section>
 
           <section ref={seccionDespachoRef} className="tarjeta tarjeta-mini">

@@ -19,6 +19,20 @@ const etiquetaMedio: Record<string, string> = {
   credito: "Crédito",
 };
 
+// En la app instalada (Electron), imprime directo en la impresora
+// predeterminada sin ningún diálogo. En un navegador normal (ej. el PC del
+// mesón conectado por WiFi sin el programa instalado) window.electronAPI no
+// existe — ahí se usa el print() normal del navegador, que sí muestra su
+// propio diálogo por seguridad (no hay forma de evitarlo desde una página
+// web común).
+function imprimirVale() {
+  if (window.electronAPI) {
+    window.electronAPI.imprimirSilencioso();
+  } else {
+    window.print();
+  }
+}
+
 export default function BuscarVenta() {
   const [desde, setDesde] = useState(fechaHace(7));
   const [hasta, setHasta] = useState(hoy());
@@ -49,7 +63,7 @@ export default function BuscarVenta() {
 
   useEffect(() => {
     if (idAImprimir && ventaDetalle?.id === Number(idAImprimir)) {
-      window.print();
+      imprimirVale();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ventaDetalle]);
@@ -159,7 +173,7 @@ export default function BuscarVenta() {
       {ventaDetalle && (
         <div className="vale">
           <div className="no-imprimir fila-inline">
-            <button type="button" onClick={() => window.print()}>
+            <button type="button" onClick={imprimirVale}>
               Imprimir
             </button>
             {ventaDetalle.estado === "pagada" && (

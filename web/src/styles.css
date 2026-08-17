@@ -315,15 +315,37 @@ select {
 }
 
 /* Punto de venta: pantalla que se usa de pie en el mesón — letra y botones
-   más grandes que el resto del sistema, para tocar/leer rápido. */
+   más grandes que el resto del sistema, para tocar/leer rápido. Los títulos,
+   márgenes y el padding de las tarjetas se achican bastante más que en el
+   resto del sistema (a diferencia de la letra de botones/inputs/tabla, que
+   se mantiene grande) para que quepa todo en una pantalla de notebook sin
+   tener que scrolear. */
 .punto-de-venta {
   font-size: 1.15rem;
 }
 .punto-de-venta h1 {
-  font-size: 2rem;
+  font-size: 1.3rem;
+  margin: 0;
+}
+.encabezado-venta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.25rem 0 0.5rem;
+}
+.total-venta-destacado {
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: var(--color-primario);
+  background: #fdf0ec;
+  padding: 0.3rem 1rem;
+  border-radius: 8px;
 }
 .punto-de-venta h2 {
-  font-size: 1.35rem;
+  font-size: 1.05rem;
+  margin: 0 0 0.4rem;
 }
 .punto-de-venta button,
 .punto-de-venta a.boton {
@@ -337,6 +359,49 @@ select {
 }
 .punto-de-venta .tabla {
   font-size: 1.1rem;
+}
+.punto-de-venta .tarjeta {
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.6rem;
+}
+.punto-de-venta .tabla th,
+.punto-de-venta .tabla td {
+  padding: 0.35rem 0.5rem;
+}
+.punto-de-venta .ayuda-linea {
+  margin-bottom: 0.4rem;
+}
+.punto-de-venta .fila-inline {
+  margin-bottom: 0.5rem;
+}
+.punto-de-venta p {
+  margin: 0.35rem 0;
+}
+.punto-de-venta .tecla-numerica {
+  width: 2.3rem;
+  height: 2.3rem;
+  font-size: 1rem;
+}
+.punto-de-venta .teclado-numerico {
+  gap: 0.3rem;
+}
+.punto-de-venta .acciones-formulario {
+  margin-top: 0.5rem;
+}
+
+/* El carrito puede tener muchos productos — en vez de estirar la página
+   entera y forzar scroll de toda la pantalla, solo la lista de productos
+   scrolea puertas adentro (con el encabezado siempre visible) una vez que
+   pasa de cierta altura. Con un carrito normal de pocos productos no aparece
+   ningún scroll. */
+.carrito-scroll {
+  max-height: 15rem;
+  overflow-y: auto;
+}
+.carrito-scroll .tabla thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 
 .buscador-producto {
@@ -408,9 +473,9 @@ select {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.35rem;
-  width: 7.5rem;
-  padding: 1rem 0.5rem;
+  gap: 0.25rem;
+  width: 6.5rem;
+  padding: 0.6rem 0.5rem;
   background: white;
   border: 2px solid var(--color-borde);
   border-radius: 10px;
@@ -424,7 +489,7 @@ select {
   background: #fdf0ec;
 }
 .medio-pago-icono {
-  font-size: 1.8rem;
+  font-size: 1.4rem;
 }
 
 .boton-quitar-item {

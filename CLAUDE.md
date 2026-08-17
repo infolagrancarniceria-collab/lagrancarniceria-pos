@@ -215,6 +215,25 @@ solo temporal y menor.
 - ¿Cómo registra hoy la merma?
 - ¿Qué reporte mira más seguido hoy — cuál le sirve más para decidir?
 
+## Diferencia de $2.000 comparando una venta contra el sistema viejo (Gexus)
+El usuario probó una venta real en el sistema nuevo con los mismos productos
+de una venta ya hecha en Gexus, y encontró una diferencia de $2.000 en el
+total ($67.389 en Gexus vs. $69.389 en el sistema nuevo). Con fotos de
+ambas pantallas, se comparó línea por línea: **todos los productos y
+cálculos coinciden exactamente** (incluido el redondeo de los pesables,
+ej. 1,534 kg × $4.980 = $7.639 en ambos) — **excepto uno**: "POLLO GANSO",
+2 unidades, aparece a $12.980 c/u en Gexus ($25.960 total) pero a $13.980
+c/u en el sistema nuevo ($27.960 total). $1.000 de diferencia × 2 unidades
+= exactamente los $2.000 de diferencia total reportados.
+
+**Conclusión: no es un bug de cálculo** — el sistema nuevo suma y redondea
+igual que Gexus en todos los demás casos. Es un **dato de precio
+desactualizado** para ese producto específico en uno de los dos sistemas.
+**Pendiente confirmar con el usuario** cuál de los dos precios es el
+vigente hoy, para corregir el que esté mal (vía Productos → editar
+producto → cambiar precio, deja registro en el historial de precios como
+cualquier otro cambio).
+
 ## Migración de datos del sistema viejo (Gexus)
 - **Pendiente:** confirmar si Gexus tiene alguna forma de exportar/imprimir
   el listado completo de productos (Excel, CSV, PDF, reporte de "Maestro de
@@ -637,6 +656,53 @@ venta_anulada" de la misma cantidad); intentar anular una venta de una
 caja ya cerrada lo rechaza con el mensaje explicando que hay que corregirlo
 a mano; intentar anular una venta que ya estaba anulada también se
 rechaza.
+
+## Impresión automática realmente silenciosa, y Punto de Venta más compacto
+A pedido del usuario, tras confirmar que la "impresión automática" agregada
+antes en realidad mostraba un aviso de Windows preguntando por la impresora
+(el navegador/Electron muestra su propio diálogo de impresión por defecto,
+por seguridad) — la idea era que fuera 100% sin intervención.
+
+- **Impresión silenciosa real, solo en la app instalada (Electron):** se
+  agregó `electron/preload.js` (puente seguro, con `contextIsolation`
+  activado) que expone `window.electronAPI.imprimirSilencioso()`, la cual
+  llama por IPC a un handler nuevo en `electron/main.js`
+  (`ipcMain.handle("imprimir-silencioso", ...)`) que usa
+  `webContents.print({ silent: true })` — esto sí se puede saltar el diálogo
+  porque es la propia app, no una página web cualquiera. El vale
+  (`web/src/pages/BuscarVenta.tsx`) ahora usa `window.electronAPI` cuando
+  existe, y cae de vuelta a `window.print()` normal si no (necesario para
+  cuando se prueba en un navegador de desarrollo).
+  **Limitación de fondo, confirmada con el usuario:** el PC del mesón se usa
+  hoy por navegador (conectado por WiFi a la IP del PC principal, sin el
+  programa instalado ahí) — un navegador normal SIEMPRE muestra su propio
+  diálogo de impresión por seguridad, no hay forma de evitarlo desde el
+  código de una página web. El usuario eligió configurar ese PC en **"modo
+  impresión silenciosa" (kiosk printing)** en vez de instalar el programa
+  completo ahí — pendiente dejar la guía de configuración (crear un acceso
+  directo de Chrome con la bandera `--kiosk-printing` apuntando a la URL del
+  PC principal) la próxima vez que se retome este tema con el usuario.
+- **Punto de Venta más compacto**, para que quepa en una pantalla de
+  notebook sin scrollear: títulos y márgenes de tarjetas bastante más
+  chicos (los botones/inputs/tabla mantienen su letra grande, pensada para
+  usar de pie en el mesón — ver nota de arriba en el CSS). El buscador
+  manual de productos ahora **se cierra solo** después de agregar un
+  producto (igual que Despacho/Descuento/Comentario cuando no se usan — el
+  lector de código de barras es la forma principal de agregar productos, el
+  buscador es el respaldo). El **Total de la venta se movió al encabezado**,
+  arriba a la derecha junto al título "Punto de venta" — a pedido del
+  usuario, para que sea lo primero visible sin tener que bajar (como en el
+  sistema anterior), en vez de solo aparecer al final de la tarjeta
+  Carrito (que ya no lo repite, para no duplicar). El Carrito, si tiene
+  muchos productos, ahora scrolea puertas adentro con el encabezado de la
+  tabla siempre visible (`.carrito-scroll`), en vez de estirar toda la
+  página — con un carrito de pocos productos no aparece ningún scroll.
+  **Medido con Playwright** en varios tamaños de pantalla: en un monitor
+  grande (1920x1080) ya no hace falta scrollear nada; en una notebook
+  (1366x768) bajó de necesitar ~610px de scroll a solo ~140px — mejora
+  grande, pero **no 100% eliminado todavía** en pantallas chicas. Falta
+  confirmar con el usuario el tamaño de pantalla real que usan para seguir
+  ajustando si hace falta.
 
 ## Conectar otro equipo por WiFi (sin instalar el programa ahí)
 El usuario instaló el programa completo en un segundo PC/monitor (el del
