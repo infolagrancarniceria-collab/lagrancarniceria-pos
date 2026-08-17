@@ -271,7 +271,14 @@ model ItemVenta {
 
   cantidad       Float
   precioUnitario Float // copia del precio al momento de vender, no cambia si después se actualiza el precio del producto
-  subtotal       Float
+  subtotal       Float // ya con el descuento de este ítem aplicado, si tiene uno
+
+  // Descuento por producto (opcional) — alternativo al descuento de toda la
+  // venta (Venta.descuentoTipo): solo puede haber uno de los dos activos a
+  // la vez en una misma venta, para que el registro de qué se descontó sea
+  // más claro.
+  descuentoTipo  String? // "porcentaje" | "monto_fijo"
+  descuentoValor Float?
 
   anulado            Boolean   @default(false)
   usuarioAnulacionId Int?

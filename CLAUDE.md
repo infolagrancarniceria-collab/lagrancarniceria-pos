@@ -523,6 +523,44 @@ de que el problema no vuelve a aparecer con la próxima versión instalada.
   ajuste, el producto deja de aparecer solo. Reutiliza el endpoint
   `GET /api/productos` existente con un filtro nuevo (`?stockNegativo=true`)
   en vez de crear un endpoint aparte.
+- **Pantalla más compacta, en 2 columnas (rediseño)**: feedback del papá del
+  usuario usando la Caja real, tras el primer reordenamiento en columnas:
+  quería el Carrito bien visible (para ver de un vistazo qué está llevando
+  el cliente y si hay que anular algo), no scrolear con el mouse, y navegar
+  más con el teclado. Confirmado con el usuario (con preguntas antes de
+  tocar código, dado lo grande del cambio): **izquierda** — Buscar producto
+  y Pagos; **derecha** — Carrito arriba, Despacho y Descuento abajo (en
+  tarjetas más chicas, clase `.tarjeta-mini` con menos padding y botones
+  `.boton-chico`). **Navegación con flechas ↑/↓** entre las 4 secciones
+  (Buscar → Despacho → Descuento → Pagos, en ese orden — el orden en que se
+  usan al armar una venta, no necesariamente el orden visual en pantalla):
+  salta directo al primer campo/botón de la siguiente sección. Se ignoran
+  las flechas si el foco está en un input/select/textarea, para no pisar el
+  comportamiento nativo (flechas del spinner numérico, cambiar de opción en
+  un select) — hay que salir del campo (Tab, Escape, o click afuera) para
+  volver a usarlas. Enter dentro de cada sección sigue funcionando como
+  siempre (salta de campo en campo, manda el formulario en el último).
+- **Descuento por producto (alternativo al descuento de toda la venta)**: a
+  pedido del usuario, para poder descontar un producto puntual (ej. dañado,
+  para convencer al cliente) en vez de solo la venta completa, con un
+  registro más claro de qué se descontó. **Confirmado con el usuario**: los
+  dos tipos de descuento son excluyentes — o se descuenta toda la venta, o
+  se descuentan productos individuales, nunca los dos a la vez en la misma
+  venta (evita confusión de "cuánto se descontó en total"). Nuevos campos
+  `descuentoTipo`/`descuentoValor` en `ItemVenta` (mismo patrón que
+  `Venta`), endpoint `PUT /ventas/:id/items/:itemId/descuento`, y el
+  `subtotal` del ítem queda guardado ya con el descuento aplicado (redondeado
+  a peso entero). El backend rechaza aplicar un tipo de descuento si el otro
+  ya está activo, con un mensaje explicando qué hay que quitar primero; el
+  frontend además oculta/reemplaza los botones correspondientes para que no
+  se llegue a intentar. En el Carrito, cada fila tiene un botón "+ Desc."
+  (columna nueva "Descuento") que abre un formulario chico en la misma fila
+  (tipo %/$ + valor + OK). El vale de una venta confirmada ("Buscar venta")
+  también muestra el descuento por producto, si tuvo uno. Probado
+  end-to-end: aplicar 10% a un ítem baja el total correctamente, intentar
+  aplicar descuento a toda la venta con un ítem ya descontado lo rechaza
+  (backend y frontend), y aplicar descuento a toda la venta oculta el botón
+  de descuento por producto en cada fila.
 
 ## Conectar otro equipo por WiFi (sin instalar el programa ahí)
 El usuario instaló el programa completo en un segundo PC/monitor (el del

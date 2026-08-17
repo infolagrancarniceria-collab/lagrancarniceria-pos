@@ -179,6 +179,8 @@ export interface ItemVenta {
   cantidad: number;
   precioUnitario: number;
   subtotal: number;
+  descuentoTipo: "porcentaje" | "monto_fijo" | null;
+  descuentoValor: number | null;
   anulado: boolean;
   usuarioAnulacionId: number | null;
   usuarioAnulacion: Usuario | null;
@@ -577,6 +579,11 @@ export const api = {
       put<Venta>(`/api/caja/ventas/${ventaId}/despacho`, data),
     actualizarDescuento: (ventaId: number, data: { tipo: "porcentaje" | "monto_fijo" | null; valor: number | null }) =>
       put<Venta>(`/api/caja/ventas/${ventaId}/descuento`, data),
+    actualizarDescuentoItem: (
+      ventaId: number,
+      itemId: number,
+      data: { tipo: "porcentaje" | "monto_fijo" | null; valor: number | null }
+    ) => put<Venta>(`/api/caja/ventas/${ventaId}/items/${itemId}/descuento`, data),
     anulaciones: (params: { desde?: string; hasta?: string }) => {
       const query = new URLSearchParams();
       if (params.desde) query.set("desde", params.desde);

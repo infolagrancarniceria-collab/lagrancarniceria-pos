@@ -24,6 +24,9 @@ export default function PuntoDeVenta() {
   const [descuentoTipo, setDescuentoTipo] = useState<"porcentaje" | "monto_fijo">("porcentaje");
   const [descuentoValor, setDescuentoValor] = useState("");
   const [mostrarFormDescuento, setMostrarFormDescuento] = useState(false);
+  const [itemDescuentoEditando, setItemDescuentoEditando] = useState<number | null>(null);
+  const [itemDescuentoTipo, setItemDescuentoTipo] = useState<"porcentaje" | "monto_fijo">("porcentaje");
+  const [itemDescuentoValor, setItemDescuentoValor] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
   const [procesando, setProcesando] = useState(false);
@@ -35,6 +38,11 @@ export default function PuntoDeVenta() {
   const inputMontoPagoRef = useRef<HTMLInputElement>(null);
   const inputBuscarRef = useRef<HTMLInputElement>(null);
   const ventaRef = useRef<Venta | null>(null);
+
+  const seccionBuscarRef = useRef<HTMLElement>(null);
+  const seccionPagosRef = useRef<HTMLElement>(null);
+  const seccionDespachoRef = useRef<HTMLElement>(null);
+  const seccionDescuentoRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     ventaRef.current = venta;
@@ -50,27 +58,59 @@ export default function PuntoDeVenta() {
     api.comunas.listar().then(setComunas).catch((e) => setError(e.message));
   }, []);
 
-  // Atajos de teclado para no ocupar espacio en pantalla con secciones que
-  // no se usan en cada venta: F2 abre el buscador de productos, F3 el
-  // despacho a domicilio, F4 el descuento. Las teclas de función no afectan
-  // al lector de código de barras (ignora todo lo que no sea un solo
-  // carácter, ver useEscanerCodigoBarras) ni interfieren con el tipeo normal.
+  // Atajos de teclado para no ocupar espacio en pantalla ni depender del
+  // mouse: F2 abre el buscador de productos, F3 el despacho a domicilio, F4
+  // el descuento. Las flechas ↑/↓ saltan directo entre las secciones
+  // completas (Buscar, Despacho, Descuento, Pagos) — pero se ignoran si el
+  // foco está en un campo de texto/select/número, para no pisar el
+  // comportamiento nativo (flechas del spinner, cambiar de opción). Ninguno
+  // de estos atajos afecta al lector de código de barras (ignora todo lo
+  // que no sea un solo carácter, ver useEscanerCodigoBarras).
   useEffect(() => {
+    const secciones = [seccionBuscarRef, seccionDespachoRef, seccionDescuentoRef, seccionPagosRef];
+
+    function enfocarPrimerCampo(el: HTMLElement | null) {
+      if (!el) return;
+      const focoInicial = el.querySelector<HTMLElement>(
+        "input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled])"
+      );
+      focoInicial?.focus();
+    }
+
     function manejarAtajos(e: KeyboardEvent) {
       if (e.key === "F2") {
         e.preventDefault();
         setMostrarBuscarProducto(true);
         setTimeout(() => inputBuscarRef.current?.focus(), 0);
-      } else if (e.key === "F3") {
+        return;
+      }
+      if (e.key === "F3") {
         e.preventDefault();
         setMostrarSelectorComuna((actual) => {
           const nuevo = !actual;
           if (!nuevo) actualizarDespacho(false, null);
           return nuevo;
         });
-      } else if (e.key === "F4") {
+        return;
+      }
+      if (e.key === "F4") {
         e.preventDefault();
         setMostrarFormDescuento((actual) => !actual);
+        return;
+      }
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        const activo = document.activeElement as HTMLElement | null;
+        if (activo && ["INPUT", "SELECT", "TEXTAREA"].includes(activo.tagName)) return;
+        const indiceActual = secciones.findIndex((ref) => ref.current?.contains(activo));
+        let siguiente: number;
+        if (e.key === "ArrowDown") {
+          siguiente = indiceActual === -1 ? 0 : Math.min(indiceActual + 1, secciones.length - 1);
+        } else {
+          siguiente = indiceActual === -1 ? secciones.length - 1 : Math.max(indiceActual - 1, 0);
+        }
+        if (siguiente === indiceActual) return;
+        e.preventDefault();
+        enfocarPrimerCampo(secciones[siguiente].current);
       }
     }
     window.addEventListener("keydown", manejarAtajos);
@@ -108,6 +148,11 @@ export default function PuntoDeVenta() {
   const totalPagado = venta?.pagos.reduce((s, p) => s + p.monto, 0) ?? 0;
   const totalVenta = venta?.total ?? 0;
   const faltaPagar = Math.round((totalVenta - totalPagado) * 100) / 100;
+
+  // Solo puede haber un tipo de descuento activo por venta: a toda la venta
+  // o por producto, no los dos a la vez (más claro para el registro).
+  const hayDescuentoVenta = !!venta?.descuentoTipo;
+  const hayDescuentoItem = itemsActivos.some((i) => i.descuentoTipo);
 
   // Solo para mostrar el monto del descuento ya aplicado — el cálculo real
   // (el que define el total) lo hace el servidor.
@@ -266,6 +311,35 @@ export default function PuntoDeVenta() {
     }
   }
 
+  async function aplicarDescuentoItem(itemId: number) {
+    if (!venta) return;
+    setError(null);
+    const valor = Number(itemDescuentoValor);
+    if (!valor || valor <= 0) {
+      setError("Ingresa un descuento válido");
+      return;
+    }
+    try {
+      const actualizada = await api.caja.actualizarDescuentoItem(venta.id, itemId, { tipo: itemDescuentoTipo, valor });
+      setVenta(actualizada);
+      setItemDescuentoEditando(null);
+      setItemDescuentoValor("");
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function quitarDescuentoItem(itemId: number) {
+    if (!venta) return;
+    setError(null);
+    try {
+      const actualizada = await api.caja.actualizarDescuentoItem(venta.id, itemId, { tipo: null, valor: null });
+      setVenta(actualizada);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
   async function quitarPago(pagoId: number) {
     if (!venta) return;
     setError(null);
@@ -317,308 +391,368 @@ export default function PuntoDeVenta() {
       {error && <p className="error">{error}</p>}
       {mensaje && <p className="exito">{mensaje}</p>}
 
-      <div className="punto-de-venta-layout">
-      <div className="columna-izquierda">
-
       <p className="ayuda ayuda-linea">🔦 Lector de código de barras listo — escanea en cualquier momento.</p>
 
-      <section className="tarjeta tarjeta-compacta">
-        {!mostrarBuscarProducto ? (
-          <button type="button" onClick={() => { setMostrarBuscarProducto(true); setTimeout(() => inputBuscarRef.current?.focus(), 0); }}>
-            + Buscar producto (F2)
-          </button>
-        ) : (
-          <>
-            <div className="fila-inline" style={{ justifyContent: "space-between" }}>
-              <h2>Agregar producto manualmente</h2>
-              <button type="button" onClick={() => setMostrarBuscarProducto(false)}>
-                Cerrar
+      <div className="punto-de-venta-layout">
+        <div className="columna-izquierda">
+          <section ref={seccionBuscarRef} className="tarjeta tarjeta-compacta">
+            {!mostrarBuscarProducto ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setMostrarBuscarProducto(true);
+                  setTimeout(() => inputBuscarRef.current?.focus(), 0);
+                }}
+              >
+                + Buscar producto (F2)
+              </button>
+            ) : (
+              <>
+                <div className="fila-inline" style={{ justifyContent: "space-between" }}>
+                  <h2>Agregar producto manualmente</h2>
+                  <button type="button" onClick={() => setMostrarBuscarProducto(false)}>
+                    Cerrar
+                  </button>
+                </div>
+                <form onSubmit={agregarItem} onKeyDown={manejarEnterComoTab} className="fila-inline">
+                  <div className="buscador-producto">
+                    <input
+                      ref={inputBuscarRef}
+                      type="text"
+                      placeholder="Buscar por PLU o nombre..."
+                      value={buscar}
+                      onChange={(e) => {
+                        setBuscar(e.target.value);
+                        setProductoSeleccionado(null);
+                      }}
+                    />
+                    {buscar.trim() && (
+                      <div className="resultados-busqueda">
+                        {productos.length === 0 && <div className="resultado-item ayuda">Sin resultados</div>}
+                        {productos.map((p) => (
+                          <button key={p.id} type="button" className="resultado-item" onClick={() => elegirProducto(p)}>
+                            {p.plu} — {p.descripcion} ({formatoCLP(p.precio)}, stock: {p.stockActual})
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {productoSeleccionado && (
+                    <span className="exito">
+                      Vendiendo: {productoSeleccionado.descripcion} ({formatoCLP(productoSeleccionado.precio)})
+                    </span>
+                  )}
+                  <input
+                    ref={inputCantidadRef}
+                    type="number"
+                    min="0.001"
+                    step="0.001"
+                    placeholder="Cantidad"
+                    value={cantidad}
+                    onChange={(e) => setCantidad(e.target.value)}
+                  />
+                  <TecladoNumerico valor={cantidad} onCambiar={setCantidad} />
+                  <button type="submit" className="boton boton-primario">
+                    Agregar al carrito
+                  </button>
+                </form>
+              </>
+            )}
+          </section>
+
+          <section ref={seccionPagosRef} className="tarjeta">
+            <h2>Pagos</h2>
+            <div className="medios-pago">
+              <button
+                type="button"
+                className={`medio-pago-tile ${medioPago === "efectivo" ? "activo" : ""}`}
+                onClick={() => setMedioPago("efectivo")}
+              >
+                <span className="medio-pago-icono">💵</span>
+                Efectivo
+              </button>
+              <button
+                type="button"
+                className={`medio-pago-tile ${medioPago === "tarjeta" ? "activo" : ""}`}
+                onClick={() => {
+                  setMedioPago("tarjeta");
+                  // En tarjeta siempre se cobra el monto exacto — se autocompleta
+                  // lo que falta pagar para no tener que escribirlo a mano, y se
+                  // deja el foco listo para que Enter agregue el pago al toque.
+                  if (faltaPagarPositivo > 0) setMontoPago(String(faltaPagarPositivo));
+                  setTimeout(() => inputMontoPagoRef.current?.focus(), 0);
+                }}
+              >
+                <span className="medio-pago-icono">💳</span>
+                Tarjeta
+              </button>
+              <button
+                type="button"
+                className={`medio-pago-tile ${medioPago === "credito" ? "activo" : ""}`}
+                onClick={() => setMedioPago("credito")}
+              >
+                <span className="medio-pago-icono">🧾</span>
+                Crédito
               </button>
             </div>
-            <form onSubmit={agregarItem} onKeyDown={manejarEnterComoTab} className="fila-inline">
-              <div className="buscador-producto">
+            <form onSubmit={agregarPago} onKeyDown={manejarEnterComoTab} className="fila-inline">
+              {medioPago === "credito" && (
                 <input
-                  ref={inputBuscarRef}
                   type="text"
-                  placeholder="Buscar por PLU o nombre..."
-                  value={buscar}
-                  onChange={(e) => {
-                    setBuscar(e.target.value);
-                    setProductoSeleccionado(null);
-                  }}
+                  placeholder="Nombre del cliente"
+                  value={clienteNombre}
+                  onChange={(e) => setClienteNombre(e.target.value)}
                 />
-                {buscar.trim() && (
-                  <div className="resultados-busqueda">
-                    {productos.length === 0 && <div className="resultado-item ayuda">Sin resultados</div>}
-                    {productos.map((p) => (
-                      <button key={p.id} type="button" className="resultado-item" onClick={() => elegirProducto(p)}>
-                        {p.plu} — {p.descripcion} ({formatoCLP(p.precio)}, stock: {p.stockActual})
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-              {productoSeleccionado && (
-                <span className="exito">
-                  Vendiendo: {productoSeleccionado.descripcion} ({formatoCLP(productoSeleccionado.precio)})
-                </span>
               )}
               <input
-                ref={inputCantidadRef}
-                type="number"
-                min="0.001"
-                step="0.001"
-                placeholder="Cantidad"
-                value={cantidad}
-                onChange={(e) => setCantidad(e.target.value)}
-              />
-              <TecladoNumerico valor={cantidad} onCambiar={setCantidad} />
-              <button type="submit" className="boton boton-primario">
-                Agregar al carrito
-              </button>
-            </form>
-          </>
-        )}
-      </section>
-
-      <section className="tarjeta">
-        <h2>Carrito</h2>
-        <table className="tabla">
-          <thead>
-            <tr>
-              <th>Producto</th>
-              <th>Cantidad</th>
-              <th>Precio unitario</th>
-              <th>Subtotal</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {venta.items.map((item) => (
-              <tr key={item.id} className={item.anulado ? "fila-error" : ""}>
-                <td>{item.producto.descripcion}</td>
-                <td>{item.cantidad}</td>
-                <td>{formatoCLP(item.precioUnitario)}</td>
-                <td>{formatoCLP(item.subtotal)}</td>
-                <td>
-                  {item.anulado ? (
-                    "Anulado"
-                  ) : (
-                    <button
-                      type="button"
-                      className="boton-quitar-item"
-                      title="Quitar del carrito"
-                      onClick={() => setItemAAnular(item.id)}
-                    >
-                      ✕
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-            {itemsActivos.length === 0 && (
-              <tr>
-                <td colSpan={5}>Todavía no hay productos en el carrito.</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-        {venta.descuentoTipo && (
-          <p>
-            Subtotal: {formatoCLP(subtotalItems)} · Descuento: -{formatoCLP(descuentoAplicadoMonto)}
-            {venta.costoEnvio ? ` · Envío: ${formatoCLP(venta.costoEnvio)}` : ""}
-          </p>
-        )}
-        <h2>Total: {formatoCLP(totalVenta)}</h2>
-      </section>
-
-      </div>
-      <div className="columna-derecha">
-
-      <section className="tarjeta tarjeta-compacta">
-        {!mostrarSelectorComuna ? (
-          <button type="button" onClick={() => setMostrarSelectorComuna(true)}>
-            + Despacho a domicilio (F3)
-          </button>
-        ) : (
-          <>
-            <h2>Despacho</h2>
-            <label className="fila-inline" style={{ marginBottom: "0.75rem" }}>
-              <input
-                type="checkbox"
-                checked={mostrarSelectorComuna}
-                onChange={(e) => {
-                  setMostrarSelectorComuna(e.target.checked);
-                  if (!e.target.checked) actualizarDespacho(false, null);
-                }}
-              />
-              Es despacho a domicilio
-            </label>
-            <select
-              value={venta.comunaId ?? ""}
-              onChange={(e) => {
-                const comunaId = e.target.value ? Number(e.target.value) : null;
-                if (comunaId) actualizarDespacho(true, comunaId);
-              }}
-            >
-              <option value="">Elegir comuna...</option>
-              {comunas.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.nombre} ({formatoCLP(c.costoEnvio)})
-                </option>
-              ))}
-            </select>
-          </>
-        )}
-      </section>
-
-      <section className="tarjeta tarjeta-compacta">
-        {venta.descuentoTipo ? (
-          <>
-            <h2>Descuento</h2>
-            <p className="fila-inline">
-              <span className="exito">
-                Descuento aplicado:{" "}
-                {venta.descuentoTipo === "porcentaje" ? `${venta.descuentoValor}%` : formatoCLP(venta.descuentoValor!)}{" "}
-                (-{formatoCLP(descuentoAplicadoMonto)})
-              </span>
-              <button type="button" onClick={quitarDescuento}>
-                Quitar descuento
-              </button>
-            </p>
-          </>
-        ) : !mostrarFormDescuento ? (
-          <button type="button" onClick={() => setMostrarFormDescuento(true)}>
-            + Agregar descuento (F4)
-          </button>
-        ) : (
-          <>
-            <h2>Descuento</h2>
-            <form onSubmit={aplicarDescuento} onKeyDown={manejarEnterComoTab} className="fila-inline">
-              <select value={descuentoTipo} onChange={(e) => setDescuentoTipo(e.target.value as "porcentaje" | "monto_fijo")}>
-                <option value="porcentaje">Porcentaje (%)</option>
-                <option value="monto_fijo">Monto fijo ($)</option>
-              </select>
-              <input
+                ref={inputMontoPagoRef}
                 type="number"
                 min="1"
-                placeholder={descuentoTipo === "porcentaje" ? "Ej: 10" : "Ej: 2000"}
-                value={descuentoValor}
-                onChange={(e) => setDescuentoValor(e.target.value)}
+                placeholder={medioPago === "efectivo" ? "Efectivo recibido" : "Monto"}
+                value={montoPago}
+                onChange={(e) => setMontoPago(e.target.value)}
               />
-              <button type="submit">Aplicar descuento</button>
+              <TecladoNumerico valor={montoPago} onCambiar={setMontoPago} />
+              <button type="submit">Agregar pago</button>
+              {vueltoPreview > 0 && <span className="exito">Vuelto: {formatoCLP(vueltoPreview)}</span>}
             </form>
-          </>
-        )}
-      </section>
+            <table className="tabla">
+              <thead>
+                <tr>
+                  <th>Medio</th>
+                  <th>Monto</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {venta.pagos.map((p) => (
+                  <tr key={p.id}>
+                    <td>
+                      {p.medio === "efectivo" ? "Efectivo" : p.medio === "tarjeta" ? "Tarjeta" : `Crédito (${p.clienteNombre})`}
+                    </td>
+                    <td>{formatoCLP(p.monto)}</td>
+                    <td>
+                      <button type="button" onClick={() => quitarPago(p.id)}>
+                        Quitar
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {venta.pagos.length === 0 && (
+                  <tr>
+                    <td colSpan={3}>Todavía no hay pagos registrados.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+            <p>
+              {faltaPagar > 0 && <span className="error">Falta pagar: {formatoCLP(faltaPagar)}</span>}
+              {faltaPagar < 0 && <span className="error">Los pagos superan el total en {formatoCLP(-faltaPagar)}</span>}
+              {faltaPagar === 0 && itemsActivos.length > 0 && <span className="exito">Los pagos cubren el total.</span>}
+            </p>
+          </section>
 
-      <section className="tarjeta">
-        <h2>Pagos</h2>
-        <div className="medios-pago">
-          <button
-            type="button"
-            className={`medio-pago-tile ${medioPago === "efectivo" ? "activo" : ""}`}
-            onClick={() => setMedioPago("efectivo")}
-          >
-            <span className="medio-pago-icono">💵</span>
-            Efectivo
-          </button>
-          <button
-            type="button"
-            className={`medio-pago-tile ${medioPago === "tarjeta" ? "activo" : ""}`}
-            onClick={() => {
-              setMedioPago("tarjeta");
-              // En tarjeta siempre se cobra el monto exacto — se autocompleta
-              // lo que falta pagar para no tener que escribirlo a mano, y se
-              // deja el foco listo para que Enter agregue el pago al toque.
-              if (faltaPagarPositivo > 0) setMontoPago(String(faltaPagarPositivo));
-              setTimeout(() => inputMontoPagoRef.current?.focus(), 0);
-            }}
-          >
-            <span className="medio-pago-icono">💳</span>
-            Tarjeta
-          </button>
-          <button
-            type="button"
-            className={`medio-pago-tile ${medioPago === "credito" ? "activo" : ""}`}
-            onClick={() => setMedioPago("credito")}
-          >
-            <span className="medio-pago-icono">🧾</span>
-            Crédito
-          </button>
+          <div className="acciones-formulario fila-inline">
+            <button
+              type="button"
+              className="boton boton-primario"
+              disabled={procesando || faltaPagar !== 0 || itemsActivos.length === 0}
+              onClick={confirmarVenta}
+            >
+              {procesando ? "Confirmando..." : "Confirmar venta"}
+            </button>
+            <button type="button" onClick={() => setCancelandoVenta(true)}>
+              Cancelar venta
+            </button>
+          </div>
         </div>
-        <form onSubmit={agregarPago} onKeyDown={manejarEnterComoTab} className="fila-inline">
-          {medioPago === "credito" && (
-            <input
-              type="text"
-              placeholder="Nombre del cliente"
-              value={clienteNombre}
-              onChange={(e) => setClienteNombre(e.target.value)}
-            />
-          )}
-          <input
-            ref={inputMontoPagoRef}
-            type="number"
-            min="1"
-            placeholder={medioPago === "efectivo" ? "Efectivo recibido" : "Monto"}
-            value={montoPago}
-            onChange={(e) => setMontoPago(e.target.value)}
-          />
-          <TecladoNumerico valor={montoPago} onCambiar={setMontoPago} />
-          <button type="submit">Agregar pago</button>
-          {vueltoPreview > 0 && <span className="exito">Vuelto: {formatoCLP(vueltoPreview)}</span>}
-        </form>
-        <table className="tabla">
-          <thead>
-            <tr>
-              <th>Medio</th>
-              <th>Monto</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {venta.pagos.map((p) => (
-              <tr key={p.id}>
-                <td>
-                  {p.medio === "efectivo" ? "Efectivo" : p.medio === "tarjeta" ? "Tarjeta" : `Crédito (${p.clienteNombre})`}
-                </td>
-                <td>{formatoCLP(p.monto)}</td>
-                <td>
-                  <button type="button" onClick={() => quitarPago(p.id)}>
-                    Quitar
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {venta.pagos.length === 0 && (
-              <tr>
-                <td colSpan={3}>Todavía no hay pagos registrados.</td>
-              </tr>
+
+        <div className="columna-derecha">
+          <section className="tarjeta">
+            <h2>Carrito</h2>
+            <table className="tabla">
+              <thead>
+                <tr>
+                  <th>Producto</th>
+                  <th>Cantidad</th>
+                  <th>Precio unitario</th>
+                  <th>Descuento</th>
+                  <th>Subtotal</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {venta.items.map((item) => {
+                  const rawSubtotal = Math.round(item.precioUnitario * item.cantidad);
+                  const descuentoMontoItem = rawSubtotal - item.subtotal;
+                  return (
+                    <tr key={item.id} className={item.anulado ? "fila-error" : ""}>
+                      <td>{item.producto.descripcion}</td>
+                      <td>{item.cantidad}</td>
+                      <td>{formatoCLP(item.precioUnitario)}</td>
+                      <td>
+                        {item.anulado ? (
+                          "—"
+                        ) : item.descuentoTipo ? (
+                          <span className="fila-inline">
+                            -{formatoCLP(descuentoMontoItem)}
+                            <button type="button" className="boton-chico" onClick={() => quitarDescuentoItem(item.id)}>
+                              Quitar
+                            </button>
+                          </span>
+                        ) : itemDescuentoEditando === item.id ? (
+                          <span className="fila-inline">
+                            <select
+                              value={itemDescuentoTipo}
+                              onChange={(e) => setItemDescuentoTipo(e.target.value as "porcentaje" | "monto_fijo")}
+                            >
+                              <option value="porcentaje">%</option>
+                              <option value="monto_fijo">$</option>
+                            </select>
+                            <input
+                              type="number"
+                              min="1"
+                              className="input-chico"
+                              placeholder={itemDescuentoTipo === "porcentaje" ? "10" : "500"}
+                              value={itemDescuentoValor}
+                              onChange={(e) => setItemDescuentoValor(e.target.value)}
+                              autoFocus
+                            />
+                            <button type="button" className="boton-chico" onClick={() => aplicarDescuentoItem(item.id)}>
+                              OK
+                            </button>
+                            <button type="button" className="boton-chico" onClick={() => setItemDescuentoEditando(null)}>
+                              ✕
+                            </button>
+                          </span>
+                        ) : hayDescuentoVenta ? (
+                          "—"
+                        ) : (
+                          <button
+                            type="button"
+                            className="boton-chico"
+                            onClick={() => {
+                              setItemDescuentoEditando(item.id);
+                              setItemDescuentoValor("");
+                            }}
+                          >
+                            + Desc.
+                          </button>
+                        )}
+                      </td>
+                      <td>{formatoCLP(item.subtotal)}</td>
+                      <td>
+                        {item.anulado ? (
+                          "Anulado"
+                        ) : (
+                          <button
+                            type="button"
+                            className="boton-quitar-item"
+                            title="Quitar del carrito"
+                            onClick={() => setItemAAnular(item.id)}
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {itemsActivos.length === 0 && (
+                  <tr>
+                    <td colSpan={6}>Todavía no hay productos en el carrito.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+            {venta.descuentoTipo && (
+              <p>
+                Subtotal: {formatoCLP(subtotalItems)} · Descuento: -{formatoCLP(descuentoAplicadoMonto)}
+                {venta.costoEnvio ? ` · Envío: ${formatoCLP(venta.costoEnvio)}` : ""}
+              </p>
             )}
-          </tbody>
-        </table>
-        <p>
-          {faltaPagar > 0 && <span className="error">Falta pagar: {formatoCLP(faltaPagar)}</span>}
-          {faltaPagar < 0 && <span className="error">Los pagos superan el total en {formatoCLP(-faltaPagar)}</span>}
-          {faltaPagar === 0 && itemsActivos.length > 0 && <span className="exito">Los pagos cubren el total.</span>}
-        </p>
-      </section>
+            <h2>Total: {formatoCLP(totalVenta)}</h2>
+          </section>
 
-      <div className="acciones-formulario fila-inline">
-        <button
-          type="button"
-          className="boton boton-primario"
-          disabled={procesando || faltaPagar !== 0 || itemsActivos.length === 0}
-          onClick={confirmarVenta}
-        >
-          {procesando ? "Confirmando..." : "Confirmar venta"}
-        </button>
-        <button type="button" onClick={() => setCancelandoVenta(true)}>
-          Cancelar venta
-        </button>
-      </div>
+          <section ref={seccionDespachoRef} className="tarjeta tarjeta-mini">
+            {!mostrarSelectorComuna ? (
+              <button type="button" className="boton-chico" onClick={() => setMostrarSelectorComuna(true)}>
+                + Despacho a domicilio (F3)
+              </button>
+            ) : (
+              <>
+                <h2>Despacho</h2>
+                <label className="fila-inline" style={{ marginBottom: "0.75rem" }}>
+                  <input
+                    type="checkbox"
+                    checked={mostrarSelectorComuna}
+                    onChange={(e) => {
+                      setMostrarSelectorComuna(e.target.checked);
+                      if (!e.target.checked) actualizarDespacho(false, null);
+                    }}
+                  />
+                  Es despacho a domicilio
+                </label>
+                <select
+                  value={venta.comunaId ?? ""}
+                  onChange={(e) => {
+                    const comunaId = e.target.value ? Number(e.target.value) : null;
+                    if (comunaId) actualizarDespacho(true, comunaId);
+                  }}
+                >
+                  <option value="">Elegir comuna...</option>
+                  {comunas.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.nombre} ({formatoCLP(c.costoEnvio)})
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
+          </section>
 
-      </div>
+          <section ref={seccionDescuentoRef} className="tarjeta tarjeta-mini">
+            {venta.descuentoTipo ? (
+              <>
+                <h2>Descuento</h2>
+                <p className="fila-inline">
+                  <span className="exito">
+                    Descuento aplicado:{" "}
+                    {venta.descuentoTipo === "porcentaje" ? `${venta.descuentoValor}%` : formatoCLP(venta.descuentoValor!)}{" "}
+                    (-{formatoCLP(descuentoAplicadoMonto)})
+                  </span>
+                  <button type="button" className="boton-chico" onClick={quitarDescuento}>
+                    Quitar descuento
+                  </button>
+                </p>
+              </>
+            ) : hayDescuentoItem ? (
+              <p className="ayuda">Hay descuentos por producto — quítalos para descontar toda la venta.</p>
+            ) : !mostrarFormDescuento ? (
+              <button type="button" className="boton-chico" onClick={() => setMostrarFormDescuento(true)}>
+                + Agregar descuento (F4)
+              </button>
+            ) : (
+              <>
+                <h2>Descuento</h2>
+                <form onSubmit={aplicarDescuento} onKeyDown={manejarEnterComoTab} className="fila-inline">
+                  <select value={descuentoTipo} onChange={(e) => setDescuentoTipo(e.target.value as "porcentaje" | "monto_fijo")}>
+                    <option value="porcentaje">Porcentaje (%)</option>
+                    <option value="monto_fijo">Monto fijo ($)</option>
+                  </select>
+                  <input
+                    type="number"
+                    min="1"
+                    placeholder={descuentoTipo === "porcentaje" ? "Ej: 10" : "Ej: 2000"}
+                    value={descuentoValor}
+                    onChange={(e) => setDescuentoValor(e.target.value)}
+                  />
+                  <button type="submit">Aplicar descuento</button>
+                </form>
+              </>
+            )}
+          </section>
+        </div>
       </div>
 
       {itemAAnular != null && (

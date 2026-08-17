@@ -134,6 +134,7 @@ export default function BuscarVenta() {
                 <th>Producto</th>
                 <th>Cantidad</th>
                 <th>Precio unitario</th>
+                <th>Descuento</th>
                 <th>Subtotal</th>
               </tr>
             </thead>
@@ -143,6 +144,13 @@ export default function BuscarVenta() {
                   <td>{item.producto.descripcion}</td>
                   <td>{item.cantidad}</td>
                   <td>{formatoCLP(item.precioUnitario)}</td>
+                  <td>
+                    {item.descuentoTipo
+                      ? item.descuentoTipo === "porcentaje"
+                        ? `${item.descuentoValor}%`
+                        : formatoCLP(item.descuentoValor ?? 0)
+                      : "—"}
+                  </td>
                   <td>{formatoCLP(item.subtotal)}</td>
                 </tr>
               ))}

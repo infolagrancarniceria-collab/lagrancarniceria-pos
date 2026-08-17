@@ -315,13 +315,86 @@ cajaRouter.put("/ventas/:id/descuento", async (req, res) => {
     return res.status(400).json({ error: parsed.error.issues[0].message });
   }
 
-  const venta = await prisma.venta.findUnique({ where: { id: ventaId } });
+  const venta = await prisma.venta.findUnique({ where: { id: ventaId }, include: { items: true } });
   if (!venta) return res.status(404).json({ error: "Venta no encontrada" });
   if (venta.estado !== "abierta") return res.status(400).json({ error: "Esta venta ya no admite cambios" });
+
+  // Solo puede haber un tipo de descuento activo por venta — o a toda la
+  // venta, o por producto — para que el registro de qué se descontó sea
+  // claro. No aplica al quitar el descuento (tipo null).
+  if (parsed.data.tipo !== null && venta.items.some((i) => !i.anulado && i.descuentoTipo)) {
+    return res.status(400).json({
+      error: "Ya hay descuentos aplicados a productos individuales — quítalos primero para descontar toda la venta",
+    });
+  }
 
   await prisma.venta.update({
     where: { id: ventaId },
     data: { descuentoTipo: parsed.data.tipo, descuentoValor: parsed.data.valor },
+  });
+  await recalcularTotal(ventaId);
+
+  const ventaActualizada = await prisma.venta.findUnique({
+    where: { id: ventaId },
+    include: { items: { include: { producto: true, usuarioAnulacion: true } }, pagos: true, comuna: true },
+  });
+  res.json(ventaActualizada);
+});
+
+const descuentoItemSchema = z
+  .object({
+    tipo: z.enum(["porcentaje", "monto_fijo"]).nullable(),
+    valor: z.number().positive().nullable(),
+  })
+  .refine((d) => (d.tipo === null) === (d.valor === null), {
+    message: "Falta el valor del descuento",
+  })
+  .refine((d) => d.tipo !== "porcentaje" || (d.valor ?? 0) <= 100, {
+    message: "El descuento en porcentaje no puede ser mayor a 100",
+  });
+
+// Descuento por producto (opcional): alternativo al descuento de toda la
+// venta — no pueden estar activos los dos a la vez (ver PUT
+// /ventas/:id/descuento). El subtotal del ítem queda ya con el descuento
+// aplicado, redondeado a peso entero.
+cajaRouter.put("/ventas/:id/items/:itemId/descuento", async (req, res) => {
+  const ventaId = Number(req.params.id);
+  const itemId = Number(req.params.itemId);
+  const parsed = descuentoItemSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0].message });
+  }
+
+  const venta = await prisma.venta.findUnique({ where: { id: ventaId } });
+  if (!venta) return res.status(404).json({ error: "Venta no encontrada" });
+  if (venta.estado !== "abierta") return res.status(400).json({ error: "Esta venta ya no admite cambios" });
+
+  const item = await prisma.itemVenta.findUnique({ where: { id: itemId } });
+  if (!item || item.ventaId !== ventaId) return res.status(404).json({ error: "Ítem no encontrado" });
+  if (item.anulado) return res.status(400).json({ error: "Este producto ya fue anulado" });
+
+  if (parsed.data.tipo !== null && venta.descuentoTipo) {
+    return res.status(400).json({
+      error: "Ya hay un descuento aplicado a toda la venta — quítalo primero para descontar productos individuales",
+    });
+  }
+
+  const subtotalSinDescuento = Math.round(item.precioUnitario * item.cantidad);
+  let descuentoMonto = 0;
+  if (parsed.data.tipo === "porcentaje" && parsed.data.valor) {
+    descuentoMonto = Math.round(subtotalSinDescuento * (parsed.data.valor / 100));
+  } else if (parsed.data.tipo === "monto_fijo" && parsed.data.valor) {
+    descuentoMonto = parsed.data.valor;
+  }
+  descuentoMonto = Math.min(descuentoMonto, subtotalSinDescuento);
+
+  await prisma.itemVenta.update({
+    where: { id: itemId },
+    data: {
+      descuentoTipo: parsed.data.tipo,
+      descuentoValor: parsed.data.valor,
+      subtotal: subtotalSinDescuento - descuentoMonto,
+    },
   });
   await recalcularTotal(ventaId);
 
