@@ -4,6 +4,8 @@ import { api, formatoCLP, type AvisoFifoCamara, type CajaCamara, type DestinoSal
 import { useUsuario } from "../context/UsuarioContext";
 import { useEscanerCodigoBarras } from "../hooks/useEscanerCodigoBarras";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
+import { ejecutarOEncolar } from "../lib/colaOffline";
+import { EstadoOffline } from "../components/EstadoOffline";
 
 const DESTINOS: { valor: DestinoSalidaCamara; etiqueta: string }[] = [
   { valor: "sala_venta", etiqueta: "Sala de venta" },
@@ -30,6 +32,7 @@ export default function CamaraSalida() {
 
   const [guardando, setGuardando] = useState(false);
   const [resultado, setResultado] = useState<ResultadoSalidaCamara | null>(null);
+  const [guardadoOffline, setGuardadoOffline] = useState(false);
 
   function limpiarFormulario() {
     setDestino("sala_venta");
@@ -44,6 +47,7 @@ export default function CamaraSalida() {
     setCaja(null);
     setFifo(null);
     setResultado(null);
+    setGuardadoOffline(false);
     setError(null);
     limpiarFormulario();
   }
@@ -108,15 +112,26 @@ export default function CamaraSalida() {
 
     setGuardando(true);
     try {
-      const res = await api.camara.salida(caja.id, {
-        destino,
-        pesoKg: peso,
-        motivo: motivo.trim() || undefined,
-        usuarioId: usuario.id,
-        version: caja.version,
-        mayorista: mayoristaData,
-      });
-      setResultado(res);
+      const claveIdempotencia = crypto.randomUUID();
+      const respuesta = await ejecutarOEncolar<ResultadoSalidaCamara>(
+        `/api/camara/cajas/${caja.id}/salida`,
+        {
+          destino,
+          pesoKg: peso,
+          motivo: motivo.trim() || undefined,
+          usuarioId: usuario.id,
+          version: caja.version,
+          mayorista: mayoristaData,
+          claveIdempotencia,
+        },
+        claveIdempotencia,
+        `Salida de caja ${String(caja.id).padStart(6, "0")}`
+      );
+      if (respuesta.enviada) {
+        setResultado(respuesta.datos);
+      } else {
+        setGuardadoOffline(true);
+      }
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -136,8 +151,9 @@ export default function CamaraSalida() {
       </div>
 
       {error && <p className="error">{error}</p>}
+      <EstadoOffline />
 
-      {!caja && !resultado && (
+      {!caja && !resultado && !guardadoOffline && (
         <section className="tarjeta">
           <p className="ayuda">
             {buscando ? "Buscando caja..." : "Escanea el código de barras de la etiqueta de la caja que sale de cámara."}
@@ -145,7 +161,7 @@ export default function CamaraSalida() {
         </section>
       )}
 
-      {caja && !resultado && (
+      {caja && !resultado && !guardadoOffline && (
         <section className="tarjeta">
           <h2>
             Caja {numeroCaja} — {caja.producto.descripcion}
@@ -252,6 +268,18 @@ export default function CamaraSalida() {
               {resultado.salidaMayorista.estadoPago === "pagado" ? "pagado" : "pendiente de pago"}.
             </p>
           )}
+          <button type="button" className="boton boton-primario" onClick={nuevaBusqueda}>
+            Escanear otra caja
+          </button>
+        </section>
+      )}
+
+      {guardadoOffline && (
+        <section className="tarjeta">
+          <p className="ayuda">
+            Sin conexión ahora mismo — la salida de la caja {numeroCaja} quedó guardada en este celular y se va a
+            enviar sola en cuanto vuelva la señal. No hace falta repetirla.
+          </p>
           <button type="button" className="boton boton-primario" onClick={nuevaBusqueda}>
             Escanear otra caja
           </button>

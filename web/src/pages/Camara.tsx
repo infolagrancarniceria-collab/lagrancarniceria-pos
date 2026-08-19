@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { EstadoOffline } from "../components/EstadoOffline";
 
 export default function Camara() {
   return (
@@ -6,9 +7,10 @@ export default function Camara() {
       <h1>Cámara frigorífica</h1>
       <p className="ayuda">
         Módulo en construcción, por etapas — por ahora están listas la entrada, la salida (con venta por mayor
-        incluida), el inventario por escaneo y el importador del sistema anterior. Falta el modo sin conexión del
-        celular.
+        incluida), el inventario por escaneo, el importador del sistema anterior y el modo sin conexión del celular
+        (para salidas y ajustes).
       </p>
+      <EstadoOffline />
       <div className="fila-inline">
         <Link to="/camara/entrada" className="boton boton-primario">
           Entrada de cajas

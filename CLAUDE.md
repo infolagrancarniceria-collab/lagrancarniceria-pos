@@ -293,7 +293,7 @@ Todo corre **local**, en el PC de la carnicería, sin depender de internet:
 6. **Asistente de IA** — listo y **confirmado funcionando con una clave de API real** por el usuario. Ver "Decisiones tomadas en el asistente de IA" más abajo.
 7. **Gastos generales** — listo: registro de gastos del negocio (sueldos, luz, agua, etc., separado de las compras de mercadería) con resumen por categoría y total por rango de fechas. Ver "Módulo de gastos generales" más abajo.
 8. **Despachos a domicilio** — listo: comunas con costo de envío fijo, marcar una venta como despacho (suma el costo al total), y reporte por comuna. Ver "Módulo de despachos a domicilio" más abajo.
-9. **Cámara frigorífica** — en construcción, por etapas. Ver "Módulo de cámara frigorífica" más abajo para el detalle completo (alcance, decisiones tomadas, y estado de cada etapa).
+9. **Cámara frigorífica** — listo (las 7 etapas: entrada de cajas con etiqueta impresa, salida con aviso FIFO y venta por mayor, inventario por escaneo con conciliación de faltantes, importador del sistema anterior, modo sin conexión del celular, y pruebas de punta a punta de todo junto). Ver "Módulo de cámara frigorífica" más abajo para el detalle completo. **Pendiente:** prueba con la impresora Gainscha real y confirmación del usuario usando el flujo completo con datos y hardware reales del local.
 
 ## Instalador de Windows
 Armado con `electron-builder` (`npm run dist:win`, ver README para el
@@ -1037,9 +1037,84 @@ así ninguna etiqueta física ya pegada necesita reimprimirse.
   previsualizar, ver la sugerencia automática, confirmar y verificar que
   la caja quedó creada con los datos correctos).
 
-### Plan de las próximas etapas (sin empezar todavía)
-6. Modo sin conexión del celular (cola local + reintento).
-7. Pruebas de punta a punta.
+### Etapa 6 — modo sin conexión del celular, lista
+El diseño ya estaba definido desde antes de empezar el módulo (ver
+"Decisiones tomadas" más arriba): cada movimiento que cambia stock se
+guarda primero en el celular con una clave de idempotencia única; si hay
+conexión se manda al servidor al toque, si no, queda pendiente y se
+reintenta sola apenas vuelve la señal. Alcance acotado a **salidas y
+ajustes** (los flujos que la respuesta original nombraba explícitamente) —
+no incluye entrada de cajas ni el escaneo de un conteo de inventario, que
+no se pidieron para este modo.
+
+- **Cola local** (`web/src/lib/colaOffline.ts`, en `localStorage`, es de
+  este celular en particular): `ejecutarOEncolar()` intenta la acción de
+  inmediato; si el servidor la **rechaza de verdad** (ej. una validación,
+  un conflicto de versión), lanza el error tal cual para que la pantalla
+  lo muestre igual que siempre — la cola es solo para fallas de **conexión**
+  (el `fetch` ni siquiera llega a responder), nunca para tapar un error real.
+  Si falla por conexión, la acción queda guardada y la pantalla avisa
+  "quedó guardada en este celular, se va a enviar sola" en vez de mostrar
+  un error.
+- **Reintento automático**: al recuperar señal (evento `online` del
+  navegador) y además cada 15 segundos mientras la pantalla de Cámara esté
+  abierta (por si el evento `online` no dispara de forma confiable en
+  algún navegador) — implementado en `web/src/components/EstadoOffline.tsx`,
+  un widget chico que se muestra en las pantallas de Cámara con cuántas
+  acciones quedan pendientes de enviar.
+- **Idempotencia real, verificada de punta a punta**: el celular genera la
+  clave (`crypto.randomUUID()`) ANTES de intentar la petición, así que un
+  reintento manda exactamente la misma clave. `server/routes/camara.ts`
+  ahora revisa esa clave primero, antes de cualquier otra validación (ej.
+  antes de comparar la versión de la caja, que ya cambió desde el primer
+  envío exitoso) — si ya existe un `MovimientoCamara` con esa clave,
+  devuelve el resultado ya guardado tal cual, sin tocar el saldo de nuevo.
+  Aplica a `POST /cajas/:id/salida`, `POST /cajas/:id/confirmar-falta` y
+  `POST /cajas/:id/encontrada`.
+- **Si el reintento SÍ falla de verdad** (ej. mientras el celular seguía
+  sin conexión, otra persona ya resolvió esa misma caja desde el local):
+  la acción sale de la cola de pendientes — reintentarla para siempre no
+  tiene sentido — y queda en una lista de "errores" aparte, visible en el
+  mismo widget, para que la persona la revise a mano en vez de perderse en
+  silencio.
+- Los métodos `api.camara.salida` / `confirmarFalta` / `marcarEncontrada`
+  (que no sabían de claves de idempotencia) se sacaron de `api.ts` —
+  `CamaraSalida.tsx` y `CamaraAjustesPendientes.tsx` ahora llaman
+  `ejecutarOEncolar()` directo, para no dejar un camino "directo" que
+  alguien use por error sin el mecanismo de reintento.
+- **Probado de punta a punta**: contra el backend real (un reintento con
+  la misma clave pero con la versión vieja de la caja NO se rechaza por
+  conflicto de versión — devuelve el mismo movimiento sin descontar saldo
+  dos veces; mismo comportamiento verificado para confirmar-falta y
+  encontrada) y con Playwright simulando una desconexión real (se
+  interceptó y abortó la petición de red específica, no solo un mock) —
+  confirmando que mientras "no hay señal" el servidor no registra ningún
+  cambio, que el aviso correcto aparece en pantalla, que la sincronización
+  automática (sin intervención) manda la acción sola en cuanto se destraba
+  la conexión y el servidor sí aplica el cambio, y que una acción que el
+  servidor rechaza al reintentarla (por un cambio real ocurrido mientras
+  tanto) se saca de la cola y avisa en vez de reintentar para siempre.
+
+### Etapa 7 — pruebas de punta a punta de todo el módulo junto, lista
+Cada etapa ya se había probado por separado al construirla. Para esta
+etapa final se armó un recorrido continuo que encadena TODAS las etapas
+en una sola corrida, para confirmar que no se pisan entre sí (mismo
+producto, mismas cajas, mismo catálogo compartido): entrada de un lote de
+cajas → salida con aviso FIFO → salida a sala de venta (verificando que
+sube el stock vendible) → venta por mayor y marcarla pagada → abrir un
+conteo por escaneo, escanear solo parte de las cajas, cerrarlo → resolver
+la caja que quedó pendiente → importar una caja del prototipo anterior
+conviviendo con las cajas reales ya creadas en la misma corrida → una
+salida en modo sin conexión que se sincroniza sola al final. Las 23
+verificaciones del recorrido pasaron correctamente, confirmando que el
+módulo completo (las 7 etapas) funciona como un solo sistema coherente,
+no solo como piezas sueltas.
+
+**Con esto, el módulo de cámara frigorífica queda completo** (las 7
+etapas planeadas desde el diagnóstico inicial). Pendiente, fuera del
+alcance de este módulo: la prueba con la impresora Gainscha real para las
+etiquetas (Etapa 2) y la confirmación del usuario probando el flujo
+completo con datos y hardware reales del local.
 
 ## Elegir qué impresora usa cada cosa (arreglo de "la etiqueta no imprime")
 El usuario probó imprimir una etiqueta de cámara desde el PC principal y no

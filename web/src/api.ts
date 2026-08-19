@@ -781,17 +781,11 @@ export const api = {
     }) => post<CajaCamara[]>("/api/camara/cajas", data),
     obtenerCaja: (id: number) => get<CajaCamara>(`/api/camara/cajas/${id}`),
     avisoFifo: (cajaId: number) => get<AvisoFifoCamara>(`/api/camara/cajas/${cajaId}/fifo`),
-    salida: (
-      cajaId: number,
-      data: {
-        destino: DestinoSalidaCamara;
-        pesoKg?: number;
-        motivo?: string;
-        usuarioId: number;
-        version: number;
-        mayorista?: { clienteNombre?: string; precioTotal: number; estadoPago: "pagado" | "pendiente" };
-      }
-    ) => post<ResultadoSalidaCamara>(`/api/camara/cajas/${cajaId}/salida`, data),
+    // La salida de una caja se manda con web/src/lib/colaOffline.ts
+    // (ejecutarOEncolar) en vez de un método acá — necesita una clave de
+    // idempotencia para poder reintentarse sola sin duplicar si el celular
+    // se queda sin conexión a mitad de camino (ver "Modo sin conexión del
+    // celular" en CLAUDE.md).
     mayoristas: (params: { desde?: string; hasta?: string; estadoPago?: string } = {}) => {
       const qs = new URLSearchParams();
       if (params.desde) qs.set("desde", params.desde);
@@ -808,10 +802,9 @@ export const api = {
       const query = qs.toString();
       return get<CajaCamara[]>(`/api/camara/cajas${query ? `?${query}` : ""}`);
     },
-    confirmarFalta: (cajaId: number, usuarioId: number, motivo?: string) =>
-      post<ResultadoAjusteCamara>(`/api/camara/cajas/${cajaId}/confirmar-falta`, { usuarioId, motivo }),
-    marcarEncontrada: (cajaId: number, usuarioId: number, motivo?: string) =>
-      post<ResultadoAjusteCamara>(`/api/camara/cajas/${cajaId}/encontrada`, { usuarioId, motivo }),
+    // Resolver un ajuste pendiente ("confirmar-falta"/"encontrada") también
+    // pasa por ejecutarOEncolar en vez de un método acá, mismo motivo que
+    // la salida.
     abrirSesionInventario: (usuarioId: number) =>
       post<SesionInventarioCamara>("/api/camara/inventario/sesiones", { usuarioId }),
     sesionesInventario: (params: { estado?: string } = {}) => {

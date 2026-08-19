@@ -171,11 +171,30 @@ const salidaSchema = z
         estadoPago: z.enum(["pagado", "pendiente"]).default("pendiente"),
       })
       .optional(),
+    // Generada por el que hace la salida (ej. el celular en la Etapa 6, modo
+    // sin conexión) ANTES de mandar la petición — si esta misma petición ya
+    // se procesó antes (reintento tras recuperar señal), se devuelve el
+    // resultado ya guardado en vez de repetir el descuento de saldo.
+    claveIdempotencia: z.string().trim().min(1).optional(),
   })
   .refine((data) => data.destino !== "mayorista" || data.mayorista != null, {
     message: "Faltan los datos de la venta por mayor (precio)",
     path: ["mayorista"],
   });
+
+async function resultadoSalidaPorClave(claveIdempotencia: string) {
+  const movimiento = await prisma.movimientoCamara.findUnique({ where: { claveIdempotencia } });
+  if (!movimiento) return null;
+  const caja = await prisma.cajaCamara.findUnique({ where: { id: movimiento.cajaId }, include: cajaConIncludes });
+  let salidaMayorista = null;
+  if (movimiento.referenciaTipo === "SalidaMayorista" && movimiento.referenciaId) {
+    salidaMayorista = await prisma.salidaMayorista.findUnique({
+      where: { id: movimiento.referenciaId },
+      include: { producto: true, usuario: true },
+    });
+  }
+  return { caja, movimiento, salidaMayorista };
+}
 
 // Tipo de MovimientoCamara según el destino elegido. Sala de venta y
 // mayorista distinguen si la caja quedó vacía o con saldo; producción,
@@ -194,10 +213,20 @@ camaraRouter.post("/cajas/:id/salida", async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.issues[0].message });
   }
-  const { destino, pesoKg: pesoSolicitado, motivo, usuarioId, dispositivo, version, mayorista } = parsed.data;
+  const { destino, pesoKg: pesoSolicitado, motivo, usuarioId, dispositivo, version, mayorista, claveIdempotencia } = parsed.data;
 
   const usuario = await validarUsuario(usuarioId);
   if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
+
+  // Reintento de una salida que ya se procesó (ej. el celular recuperó
+  // señal y reenvía sola una acción que había quedado en su cola local) —
+  // se devuelve el resultado ya guardado, sin validar nada de nuevo (la
+  // versión de la caja ya cambió desde el primer envío, así que validarla
+  // otra vez rechazaría un reintento legítimo).
+  if (claveIdempotencia) {
+    const yaProcesada = await resultadoSalidaPorClave(claveIdempotencia);
+    if (yaProcesada) return res.json(yaProcesada);
+  }
 
   const cajaId = Number(req.params.id);
   const caja = await prisma.cajaCamara.findUnique({ where: { id: cajaId } });
@@ -263,7 +292,7 @@ camaraRouter.post("/cajas/:id/salida", async (req, res) => {
         referenciaId,
         usuarioId,
         dispositivo: dispositivo || null,
-        claveIdempotencia: randomUUID(),
+        claveIdempotencia: claveIdempotencia || randomUUID(),
       },
     });
 
@@ -550,15 +579,30 @@ camaraRouter.post("/inventario/sesiones/:id/cerrar", async (req, res) => {
 const resolverAjusteSchema = z.object({
   usuarioId: z.number().int().positive(),
   motivo: z.string().trim().optional(),
+  // Ver nota de claveIdempotencia en salidaSchema — mismo mecanismo para
+  // que un reintento sin conexión no duplique el ajuste.
+  claveIdempotencia: z.string().trim().min(1).optional(),
 });
+
+async function resultadoAjustePorClave(claveIdempotencia: string) {
+  const movimiento = await prisma.movimientoCamara.findUnique({ where: { claveIdempotencia } });
+  if (!movimiento) return null;
+  const caja = await prisma.cajaCamara.findUnique({ where: { id: movimiento.cajaId }, include: cajaConIncludes });
+  return { caja, movimiento };
+}
 
 camaraRouter.post("/cajas/:id/confirmar-falta", async (req, res) => {
   const parsed = resolverAjusteSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0].message });
-  const { usuarioId, motivo } = parsed.data;
+  const { usuarioId, motivo, claveIdempotencia } = parsed.data;
 
   const usuario = await validarUsuario(usuarioId);
   if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
+
+  if (claveIdempotencia) {
+    const yaProcesada = await resultadoAjustePorClave(claveIdempotencia);
+    if (yaProcesada) return res.json(yaProcesada);
+  }
 
   const caja = await prisma.cajaCamara.findUnique({ where: { id: Number(req.params.id) } });
   if (!caja) return res.status(404).json({ error: "Caja no encontrada" });
@@ -581,7 +625,7 @@ camaraRouter.post("/cajas/:id/confirmar-falta", async (req, res) => {
         destino: "ajuste",
         motivo: motivo || "Faltante de inventario (conteo por escaneo)",
         usuarioId,
-        claveIdempotencia: randomUUID(),
+        claveIdempotencia: claveIdempotencia || randomUUID(),
       },
     });
     return { caja: cajaActualizada, movimiento };
@@ -593,10 +637,15 @@ camaraRouter.post("/cajas/:id/confirmar-falta", async (req, res) => {
 camaraRouter.post("/cajas/:id/encontrada", async (req, res) => {
   const parsed = resolverAjusteSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0].message });
-  const { usuarioId, motivo } = parsed.data;
+  const { usuarioId, motivo, claveIdempotencia } = parsed.data;
 
   const usuario = await validarUsuario(usuarioId);
   if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
+
+  if (claveIdempotencia) {
+    const yaProcesada = await resultadoAjustePorClave(claveIdempotencia);
+    if (yaProcesada) return res.json(yaProcesada);
+  }
 
   const caja = await prisma.cajaCamara.findUnique({ where: { id: Number(req.params.id) } });
   if (!caja) return res.status(404).json({ error: "Caja no encontrada" });
@@ -621,7 +670,7 @@ camaraRouter.post("/cajas/:id/encontrada", async (req, res) => {
         destino: "camara",
         motivo: motivo || "Caja encontrada tras conteo por escaneo",
         usuarioId,
-        claveIdempotencia: randomUUID(),
+        claveIdempotencia: claveIdempotencia || randomUUID(),
       },
     });
     return { caja: cajaActualizada, movimiento };

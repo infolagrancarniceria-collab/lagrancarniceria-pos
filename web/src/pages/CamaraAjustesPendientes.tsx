@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, type CajaCamara } from "../api";
+import { api, type CajaCamara, type ResultadoAjusteCamara } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
+import { ejecutarOEncolar } from "../lib/colaOffline";
+import { EstadoOffline } from "../components/EstadoOffline";
 
 // Lista las cajas que quedaron marcadas "ajuste_pendiente" tras cerrar un
 // conteo por escaneo (estaban esperadas y no se escanearon). Es una lista
@@ -32,11 +34,19 @@ export default function CamaraAjustesPendientes() {
     setError(null);
     setProcesandoId(cajaId);
     try {
-      if (accion === "falta") {
-        await api.camara.confirmarFalta(cajaId, usuario.id);
-      } else {
-        await api.camara.marcarEncontrada(cajaId, usuario.id);
-      }
+      const claveIdempotencia = crypto.randomUUID();
+      const numero = String(cajaId).padStart(6, "0");
+      const url =
+        accion === "falta" ? `/api/camara/cajas/${cajaId}/confirmar-falta` : `/api/camara/cajas/${cajaId}/encontrada`;
+      await ejecutarOEncolar<ResultadoAjusteCamara>(
+        url,
+        { usuarioId: usuario.id, claveIdempotencia },
+        claveIdempotencia,
+        `${accion === "falta" ? "Confirmar falta" : "Marcar encontrada"} — caja ${numero}`
+      );
+      // Se saca de la lista tanto si se mandó al servidor como si quedó
+      // guardada esperando conexión — desde la perspectiva de la persona,
+      // ya quedó resuelta acá.
       setCajas((prev) => prev.filter((c) => c.id !== cajaId));
     } catch (e) {
       setError((e as Error).message);
@@ -57,6 +67,7 @@ export default function CamaraAjustesPendientes() {
         como encontradas para que vuelvan a estar disponibles en cámara.
       </p>
       {error && <p className="error">{error}</p>}
+      <EstadoOffline />
       {cargando && <p>Cargando...</p>}
 
       <table className="tabla">
