@@ -982,8 +982,62 @@ simple de dos botones** ("Confirmar que falta" / "Se encontró").
   faltante en "Ajustes pendientes" y resolverla) — todos los casos
   correctos.
 
+### Etapa 5 — importador del prototipo HTML anterior, lista
+Nueva pantalla **"Importar del sistema anterior"** (menú → Cámara →
+"Importar del sistema anterior"). El prototipo que usaba el papá del
+usuario (`camara_actual_referencia.html`) guardaba todo en `localStorage`
+del navegador, sin base de datos compartida — esta pantalla trae esos
+datos al sistema nuevo sin perder lo ya cargado ahí.
+
+Antes de programar se le preguntó al usuario si la cámara del sistema
+nuevo ya se había usado con datos reales (por si había riesgo de choque de
+números de caja) — respuesta: **seguía vacía**, solo con datos de prueba.
+Eso permitió la decisión clave: **preservar el mismo número de caja** que
+ya está impreso en las etiquetas físicas del prototipo (ej. "000001" sigue
+siendo la caja 1 en el sistema nuevo) en vez de asignar números nuevos —
+así ninguna etiqueta física ya pegada necesita reimprimirse.
+
+- **Cómo se obtienen los datos**: no hay botón de exportar en el
+  prototipo (no se le agregó nada ahí, según la instrucción de no tocar
+  el prototipo salvo lo necesario) — la pantalla explica cómo copiar el
+  contenido con la consola del navegador
+  (`copy(localStorage.getItem('granCarniceria_camara_v1')))`) y pegarlo,
+  o subirlo como archivo `.json` si se guardó aparte.
+- **Dos pasos: previsualizar y confirmar** (mismo patrón de "proponer,
+  confirmar" usado en el resto del sistema, aplicado acá a una
+  importación en vez de a la IA). `POST /previsualizar` agrupa las cajas
+  del archivo por producto+familia (para no pedir una confirmación por
+  cada caja individual, sino una por cada corte distinto) y busca una
+  coincidencia **exacta** (insensible a mayúsculas) contra el catálogo de
+  productos actual — si no hay coincidencia exacta, **no adivina**: queda
+  sin sugerencia y hay que elegir el producto a mano con el mismo buscador
+  que se usa en el resto del sistema, o dejarlo así para omitir esas
+  cajas. También detecta de antemano qué números de caja ya existen en el
+  sistema nuevo (conflicto) para excluirlos automáticamente y avisar.
+  `POST /confirmar` vuelve a validar todo (no confía en lo que mandó el
+  navegador) y crea las cajas con el número original preservado.
+- **Qué se migra**: el estado actual de cada caja (producto, familia,
+  peso inicial, saldo, costo, fecha de ingreso original) y un
+  `MovimientoCamara` tipo `"entrada"` fechado en la fecha de ingreso
+  original. **No se migra el historial detallado de salidas** del
+  prototipo (los destinos que registraba no calzan uno a uno con los del
+  sistema nuevo) — si una caja ya tenía saldo parcial, se resume en un
+  solo movimiento de salida que deja el saldo correcto y auditado,
+  aclarando en el motivo que el detalle original no se migró.
+- **Probado de punta a punta**: contra el backend real (JSON inválido o
+  con forma incorrecta se rechaza, agrupa correctamente por producto,
+  sugiere el producto correcto sin importar mayúsculas/minúsculas, no
+  sugiere nada para un nombre inventado, conflictos de número de caja se
+  detectan y excluyen automáticamente, las cajas importadas conservan el
+  número/saldo/fecha original, cajas sin producto elegido se omiten sin
+  crear nada, reimportar el mismo archivo detecta las cajas ya importadas
+  como conflicto en vez de duplicarlas, y el contador automático de la
+  base de datos sigue funcionando bien después de insertar números altos
+  a mano) y con Playwright contra la pantalla real (pegar el JSON,
+  previsualizar, ver la sugerencia automática, confirmar y verificar que
+  la caja quedó creada con los datos correctos).
+
 ### Plan de las próximas etapas (sin empezar todavía)
-5. Importador del prototipo HTML actual (para no perder lo ya cargado ahí).
 6. Modo sin conexión del celular (cola local + reintento).
 7. Pruebas de punta a punta.
 

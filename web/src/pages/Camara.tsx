@@ -6,8 +6,8 @@ export default function Camara() {
       <h1>Cámara frigorífica</h1>
       <p className="ayuda">
         Módulo en construcción, por etapas — por ahora están listas la entrada, la salida (con venta por mayor
-        incluida) y el inventario por escaneo. El resto (importador del sistema anterior, modo sin conexión) se va
-        a ir agregando acá mismo.
+        incluida), el inventario por escaneo y el importador del sistema anterior. Falta el modo sin conexión del
+        celular.
       </p>
       <div className="fila-inline">
         <Link to="/camara/entrada" className="boton boton-primario">
@@ -24,6 +24,9 @@ export default function Camara() {
         </Link>
         <Link to="/camara/ajustes-pendientes" className="boton">
           Ajustes pendientes
+        </Link>
+        <Link to="/camara/importar" className="boton">
+          Importar del sistema anterior
         </Link>
       </div>
     </div>

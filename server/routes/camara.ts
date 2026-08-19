@@ -629,3 +629,201 @@ camaraRouter.post("/cajas/:id/encontrada", async (req, res) => {
 
   res.json(resultado);
 });
+
+// --- Importador del prototipo HTML anterior (localStorage) ---
+//
+// El prototipo (camara_actual_referencia.html) guardaba todo en
+// localStorage del navegador, sin base de datos compartida. Para no
+// perder lo ya cargado ahí, se pega el JSON exportado (con la consola del
+// navegador: copy(localStorage.getItem('granCarniceria_camara_v1'))) acá.
+// Los números de caja del prototipo SE PRESERVAN tal cual (id explícito en
+// vez de dejar que la base de datos asigne uno nuevo) porque ya están
+// impresos en etiquetas físicas pegadas en cajas reales — confirmado con
+// el usuario que el sistema nuevo seguía vacío de datos reales, así que no
+// hay riesgo de choque con cajas ya creadas acá.
+
+const cajaPrototipoSchema = z.object({
+  id: z.string(),
+  producto: z.string(),
+  familia: z.string(),
+  pesoInicial: z.number(),
+  saldo: z.number(),
+  costo: z.number(),
+  ingreso: z.string(),
+  pesoEstimado: z.boolean().optional(),
+});
+
+const dbPrototipoSchema = z.object({
+  cajas: z.array(cajaPrototipoSchema),
+});
+
+function claveGrupoPrototipo(familia: string, producto: string): string {
+  return `${familia}|||${producto}`;
+}
+
+function parsearJsonPrototipo(
+  crudo: unknown
+): { ok: true; cajas: z.infer<typeof cajaPrototipoSchema>[] } | { ok: false; error: string } {
+  if (typeof crudo !== "string" || !crudo.trim()) {
+    return { ok: false, error: "Pega el contenido exportado del sistema anterior" };
+  }
+  let parseado: unknown;
+  try {
+    parseado = JSON.parse(crudo);
+  } catch {
+    return { ok: false, error: "El texto pegado no es JSON válido — revisa que se haya copiado completo" };
+  }
+  const validado = dbPrototipoSchema.safeParse(parseado);
+  if (!validado.success) {
+    return { ok: false, error: "El JSON no tiene la forma esperada (¿es realmente el respaldo de la cámara anterior?)" };
+  }
+  return { ok: true, cajas: validado.data.cajas };
+}
+
+camaraRouter.post("/importar-prototipo/previsualizar", async (req, res) => {
+  const resultado = parsearJsonPrototipo(req.body?.json);
+  if (!resultado.ok) return res.status(400).json({ error: resultado.error });
+  const cajasPrototipo = resultado.cajas;
+
+  const idsNumericos = cajasPrototipo.map((c) => Number(c.id)).filter((n) => Number.isInteger(n));
+  const existentes = idsNumericos.length
+    ? await prisma.cajaCamara.findMany({ where: { id: { in: idsNumericos } }, select: { id: true } })
+    : [];
+  const cajasConConflicto = existentes.map((c) => c.id);
+
+  // Agrupar por producto+familia — se pide UNA sola confirmación de mapeo
+  // por grupo, no una por cada caja individual (puede haber decenas de
+  // cajas del mismo corte).
+  const productosActivos = await prisma.producto.findMany({ where: { activo: true } });
+  const porDescripcion = new Map(productosActivos.map((p) => [p.descripcion.trim().toLowerCase(), p]));
+
+  const grupos = new Map<
+    string,
+    { clave: string; familia: string; producto: string; cantidadCajas: number; productoIdSugerido: number | null; productoSugerido: string | null }
+  >();
+  for (const c of cajasPrototipo) {
+    const clave = claveGrupoPrototipo(c.familia, c.producto);
+    if (!grupos.has(clave)) {
+      const match = porDescripcion.get(c.producto.trim().toLowerCase());
+      grupos.set(clave, {
+        clave,
+        familia: c.familia,
+        producto: c.producto,
+        cantidadCajas: 0,
+        productoIdSugerido: match ? match.id : null,
+        productoSugerido: match ? match.descripcion : null,
+      });
+    }
+    grupos.get(clave)!.cantidadCajas++;
+  }
+
+  res.json({
+    totalCajas: cajasPrototipo.length,
+    cajasConConflicto,
+    grupos: [...grupos.values()],
+  });
+});
+
+const confirmarImportacionSchema = z.object({
+  json: z.string().min(1),
+  usuarioId: z.number().int().positive(),
+  mapeo: z.array(z.object({ clave: z.string(), productoId: z.number().int().positive().nullable() })),
+});
+
+camaraRouter.post("/importar-prototipo/confirmar", async (req, res) => {
+  const parsed = confirmarImportacionSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0].message });
+  const { usuarioId, mapeo } = parsed.data;
+
+  const usuario = await validarUsuario(usuarioId);
+  if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
+
+  const resultado = parsearJsonPrototipo(parsed.data.json);
+  if (!resultado.ok) return res.status(400).json({ error: resultado.error });
+  const cajasPrototipo = resultado.cajas;
+
+  const mapaProducto = new Map(mapeo.map((m) => [m.clave, m.productoId]));
+
+  const idsNumericos = cajasPrototipo.map((c) => Number(c.id)).filter((n) => Number.isInteger(n));
+  const existentes = idsNumericos.length
+    ? await prisma.cajaCamara.findMany({ where: { id: { in: idsNumericos } }, select: { id: true } })
+    : [];
+  const idsConflicto = new Set(existentes.map((c) => c.id));
+
+  let importadas = 0;
+  const omitidasPorConflicto: number[] = [];
+  const omitidasPorProducto: number[] = [];
+
+  await prisma.$transaction(async (tx) => {
+    for (const c of cajasPrototipo) {
+      const idNum = Number(c.id);
+      if (!Number.isInteger(idNum)) continue;
+      if (idsConflicto.has(idNum)) {
+        omitidasPorConflicto.push(idNum);
+        continue;
+      }
+      const productoId = mapaProducto.get(claveGrupoPrototipo(c.familia, c.producto));
+      if (!productoId) {
+        omitidasPorProducto.push(idNum);
+        continue;
+      }
+
+      const pesoInicial = c.pesoInicial;
+      const saldo = Math.max(0, c.saldo);
+      const estado = saldo <= EPSILON_KG ? "salida" : saldo < pesoInicial - EPSILON_KG ? "parcial" : "en_camara";
+      const fechaIngreso = new Date(c.ingreso);
+
+      await tx.cajaCamara.create({
+        data: {
+          id: idNum,
+          productoId,
+          familiaNombre: c.familia,
+          fechaIngreso,
+          pesoInicialKg: pesoInicial,
+          saldoKg: saldo,
+          costoNetoKg: c.costo,
+          estado,
+          pesoEstimado: c.pesoEstimado ?? false,
+          creadoPorId: usuarioId,
+        },
+      });
+
+      await tx.movimientoCamara.create({
+        data: {
+          cajaId: idNum,
+          tipo: "entrada",
+          pesoKg: pesoInicial,
+          destino: "camara",
+          motivo: "Importado del sistema anterior",
+          usuarioId,
+          claveIdempotencia: randomUUID(),
+          creadoEn: fechaIngreso,
+        },
+      });
+
+      // No se migra el historial de salidas del prototipo tal cual (los
+      // destinos registrados ahí no calzan uno a uno con los del sistema
+      // nuevo) — se resume en un solo movimiento que deja el saldo
+      // correcto y auditado, aclarando en el motivo que el detalle
+      // original no se migró.
+      if (saldo < pesoInicial - EPSILON_KG) {
+        await tx.movimientoCamara.create({
+          data: {
+            cajaId: idNum,
+            tipo: saldo <= EPSILON_KG ? "salida_completa" : "salida_parcial",
+            pesoKg: Math.round((pesoInicial - saldo) * 1000) / 1000,
+            origen: "camara",
+            destino: "otro",
+            motivo: "Salida registrada en el sistema anterior (detalle no migrado)",
+            usuarioId,
+            claveIdempotencia: randomUUID(),
+          },
+        });
+      }
+
+      importadas++;
+    }
+  });
+
+  res.json({ importadas, omitidasPorConflicto, omitidasPorProducto });
+});

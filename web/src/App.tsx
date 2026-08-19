@@ -36,6 +36,7 @@ import CamaraSalida from "./pages/CamaraSalida";
 import Mayoristas from "./pages/Mayoristas";
 import CamaraInventario from "./pages/CamaraInventario";
 import CamaraAjustesPendientes from "./pages/CamaraAjustesPendientes";
+import CamaraImportar from "./pages/CamaraImportar";
 
 export default function App() {
   // En "modo caja exclusiva" (ver web/src/lib/modoCaja.ts), este PC arranca
@@ -80,6 +81,7 @@ export default function App() {
             <Route path="/camara/mayoristas" element={<Mayoristas />} />
             <Route path="/camara/inventario" element={<CamaraInventario />} />
             <Route path="/camara/ajustes-pendientes" element={<CamaraAjustesPendientes />} />
+            <Route path="/camara/importar" element={<CamaraImportar />} />
             <Route path="/configuracion" element={<Configuracion />} />
           </Route>
         </Route>

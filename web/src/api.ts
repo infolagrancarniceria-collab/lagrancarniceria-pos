@@ -155,6 +155,27 @@ export interface ResultadoAjusteCamara {
   movimiento: MovimientoCamara;
 }
 
+export interface GrupoImportacionCamara {
+  clave: string;
+  familia: string;
+  producto: string;
+  cantidadCajas: number;
+  productoIdSugerido: number | null;
+  productoSugerido: string | null;
+}
+
+export interface PrevisualizacionImportacionCamara {
+  totalCajas: number;
+  cajasConConflicto: number[];
+  grupos: GrupoImportacionCamara[];
+}
+
+export interface ResultadoImportacionCamara {
+  importadas: number;
+  omitidasPorConflicto: number[];
+  omitidasPorProducto: number[];
+}
+
 export interface FilaImportacionProductos {
   fila: number;
   plu: string;
@@ -805,6 +826,10 @@ export const api = {
       post<ResultadoEscaneoInventarioCamara>(`/api/camara/inventario/sesiones/${sesionId}/escanear`, data),
     cerrarSesionInventario: (sesionId: number, data: { usuarioId: number; observaciones?: string }) =>
       post<ResultadoCierreSesionCamara>(`/api/camara/inventario/sesiones/${sesionId}/cerrar`, data),
+    previsualizarImportacion: (json: string) =>
+      post<PrevisualizacionImportacionCamara>("/api/camara/importar-prototipo/previsualizar", { json }),
+    confirmarImportacion: (data: { json: string; usuarioId: number; mapeo: { clave: string; productoId: number | null }[] }) =>
+      post<ResultadoImportacionCamara>("/api/camara/importar-prototipo/confirmar", data),
   },
 };
 
