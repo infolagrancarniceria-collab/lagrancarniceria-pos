@@ -22,7 +22,51 @@ import { aplicarMigracionesPendientes } from "./lib/migraciones";
 const app = express();
 const PORT = Number(process.env.PORT) || 5175;
 
-app.use(express.json());
+// Límite explícito de tamaño para el cuerpo de las peticiones — antes no
+// había ninguno puesto a propósito (Express usa 100kb por defecto, que
+// podía llegar a ser insuficiente para pegar el catálogo completo del
+// importador de cámara, o generoso de más si algo raro manda un cuerpo
+// enorme). 5mb cubre con margen cualquier uso real del sistema.
+app.use(express.json({ limit: "5mb" }));
+
+// Defensa liviana contra CSRF (revisión de seguridad, agosto 2026): el
+// sistema no usa cookies ni sesión (se confía en que la red WiFi del
+// local ya es de confianza, decisión tomada con el usuario), así que no
+// hay infraestructura de token CSRF tradicional — pero sí conviene
+// rechazar pedidos que cambian datos si vienen con un header Origin que
+// apunta a otro SITIO (ej. una página cualquiera, visitada en el mismo
+// PC o red, con un formulario escondido apuntando para acá).
+//
+// Se compara solo el hostname (sin el puerto): en desarrollo, el proxy de
+// Vite reenvía el pedido del navegador (Origin: localhost:5174) hacia
+// este servidor (Host: localhost:5175 — el proxy reescribe el puerto del
+// header Host al reenviar, aunque el Origin original del navegador se
+// mantenga) — comparar el origen completo con puerto incluido rechazaba
+// ese tráfico legítimo (confirmado con una prueba real de extremo a
+// extremo). Comparar solo el hostname sigue bloqueando lo que importa
+// (un navegador ejecutando código de un dominio externo, ej.
+// "sitio-malicioso.com" tiene un hostname distinto sin importar el
+// puerto) sin depender de que puerto y proxy coincidan exactamente.
+// Un pedido sin Origin (curl, algunos clientes que no son navegador) se
+// deja pasar — bloquearlo arriesga romper usos legítimos sin ganar
+// protección real.
+const METODOS_QUE_CAMBIAN_DATOS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+app.use((req, res, next) => {
+  if (!METODOS_QUE_CAMBIAN_DATOS.has(req.method)) return next();
+  const origen = req.headers.origin;
+  if (!origen) return next();
+  let hostnameOrigen: string;
+  try {
+    hostnameOrigen = new URL(origen).hostname;
+  } catch {
+    return res.status(403).json({ error: "Solicitud rechazada: origen no permitido" });
+  }
+  const hostnamePropio = (req.headers.host ?? "").split(":")[0];
+  if (hostnameOrigen !== hostnamePropio) {
+    return res.status(403).json({ error: "Solicitud rechazada: origen no permitido" });
+  }
+  next();
+});
 
 app.use("/api/usuarios", usuariosRouter);
 app.use("/api/categorias", categoriasRouter);

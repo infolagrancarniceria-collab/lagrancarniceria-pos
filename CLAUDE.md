@@ -1622,3 +1622,81 @@ entrada directamente, hay que corregirlo aparte.
   con Playwright contra la pantalla real (la caja aparece en el listado,
   se anula con motivo desde la interfaz, el estado se actualiza y el
   botón desaparece).
+
+## Revisión de seguridad del software
+A pedido del usuario, revisión conversacional (preguntas antes de tocar
+código, punto por punto según se fue encontrando cada cosa) de la
+seguridad del sistema, con el contexto real confirmado por el usuario: es
+una revisión preventiva general (no hay un incidente puntual), y la WiFi
+del local es de confianza (solo familia/empleados, no hay clientes ni
+terceros conectados a esa red).
+
+### Contexto y decisión de fondo
+El sistema no pide ninguna credencial para usar la API directamente —
+confía en que quien esté conectado a la red WiFi del local ya es de
+confianza (el "login" de elegir nombre sin contraseña ya era una decisión
+tomada desde el principio, para mantenerlo simple). **Confirmado con el
+usuario: esto se mantiene tal cual** — no se agrega un sistema de
+sesión/token real por ahora. Lo que sí se hizo fueron mejoras puntuales
+que no tocan ese modelo:
+
+- **Bloqueo de la clave de supervisor tras varios intentos fallidos**:
+  antes se podía probar las veces que se quisiera sin ningún freno.
+  Ahora, tras 5 intentos fallidos seguidos desde el mismo equipo
+  (identificado por IP, sin confiar en headers que cualquiera puede
+  mandar — no hay un proxy real adelante que los agregue de forma
+  confiable), se bloquea por 1 minuto antes de dejar intentar de nuevo —
+  se levanta solo, sin reiniciar nada. Nuevo `verificarClaveConLimite()`
+  en `server/lib/clave.ts`, usado en los 4 lugares del sistema que reciben
+  la clave de supervisor directo de una petición HTTP (cambiarla, el
+  endpoint de verificación que usa `ModalConfirmarClave`, anular un ítem
+  de venta, cancelar/anular una venta). Probado de punta a punta: 4
+  intentos fallidos no bloquean, el 5to sí dispara el bloqueo, un 6to
+  intento (incluso con la clave correcta) se rechaza con 429 mientras
+  dura el bloqueo, y pasado el minuto se levanta solo.
+- **Límite de tamaño en las subidas**: no había ninguno puesto a
+  propósito. El cuerpo JSON de las peticiones (`express.json()`) ahora
+  tiene un límite explícito de 5mb (antes usaba el default de Express de
+  100kb, que en realidad podía llegar a ser *insuficiente* para pegar un
+  catálogo grande en el importador de cámara) y la subida de CSV de
+  productos (`multer`) un límite de 10mb — antes no tenía ninguno,
+  permitiendo subir un archivo de cualquier tamaño directo a memoria.
+  Probado: un archivo normal sigue funcionando, uno de 15mb se rechaza.
+- **Defensa liviana contra CSRF vía formulario**: se encontró que el
+  endpoint de importar CSV (`multipart/form-data`) podía recibir una
+  petición disparada por un formulario escondido en cualquier página web
+  — a diferencia de un `fetch()` con JSON (que ya estaba protegido sin
+  querer, porque el navegador exige una revisión previa —"preflight"— que
+  el servidor no responde, así que la rechaza sola), un `<form>` HTML
+  común puede mandar una petición `multipart/form-data` cruzando de sitio
+  sin que el navegador la bloquee — el caso clásico de CSRF. Nuevo
+  middleware en `server/index.ts`: cualquier pedido que cambia datos
+  (POST/PUT/PATCH/DELETE) con un header `Origin` que apunte a un
+  **hostname distinto** al del propio servidor se rechaza con 403. Se
+  compara solo el hostname (sin el puerto) — un primer intento comparando
+  origen completo con puerto rechazaba tráfico legítimo real (confirmado
+  con una prueba de extremo a extremo: el proxy de Vite en desarrollo
+  reenvía el pedido reescribiendo el puerto del header `Host`, aunque el
+  `Origin` original del navegador se mantenga en el puerto de la
+  pantalla) — comparar solo el hostname sigue bloqueando lo que importa
+  (un sitio de dominio distinto) sin depender de que los puertos
+  coincidan exactamente. Un pedido sin `Origin` (curl, algunos clientes
+  que no son navegador) se deja pasar. Probado de punta a punta: tráfico
+  real de la app (a través del proxy de Vite, y directo al backend) sigue
+  funcionando, un origen de otro dominio se rechaza y no crea nada, un
+  origen del mismo hostname en otro puerto se permite.
+
+### Revisado y confirmado que ya estaba bien
+- La clave de supervisor ya se guardaba con hash + sal aleatoria
+  (`scrypt`) y comparación a prueba de "timing attacks" — no hacía falta
+  cambiar el método, solo agregarle el bloqueo de intentos.
+- Electron ya tenía la configuración seguro por defecto
+  (`contextIsolation: true`, `nodeIntegration: false`).
+- Prisma (el ORM) protege contra inyección SQL en todo el sistema — las
+  únicas consultas SQL "crudas" (`$queryRawUnsafe`/`$executeRawUnsafe`,
+  en `server/lib/migraciones.ts`) son internas, para aplicar
+  actualizaciones de la base de datos, y no reciben nada que escriba el
+  usuario.
+- Sin vulnerabilidades conocidas en las dependencias (`npm audit` limpio).
+- `.env` y la clave de la IA nunca se suben a git (ya documentado antes,
+  ver "Decisiones tomadas en el asistente de IA").

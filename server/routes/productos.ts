@@ -6,7 +6,10 @@ import { prisma } from "../db";
 import { obtenerIdsCategoriaYDescendientes } from "../lib/categorias";
 
 export const productosRouter = Router();
-const upload = multer({ storage: multer.memoryStorage() });
+// Límite de tamaño explícito (antes no había ninguno, sin querer permitía
+// subir un archivo de cualquier tamaño a memoria) — 10mb cubre con margen
+// un CSV real de todo el catálogo.
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 productosRouter.get("/", async (req, res) => {
   const buscar = typeof req.query.buscar === "string" ? req.query.buscar.trim() : "";

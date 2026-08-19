@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../db";
-import { hashClave, verificarClave } from "../lib/clave";
+import { hashClave, verificarClaveConLimite } from "../lib/clave";
 import { decodificarCodigoBalanza } from "../lib/codigoBarras";
 import { rangoFechasDesdeTexto } from "./reportes";
 
@@ -34,7 +34,14 @@ cajaRouter.post("/clave-supervisor", async (req, res) => {
 
   const existente = await prisma.claveSupervisor.findFirst();
   if (existente) {
-    if (!claveActual || !verificarClave(claveActual, existente.hashClave)) {
+    if (!claveActual) {
+      return res.status(400).json({ error: "La clave actual no es correcta" });
+    }
+    const resultado = verificarClaveConLimite(req.ip ?? "desconocido", claveActual, existente.hashClave);
+    if (resultado.bloqueado) {
+      return res.status(429).json({ error: `Demasiados intentos fallidos — espera ${resultado.segundosRestantes} segundos e intenta de nuevo` });
+    }
+    if (!resultado.valida) {
       return res.status(400).json({ error: "La clave actual no es correcta" });
     }
     await prisma.claveSupervisor.update({
@@ -51,7 +58,11 @@ cajaRouter.post("/clave-supervisor/verificar", async (req, res) => {
   const clave = typeof req.body?.clave === "string" ? req.body.clave : "";
   const existente = await prisma.claveSupervisor.findFirst();
   if (!existente) return res.json({ valida: false });
-  res.json({ valida: verificarClave(clave, existente.hashClave) });
+  const resultado = verificarClaveConLimite(req.ip ?? "desconocido", clave, existente.hashClave);
+  if (resultado.bloqueado) {
+    return res.status(429).json({ error: `Demasiados intentos fallidos — espera ${resultado.segundosRestantes} segundos e intenta de nuevo` });
+  }
+  res.json({ valida: resultado.valida });
 });
 
 // --- Sesiones de caja (apertura / cierre) ---
@@ -584,7 +595,14 @@ cajaRouter.delete("/ventas/:id/items/:itemId", async (req, res) => {
   }
 
   const claveSupervisor = await prisma.claveSupervisor.findFirst();
-  if (!claveSupervisor || !verificarClave(clave, claveSupervisor.hashClave)) {
+  if (!claveSupervisor) {
+    return res.status(403).json({ error: "Clave de supervisor incorrecta" });
+  }
+  const resultadoClave = verificarClaveConLimite(req.ip ?? "desconocido", clave, claveSupervisor.hashClave);
+  if (resultadoClave.bloqueado) {
+    return res.status(429).json({ error: `Demasiados intentos fallidos — espera ${resultadoClave.segundosRestantes} segundos e intenta de nuevo` });
+  }
+  if (!resultadoClave.valida) {
     return res.status(403).json({ error: "Clave de supervisor incorrecta" });
   }
 
@@ -763,7 +781,14 @@ cajaRouter.post("/ventas/:id/cancelar", async (req, res) => {
   }
 
   const claveSupervisor = await prisma.claveSupervisor.findFirst();
-  if (!claveSupervisor || !verificarClave(clave, claveSupervisor.hashClave)) {
+  if (!claveSupervisor) {
+    return res.status(403).json({ error: "Clave de supervisor incorrecta" });
+  }
+  const resultadoClave = verificarClaveConLimite(req.ip ?? "desconocido", clave, claveSupervisor.hashClave);
+  if (resultadoClave.bloqueado) {
+    return res.status(429).json({ error: `Demasiados intentos fallidos — espera ${resultadoClave.segundosRestantes} segundos e intenta de nuevo` });
+  }
+  if (!resultadoClave.valida) {
     return res.status(403).json({ error: "Clave de supervisor incorrecta" });
   }
 
