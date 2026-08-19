@@ -853,13 +853,80 @@ futura.
   (pedir los dos pesos a la vez, no pedir ninguno, producto o usuario
   inválido) — todas rechazadas con el mensaje correcto.
 
+### Etapa 3 — salida de cajas (completa o parcial), con aviso FIFO, lista
+Pantalla nueva **"Salida de cámara"** (menú → Cámara → "Salida de cajas").
+A pedido del usuario, se adelantó también el flujo completo de **venta por
+mayor** (antes planeado para una Etapa 5 aparte) para que quedara junto con
+el resto de los destinos de salida, en vez de dividirlo en dos etapas.
+
+Antes de programar se le preguntó al usuario cómo debía identificarse la
+caja al salir, qué tan estricto debía ser el aviso FIFO, y cómo se ingresa
+el peso de una salida parcial — respuestas: **solo por escaneo** de la
+etiqueta (no hace falta un buscador manual aparte), aviso **no bloqueante**
+(se puede ignorar si hay una razón), y el peso de una salida parcial **se
+escribe a mano** (el operador lo pesa aparte).
+
+- **Identificación por escaneo**: reutiliza el mismo detector de lector de
+  código de barras que ya usa Punto de Venta
+  (`useEscanerCodigoBarras`) — como el número de la etiqueta ES el id de la
+  caja (con ceros a la izquierda, ej. `000028` → caja 28), no hace falta
+  decodificar nada especial, solo `parseInt` y pedir esa caja
+  (`GET /api/camara/cajas/:id`).
+- **Destinos**: Sala de venta, Producción, Merma, Donación, Venta por
+  mayor. Solo **Sala de venta** hace que el producto quede disponible para
+  vender en Caja — genera un `MovimientoInventario` (motivo
+  `"entrada_camara"`) que suma `Producto.stockActual`, igual que cualquier
+  otra entrada de inventario. Los demás destinos (Producción, Merma,
+  Donación, Mayorista) son salidas de cámara que **no** tocan el stock
+  vendible, según la idea central del módulo (ver más arriba). El `tipo`
+  de `MovimientoCamara` distingue completa/parcial solo para
+  sala_venta/mayorista (`salida_completa`/`salida_parcial`); Producción,
+  Merma y Donación usan un tipo propio (`consumo_produccion`, `merma`,
+  `donacion`) sin esa distinción, porque una caja se puede consumir/mermar/
+  donar de a poco igual.
+- **Salida completa vs. parcial**: si el peso ingresado cubre todo el
+  saldo de la caja (con una tolerancia de medio gramo para no rechazar por
+  ruido de coma flotante), la caja pasa a estado `"salida"` con saldo 0; si
+  no, queda `"parcial"` con el saldo restante — se puede volver a escanear
+  esa misma caja después para seguir sacándole peso, hasta agotarla.
+- **Aviso FIFO, no bloqueante**: al escanear una caja, se consulta si hay
+  otra caja del mismo producto con saldo disponible y una fecha de ingreso
+  más antigua (`GET /api/camara/cajas/:id/fifo`) — si la hay, se muestra
+  una advertencia con el número de esa caja más vieja, pero no impide
+  continuar (puede haber una razón válida, ej. la más vieja está en mal
+  estado).
+- **Control de concurrencia**: cada caja tiene un campo `version` que se
+  manda de vuelta al confirmar la salida — si otra persona ya modificó esa
+  caja mientras tanto (ej. dos operadores escanean la misma caja casi al
+  mismo tiempo), el servidor rechaza con un error claro en vez de pisar el
+  cambio ajeno, pidiendo volver a escanear.
+- **Venta por mayor**: al elegir ese destino, el formulario pide cliente
+  (opcional), precio total de la venta y estado de pago (pagado/pendiente,
+  por defecto pendiente) — crea un registro `SalidaMayorista` ligado a la
+  caja y al `MovimientoCamara` correspondiente (`referenciaTipo`/
+  `referenciaId`), sin sumar al stock vendible (no pasa por Caja/Punto de
+  venta, es un registro aparte y más simple, según ya se había decidido).
+  Nueva pantalla **"Ventas por mayor"** (menú → Cámara → "Ventas por
+  mayor"), mismo patrón que "Créditos pendientes" de Caja: lista filtrable
+  por rango de fechas y por pendientes de pago, con un botón para marcar
+  cada una como pagada (o volver a pendiente) después, sin tener que volver
+  a la caja de origen.
+- **Probado de punta a punta**: contra el backend real (salida completa a
+  sala de venta con el stock subiendo correctamente, salida parcial a
+  merma sin tocar el stock, intentar sacar más peso del que queda,
+  concurrencia con `version` desactualizada, aviso FIFO detectando
+  correctamente la caja más antigua sin bloquear la salida, venta por
+  mayor completa con su registro y referencia cruzada, marcar/desmarcar
+  pagada) y con Playwright contra la pantalla real (escanear una caja
+  simulando el lector físico, ver el aviso FIFO en pantalla, elegir "Venta
+  por mayor" y confirmar, verla aparecer en el listado nuevo) — todos los
+  casos correctos.
+
 ### Plan de las próximas etapas (sin empezar todavía)
-3. Salida completa y parcial, con aviso FIFO.
 4. Inventario por escaneo + conciliación de faltantes.
-5. Mayorista + reportes.
-6. Importador del prototipo HTML actual (para no perder lo ya cargado ahí).
-7. Modo sin conexión del celular (cola local + reintento).
-8. Pruebas de punta a punta.
+5. Importador del prototipo HTML actual (para no perder lo ya cargado ahí).
+6. Modo sin conexión del celular (cola local + reintento).
+7. Pruebas de punta a punta.
 
 ## Elegir qué impresora usa cada cosa (arreglo de "la etiqueta no imprime")
 El usuario probó imprimir una etiqueta de cámara desde el PC principal y no

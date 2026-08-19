@@ -32,6 +32,8 @@ import Asistente from "./pages/Asistente";
 import Balanza from "./pages/Balanza";
 import Camara from "./pages/Camara";
 import CamaraEntrada from "./pages/CamaraEntrada";
+import CamaraSalida from "./pages/CamaraSalida";
+import Mayoristas from "./pages/Mayoristas";
 
 export default function App() {
   // En "modo caja exclusiva" (ver web/src/lib/modoCaja.ts), este PC arranca
@@ -72,6 +74,8 @@ export default function App() {
             <Route path="/balanza" element={<Balanza />} />
             <Route path="/camara" element={<Camara />} />
             <Route path="/camara/entrada" element={<CamaraEntrada />} />
+            <Route path="/camara/salida" element={<CamaraSalida />} />
+            <Route path="/camara/mayoristas" element={<Mayoristas />} />
             <Route path="/configuracion" element={<Configuracion />} />
           </Route>
         </Route>

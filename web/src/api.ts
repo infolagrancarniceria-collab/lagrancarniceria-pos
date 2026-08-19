@@ -54,6 +54,47 @@ export interface CajaCamara {
   actualizadoEn: string;
 }
 
+export type DestinoSalidaCamara = "sala_venta" | "produccion" | "merma" | "donacion" | "mayorista";
+
+export interface MovimientoCamara {
+  id: number;
+  cajaId: number;
+  tipo: string;
+  pesoKg: number;
+  origen: string | null;
+  destino: string | null;
+  motivo: string | null;
+  usuarioId: number;
+  dispositivo: string | null;
+  creadoEn: string;
+}
+
+export interface SalidaMayorista {
+  id: number;
+  fecha: string;
+  productoId: number;
+  producto: Producto;
+  cantidadKg: number;
+  precioTotal: number;
+  estadoPago: "pagado" | "pendiente";
+  clienteNombre: string | null;
+  cajaCamaraId: number | null;
+  usuarioId: number;
+  usuario: Usuario;
+  observaciones: string | null;
+}
+
+export interface AvisoFifoCamara {
+  hayMasAntigua: boolean;
+  cajaMasAntigua: { id: number; numero: string; fechaIngreso: string } | null;
+}
+
+export interface ResultadoSalidaCamara {
+  caja: CajaCamara;
+  movimiento: MovimientoCamara;
+  salidaMayorista: SalidaMayorista | null;
+}
+
 export interface FilaImportacionProductos {
   fila: number;
   plu: string;
@@ -658,6 +699,28 @@ export const api = {
       usuarioId: number;
     }) => post<CajaCamara[]>("/api/camara/cajas", data),
     obtenerCaja: (id: number) => get<CajaCamara>(`/api/camara/cajas/${id}`),
+    avisoFifo: (cajaId: number) => get<AvisoFifoCamara>(`/api/camara/cajas/${cajaId}/fifo`),
+    salida: (
+      cajaId: number,
+      data: {
+        destino: DestinoSalidaCamara;
+        pesoKg?: number;
+        motivo?: string;
+        usuarioId: number;
+        version: number;
+        mayorista?: { clienteNombre?: string; precioTotal: number; estadoPago: "pagado" | "pendiente" };
+      }
+    ) => post<ResultadoSalidaCamara>(`/api/camara/cajas/${cajaId}/salida`, data),
+    mayoristas: (params: { desde?: string; hasta?: string; estadoPago?: string } = {}) => {
+      const qs = new URLSearchParams();
+      if (params.desde) qs.set("desde", params.desde);
+      if (params.hasta) qs.set("hasta", params.hasta);
+      if (params.estadoPago) qs.set("estadoPago", params.estadoPago);
+      const query = qs.toString();
+      return get<SalidaMayorista[]>(`/api/camara/mayoristas${query ? `?${query}` : ""}`);
+    },
+    marcarEstadoPagoMayorista: (id: number, estadoPago: "pagado" | "pendiente", usuarioId: number) =>
+      put<SalidaMayorista>(`/api/camara/mayoristas/${id}/estado-pago`, { estadoPago, usuarioId }),
   },
 };
 
