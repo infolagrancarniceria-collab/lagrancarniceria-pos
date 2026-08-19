@@ -552,6 +552,15 @@ select {
 }
 
 @media print {
+  /* Impresora térmica de boletas, rollo continuo de 80mm — "auto" en el
+     alto le dice al navegador que corte la página apenas termina el
+     contenido, en vez de imprimir el largo de página completo que tenga
+     configurado por defecto esa impresora (eso dejaba mucho papel en
+     blanco antes de este cambio). */
+  @page {
+    size: 80mm auto;
+    margin: 0;
+  }
   .topbar,
   .no-imprimir {
     display: none !important;
@@ -559,5 +568,11 @@ select {
   .vale {
     border: none;
     max-width: none;
+    padding: 0.5rem;
+    font-size: 0.85rem;
+  }
+  .tabla-vale th,
+  .tabla-vale td {
+    padding: 0.3rem 0.25rem;
   }
 }

@@ -200,13 +200,12 @@ export default function BuscarVenta() {
               Despacho a {ventaDetalle.comuna?.nombre ?? "—"} ({formatoCLP(ventaDetalle.costoEnvio ?? 0)})
             </p>
           )}
-          <table className="tabla">
+          <table className="tabla tabla-vale">
             <thead>
               <tr>
                 <th>Producto</th>
-                <th>Cantidad</th>
-                <th>Precio unitario</th>
-                <th>Descuento</th>
+                <th>Cant.</th>
+                <th>Precio</th>
                 <th>Subtotal</th>
               </tr>
             </thead>
@@ -217,13 +216,13 @@ export default function BuscarVenta() {
                   <td>{item.cantidad}</td>
                   <td>{formatoCLP(item.precioUnitario)}</td>
                   <td>
-                    {item.descuentoTipo
-                      ? item.descuentoTipo === "porcentaje"
-                        ? `${item.descuentoValor}%`
-                        : formatoCLP(item.descuentoValor ?? 0)
-                      : "—"}
+                    {formatoCLP(item.subtotal)}
+                    {item.descuentoTipo && (
+                      <div className="ayuda">
+                        desc. {item.descuentoTipo === "porcentaje" ? `${item.descuentoValor}%` : formatoCLP(item.descuentoValor ?? 0)}
+                      </div>
+                    )}
                   </td>
-                  <td>{formatoCLP(item.subtotal)}</td>
                 </tr>
               ))}
             </tbody>

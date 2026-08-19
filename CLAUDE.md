@@ -679,9 +679,15 @@ por seguridad) — la idea era que fuera 100% sin intervención.
   diálogo de impresión por seguridad, no hay forma de evitarlo desde el
   código de una página web. El usuario eligió configurar ese PC en **"modo
   impresión silenciosa" (kiosk printing)** en vez de instalar el programa
-  completo ahí — pendiente dejar la guía de configuración (crear un acceso
-  directo de Chrome con la bandera `--kiosk-printing` apuntando a la URL del
-  PC principal) la próxima vez que se retome este tema con el usuario.
+  completo ahí — guía entregada (acceso directo de Chrome con la bandera
+  `--kiosk-printing` apuntando a la URL del PC principal). **Primer intento
+  falló** porque la IP de ejemplo de la guía (`192.168.1.15`, solo un
+  ejemplo a reemplazar) se copió tal cual en vez de la IP real de la red del
+  local (`192.168.18.x`, confirmada por la dirección que aparece al pie de
+  un ticket impreso real) — corregido explicando que hay que sacar la IP
+  real desde Configuración → "Conectar otro equipo" en el PC principal.
+  **Pendiente:** confirmación del usuario de que el acceso directo con la
+  IP correcta funciona.
 - **Punto de Venta más compacto**, para que quepa en una pantalla de
   notebook sin scrollear: títulos y márgenes de tarjetas bastante más
   chicos (los botones/inputs/tabla mantienen su letra grande, pensada para
@@ -756,6 +762,39 @@ ver el detalle de cada decisión abajo.
   un bloqueo real — alguien que escriba otra dirección a mano igual podría
   entrar — el usuario prefirió empezar por lo simple y pidió ajustarlo
   después si hace falta más seguridad.
+
+## Ticket con demasiado espacio en blanco (impresora térmica de 80mm)
+El usuario mandó una foto del ticket impreso real: el detalle de la venta
+salía arriba de todo, pero después quedaba mucho papel en blanco antes del
+pie de página del navegador — confirmó que su impresora es térmica, de
+rollo continuo, de **80mm** de ancho.
+
+**Causa:** no había ninguna regla `@page` en el CSS de impresión, así que
+el navegador usaba el largo de página que tuviera configurado por defecto
+esa impresora (pensado para hojas normales), en vez de cortar el papel
+apenas terminaba el contenido del vale.
+
+**Arreglado** agregando `@page { size: 80mm auto; margin: 0; }` dentro de
+`@media print` (`web/src/styles.css`) — el `auto` en el alto es la técnica
+estándar para impresoras de rollo continuo: corta la página donde termina
+el contenido, en vez de un largo fijo. Verificado con Playwright que el
+ancho de 80mm se respeta exactamente (no se pudo verificar el alto "auto"
+directamente porque generar un PDF de prueba exige una altura fija — es
+una limitación de esa forma de probarlo, no de la técnica en sí, que es
+ampliamente usada para este tipo de impresoras).
+
+De paso se encontró que la tabla del vale (con columna "Descuento" aparte)
+era demasiado ancha para 80mm y se habría cortado en el papel real —
+mismo arreglo que ya se había hecho en el carrito de Punto de Venta: el
+descuento por producto ahora es una anotación bajo el Subtotal en vez de
+columna propia, y se agregó letra más chica específicamente en impresión
+(`.vale` a `0.85rem`) para que quepa cómodo en 80mm. Verificado con
+Playwright emulando el ancho real de impresión: la tabla completa (4
+columnas) entra sin cortarse.
+
+**Pendiente:** confirmación del usuario probando en la impresora física —
+todo lo anterior se verificó con herramientas de navegador headless, no
+contra el hardware real.
 
 ## Conectar otro equipo por WiFi (sin instalar el programa ahí)
 El usuario instaló el programa completo en un segundo PC/monitor (el del
