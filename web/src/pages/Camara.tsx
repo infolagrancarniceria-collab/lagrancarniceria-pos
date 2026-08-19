@@ -21,6 +21,9 @@ export default function Camara() {
         <Link to="/camara/inventario" className="boton boton-primario">
           Inventario por escaneo
         </Link>
+        <Link to="/camara/entradas" className="boton">
+          Revisar entradas
+        </Link>
         <Link to="/camara/mayoristas" className="boton">
           Ventas por mayor
         </Link>

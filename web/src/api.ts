@@ -45,7 +45,7 @@ export interface CajaCamara {
   pesoInicialKg: number;
   saldoKg: number;
   costoNetoKg: number;
-  estado: "en_camara" | "parcial" | "salida" | "ajuste_pendiente";
+  estado: "en_camara" | "parcial" | "salida" | "ajuste_pendiente" | "anulada";
   pesoEstimado: boolean;
   creadoPorId: number;
   creadoPor: Usuario;
@@ -796,12 +796,16 @@ export const api = {
     },
     marcarEstadoPagoMayorista: (id: number, estadoPago: "pagado" | "pendiente", usuarioId: number) =>
       put<SalidaMayorista>(`/api/camara/mayoristas/${id}/estado-pago`, { estadoPago, usuarioId }),
-    cajas: (params: { estado?: string } = {}) => {
+    cajas: (params: { estado?: string; desde?: string; hasta?: string } = {}) => {
       const qs = new URLSearchParams();
       if (params.estado) qs.set("estado", params.estado);
+      if (params.desde) qs.set("desde", params.desde);
+      if (params.hasta) qs.set("hasta", params.hasta);
       const query = qs.toString();
       return get<CajaCamara[]>(`/api/camara/cajas${query ? `?${query}` : ""}`);
     },
+    anularEntrada: (cajaId: number, usuarioId: number, motivo: string) =>
+      post<ResultadoAjusteCamara>(`/api/camara/cajas/${cajaId}/anular-entrada`, { usuarioId, motivo }),
     // Resolver un ajuste pendiente ("confirmar-falta"/"encontrada") también
     // pasa por ejecutarOEncolar en vez de un método acá, mismo motivo que
     // la salida.

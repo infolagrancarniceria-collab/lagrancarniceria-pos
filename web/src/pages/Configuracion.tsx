@@ -114,6 +114,11 @@ export default function Configuracion() {
             PDF"). Elegirla acá evita esa confusión.
           </p>
           <p className="ayuda">
+            Si la impresora elegida no soporta imprimir sin diálogo (pasa con algunas impresoras térmicas), el
+            sistema cae de vuelta solo al diálogo normal de Windows en vez de fallar — hay que confirmar ahí quién
+            imprime, pero la boleta sí sale.
+          </p>
+          <p className="ayuda">
             (Las etiquetas de cámara no tienen esta opción — siempre muestran el diálogo normal de impresión de
             Windows, donde se elige la impresora ahí mismo, porque la impresión sin diálogo no funcionó bien con
             algunas impresoras térmicas de etiquetas.)

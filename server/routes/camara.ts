@@ -107,10 +107,15 @@ camaraRouter.post("/cajas", async (req, res) => {
 
 camaraRouter.get("/cajas", async (req, res) => {
   const estado = typeof req.query.estado === "string" ? req.query.estado : undefined;
+  const hayRangoFechas = req.query.desde != null || req.query.hasta != null;
+  const { desde, hasta } = rangoFechasDesdeTexto(req.query.desde, req.query.hasta);
   const cajas = await prisma.cajaCamara.findMany({
-    where: estado ? { estado } : undefined,
+    where: {
+      ...(estado ? { estado } : {}),
+      ...(hayRangoFechas ? { fechaIngreso: { gte: desde, lte: hasta } } : {}),
+    },
     include: cajaConIncludes,
-    orderBy: { fechaIngreso: "asc" },
+    orderBy: { fechaIngreso: "desc" },
   });
   res.json(cajas);
 });
@@ -122,6 +127,66 @@ camaraRouter.get("/cajas/:id", async (req, res) => {
   });
   if (!caja) return res.status(404).json({ error: "Caja no encontrada" });
   res.json(caja);
+});
+
+// Anular una entrada equivocada (ej. una caja de prueba, o un lote
+// duplicado) — a pedido del usuario, tras hacer pruebas y no tener forma
+// de corregirlas sin arriesgar quedar con stock duplicado. Solo se permite
+// mientras la caja siga exactamente como se creó: sin ninguna salida
+// (ni completa ni parcial) registrada todavía — mismo principio que
+// "Anular una venta ya confirmada" en Caja, evitando el caso más
+// complicado de tener que deshacer movimientos que ya dependen de ella
+// (ej. stock que ya subió a sala de venta).
+const anularEntradaSchema = z.object({
+  usuarioId: z.number().int().positive(),
+  motivo: z.string().trim().min(1, "Indica el motivo de la anulación"),
+});
+
+camaraRouter.post("/cajas/:id/anular-entrada", async (req, res) => {
+  const parsed = anularEntradaSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0].message });
+  const { usuarioId, motivo } = parsed.data;
+
+  const usuario = await validarUsuario(usuarioId);
+  if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
+
+  const caja = await prisma.cajaCamara.findUnique({ where: { id: Number(req.params.id) } });
+  if (!caja) return res.status(404).json({ error: "Caja no encontrada" });
+  if (caja.estado !== "en_camara" || Math.abs(caja.saldoKg - caja.pesoInicialKg) > EPSILON_KG) {
+    return res.status(400).json({
+      error:
+        "Esta caja ya no se puede anular porque tuvo alguna salida registrada — corrígela con un ajuste manual en vez de anular la entrada",
+    });
+  }
+  const movimientosPrevios = await prisma.movimientoCamara.count({ where: { cajaId: caja.id } });
+  if (movimientosPrevios > 1) {
+    return res.status(400).json({
+      error: "Esta caja ya tiene movimientos además de la entrada — no se puede anular la entrada directamente",
+    });
+  }
+
+  const resultado = await prisma.$transaction(async (tx) => {
+    const cajaActualizada = await tx.cajaCamara.update({
+      where: { id: caja.id },
+      data: { saldoKg: 0, estado: "anulada", version: { increment: 1 } },
+      include: cajaConIncludes,
+    });
+    const movimiento = await tx.movimientoCamara.create({
+      data: {
+        cajaId: caja.id,
+        tipo: "anulacion",
+        pesoKg: caja.pesoInicialKg,
+        origen: "camara",
+        destino: "anulada",
+        motivo,
+        usuarioId,
+        claveIdempotencia: randomUUID(),
+      },
+    });
+    return { caja: cajaActualizada, movimiento };
+  });
+
+  res.json(resultado);
 });
 
 // --- Salida de cajas (completa o parcial), con aviso FIFO ---
@@ -233,6 +298,9 @@ camaraRouter.post("/cajas/:id/salida", async (req, res) => {
   if (!caja) return res.status(404).json({ error: "Caja no encontrada" });
   if (caja.estado === "salida") {
     return res.status(400).json({ error: "Esta caja ya salió completa de cámara" });
+  }
+  if (caja.estado === "anulada") {
+    return res.status(400).json({ error: "Esta caja fue anulada — no corresponde sacarle nada" });
   }
   if (caja.version !== version) {
     return res.status(409).json({

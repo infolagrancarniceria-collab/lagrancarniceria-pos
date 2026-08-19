@@ -1527,3 +1527,98 @@ Sheets, sin relación con este sistema).
   propuestas a partir de texto de factura real, con su propia clave de
   API — el comportamiento de la IA en sí no se pudo probar en este
   entorno.
+
+## Cámara: revisar/anular entradas, etiqueta cortada en 2, e impresión de boleta que no imprimía con la Gainscha
+Tres ajustes reportados por el usuario tras probar el módulo de cámara con
+datos reales.
+
+### Etiqueta cortada justo en el código de barras (pedía 2 etiquetas en vez de 1)
+El usuario reportó que la etiqueta de 100×50mm no cabía completa: se
+cortaba justo en el código de barras, y la impresora pedía una segunda
+etiqueta para el resto. Comparando contra el prototipo original
+(`camara_actual_referencia.html`), se encontró la causa: ese archivo tiene
+**tres** bloques de estilo en cascada, y el tercero (el más específico,
+agregado por el propio usuario con el comentario "más altura y aire
+blanco para que teléfono y pistola enfoquen más rápido") **sobrescribe**
+letra y márgenes más chicos en casi todos los elementos para compensar un
+código de barras más alto — el ajuste final realmente usado por el
+prototipo. Al portar la etiqueta al sistema nuevo (Etapa 2) se copió el
+bloque **intermedio** (sin esa compensación final), dejando el contenido
+total apenas por debajo de los 50mm de alto en teoría — pero los
+navegadores calculan el alto real de una línea de texto usando las
+métricas propias de la fuente (que suelen ser algo más altas que el
+`font-size` nominal con `line-height: 1`), así que en la práctica se
+pasaba de largo por muy poco. En pantalla no se notaba (`.etiqueta` tiene
+`overflow: hidden`, que solo recorta visualmente), pero la impresora
+física sí interpretaba que hacía falta una segunda etiqueta para el
+sobrante.
+
+**Arreglado** aplicando en `web/src/styles.css` los mismos valores del
+bloque final del prototipo (letra y márgenes más chicos, código de barras
+más alto: 18mm en vez de 15mm). Verificado con Playwright, generando una
+entrada real y midiendo la altura real renderizada de todo el contenido
+de la etiqueta (no solo el contenedor, que siempre da 50mm por el
+`overflow: hidden`): **45,77mm** de 50mm disponibles — con margen de
+sobra, contra los ~49,6mm nominales (y probablemente más de 50mm reales)
+de antes.
+
+### Boleta que no imprimía con la Gainscha seleccionada
+El usuario reportó que, en Configuración → Impresoras → "Boletas de
+venta", ya no lo dejaba usar la Gainscha para "imprimir el ticket
+directamente". La causa es la misma limitación ya diagnosticada para las
+etiquetas de cámara (ver más arriba, "Elegir qué impresora usa cada
+cosa"): la impresión **silenciosa** de Electron
+(`webContents.print({silent:true, deviceName})`) no funciona con el
+driver de la Gainscha aunque el `deviceName` esté bien apuntado, mientras
+que el diálogo normal de Windows sí — confirmado antes por el propio
+usuario para las etiquetas. La boleta se había dejado a propósito en el
+camino silencioso porque nunca se había reportado fallando, pero al
+intentar usar la misma Gainscha también para boletas, aparece el mismo
+problema.
+
+**Arreglado en `web/src/lib/imprimir.ts`:** si la impresión silenciosa de
+la boleta falla, en vez de solo mostrar una alerta sin imprimir nada, el
+sistema **cae de vuelta automáticamente al diálogo normal de impresión**
+(`window.print()`) — igual que ya hace la etiqueta siempre. El selector de
+impresora en Configuración se mantiene (sigue siendo útil para impresoras
+que sí soportan impresión silenciosa, evitando el diálogo en el caso
+normal), pero ahora cualquier impresora que no la soporte igual termina
+imprimiendo, solo que con un clic extra para confirmar el diálogo.
+
+### Revisar y anular una entrada de cámara equivocada
+El usuario hizo pruebas reales de "Entrada de cámara" y terminó con cajas
+de prueba/duplicadas sin una forma de corregirlas con confianza de no
+duplicar stock. Antes de programar se preguntó qué alcance debía tener
+"anular" — respuesta: **solo para cajas sin ningún movimiento posterior**
+(mismo principio que "Anular una venta ya confirmada" en Caja) — si una
+caja ya tuvo una salida (completa o parcial), no se puede anular la
+entrada directamente, hay que corregirlo aparte.
+
+- **Nueva pantalla "Revisar entradas"** (menú → Cámara → "Revisar
+  entradas"): lista todas las cajas de cámara de un rango de fechas
+  (`GET /api/camara/cajas`, ahora con filtro opcional `desde`/`hasta`),
+  con su producto, familia, fecha de ingreso, peso inicial, saldo, costo,
+  estado y quién la creó.
+- **Botón "Anular entrada"** visible solo en las cajas elegibles (estado
+  `en_camara` y saldo todavía igual al peso inicial) — pide un motivo
+  obligatorio y llama a `POST /api/camara/cajas/:id/anular-entrada`. El
+  servidor vuelve a validar todo por su cuenta (no confía en que el botón
+  estuviera oculto): rechaza si la caja ya tuvo alguna salida, o si ya
+  tiene más de un `MovimientoCamara` (la propia entrada).
+- **Nuevo estado `"anulada"`** para `CajaCamara` (no necesitó migración —
+  `estado` ya era un campo de texto libre, no un enum de base de datos):
+  la caja queda con saldo 0 y un `MovimientoCamara` tipo `"anulacion"` con
+  el motivo. Al no ser `"en_camara"` ni `"parcial"`, una caja anulada
+  **queda excluida automáticamente** de todo lo que ya filtraba por esos
+  dos estados, sin tocar código aparte: el aviso FIFO, la foto esperada de
+  un conteo por escaneo, y el listado de cajas activas. También se agregó
+  el rechazo explícito al intentar sacarle algo desde "Salida de cámara"
+  (antes solo rechazaba cajas ya con estado `"salida"`).
+- **Probado de punta a punta**: contra el backend real (rechaza sin
+  motivo, anula correctamente una caja recién creada, la caja anulada no
+  aparece en listados activos ni en la foto esperada de un conteo nuevo,
+  no se le puede sacar nada, no se puede volver a anular, rechaza anular
+  una caja que ya tuvo una salida parcial, el filtro por fecha funciona) y
+  con Playwright contra la pantalla real (la caja aparece en el listado,
+  se anula con motivo desde la interfaz, el estado se actualiza y el
+  botón desaparece).

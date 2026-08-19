@@ -69,6 +69,12 @@ export default function CamaraSalida() {
         setFifo(null);
         return;
       }
+      if (encontrada.estado === "anulada") {
+        setError(`La caja ${String(id).padStart(6, "0")} fue anulada — no corresponde sacarle nada.`);
+        setCaja(null);
+        setFifo(null);
+        return;
+      }
       setCaja(encontrada);
       limpiarFormulario();
       setPesoTexto(String(encontrada.saldoKg));

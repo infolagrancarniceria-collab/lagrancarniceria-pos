@@ -6,10 +6,16 @@ import { obtenerImpresoraBoletas } from "./impresoras";
 // conectado por WiFi sin el programa instalado) window.electronAPI no
 // existe — ahí se usa el print() normal del navegador, que sí muestra su
 // propio diálogo por seguridad (no hay forma de evitarlo desde una página
-// web común). Si la impresión silenciosa falla (ej. la impresora elegida
-// ya no existe, o no hay ninguna predeterminada configurada en Windows),
-// se avisa con una alerta — antes fallaba sin decir nada, lo que parecía
-// que el botón de imprimir no hacía nada.
+// web común).
+//
+// Si la impresión silenciosa falla, se cae de vuelta al diálogo normal de
+// impresión en vez de dejar el botón "sin hacer nada" — ya se comprobó con
+// la etiqueta de cámara (ver imprimirEtiquetaCamara más abajo) que algunas
+// impresoras térmicas (ej. la Gainscha) no soportan imprimir sin diálogo
+// aunque el deviceName esté bien apuntado, mientras que el diálogo normal
+// sí funciona con cualquier impresora. Antes esto solo mostraba una alerta
+// sin imprimir nada — ahora imprime igual, solo que con el clic extra de
+// confirmar el diálogo.
 export async function imprimirSilencioso() {
   if (!window.electronAPI) {
     window.print();
@@ -18,11 +24,7 @@ export async function imprimirSilencioso() {
   const deviceName = obtenerImpresoraBoletas();
   const resultado = await window.electronAPI.imprimirSilencioso(deviceName ? { deviceName } : undefined);
   if (!resultado.exito) {
-    window.alert(
-      `No se pudo imprimir la boleta. ${
-        resultado.razonError ? `Motivo: ${resultado.razonError}. ` : ""
-      }Revisa en Configuración → Impresoras que la impresora elegida siga conectada y encendida.`
-    );
+    window.print();
   }
 }
 

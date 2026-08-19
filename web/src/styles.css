@@ -552,26 +552,36 @@ select {
 }
 
 /* Etiqueta de caja de cámara (100×50mm), portada del prototipo que el
-   usuario ya probó imprimiendo bien en su impresora térmica Gainscha. */
+   usuario ya probó imprimiendo bien en su impresora térmica Gainscha.
+   Estos tamaños son los del AJUSTE FINAL del prototipo (su tercer bloque
+   de estilos, que sobrescribe al segundo — el que se había portado acá
+   originalmente) — el prototipo achica letra y márgenes a propósito para
+   compensar un código de barras más alto (mejor para el lector), y así
+   seguir cabiendo justo en los 50mm de alto. Portar solo el bloque
+   intermedio (sin esta compensación) hacía que el contenido se pasara por
+   muy poco de los 50mm — imperceptible en pantalla (el navegador solo lo
+   recorta ahí), pero la impresora física lo interpretaba como que hacía
+   falta una segunda etiqueta para el resto, cortando justo en el código
+   de barras. */
 .etiqueta {
   width: 100mm;
   height: 50mm;
   overflow: hidden;
   border: 2px solid #111;
-  padding: 5mm 3mm 1mm;
+  padding: 2mm 3mm 0.5mm;
   background: white;
   color: #111;
   font-family: Arial, sans-serif;
 }
 .etiqueta h3 {
-  margin: 0 0 0.7mm;
+  margin: 0 0 0.4mm;
   text-align: center;
-  font-size: 10pt;
+  font-size: 9pt;
   line-height: 1;
 }
 .etiqueta .codigo {
   text-align: center;
-  font-size: 27pt;
+  font-size: 25pt;
   line-height: 1;
   font-weight: 900;
   letter-spacing: 0.3mm;
@@ -579,31 +589,32 @@ select {
 .etiqueta .barcode {
   display: block;
   width: 66mm;
-  height: 15mm;
+  height: 18mm;
   max-width: 66mm;
-  margin: 1mm auto 0.3mm;
+  margin: 1.2mm auto 0.4mm;
   overflow: visible;
   shape-rendering: crispEdges;
+  background: white;
 }
 .etiqueta .fila-etiqueta {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 3mm;
-  margin: 0.7mm 0;
-  font-size: 9.5pt;
-  line-height: 1.1;
+  margin: 0.45mm 0;
+  font-size: 9pt;
+  line-height: 1.05;
   white-space: nowrap;
 }
 .etiqueta .fila-etiqueta.producto {
-  font-size: 11pt;
+  font-size: 10.5pt;
 }
 .etiqueta .numero-barra {
   text-align: center;
-  font-size: 8pt;
+  font-size: 9pt;
   line-height: 1;
-  font-weight: 800;
-  letter-spacing: 1.2mm;
+  font-weight: 900;
+  letter-spacing: 1mm;
 }
 .etiquetas-camara {
   display: flex;
