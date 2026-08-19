@@ -20,16 +20,23 @@ model Usuario {
   activo   Boolean  @default(true)
   creadoEn DateTime @default(now())
 
-  cambiosPrecio        HistorialPrecio[]
+  cambiosPrecio         HistorialPrecio[]
   movimientosInventario MovimientoInventario[]
 
-  sesionesAbiertas SesionCaja[] @relation("SesionesAbiertasPorUsuario")
-  sesionesCerradas SesionCaja[] @relation("SesionesCerradasPorUsuario")
-  ventas           Venta[]
-  ventasAnuladas   Venta[]      @relation("VentasAnuladasPorUsuario")
-  itemsAnulados    ItemVenta[]  @relation("ItemsAnuladosPorUsuario")
-  cobrosDeCreditoRegistrados PagoVenta[] @relation("CobrosDeCreditoRegistradosPorUsuario")
-  gastos           Gasto[]
+  sesionesAbiertas           SesionCaja[] @relation("SesionesAbiertasPorUsuario")
+  sesionesCerradas           SesionCaja[] @relation("SesionesCerradasPorUsuario")
+  ventas                     Venta[]
+  ventasAnuladas             Venta[]      @relation("VentasAnuladasPorUsuario")
+  itemsAnulados              ItemVenta[]  @relation("ItemsAnuladosPorUsuario")
+  cobrosDeCreditoRegistrados PagoVenta[]  @relation("CobrosDeCreditoRegistradosPorUsuario")
+  gastos                     Gasto[]
+
+  cajasCamaraCreadas          CajaCamara[]
+  movimientosCamara           MovimientoCamara[]
+  sesionesCamaraIniciadas     SesionInventarioCamara[]  @relation("SesionesCamaraIniciadasPorUsuario")
+  sesionesCamaraFinalizadas   SesionInventarioCamara[]  @relation("SesionesCamaraFinalizadasPorUsuario")
+  escaneosCamara              EscaneoInventarioCamara[]
+  salidasMayoristaRegistradas SalidaMayorista[]
 }
 
 // Gastos generales del negocio (sueldos, luz, agua, arriendo, etc.) —
@@ -49,10 +56,10 @@ model Gasto {
 
 // Categorías jerárquicas de 3 niveles, ej: 01 Aves > 0101 Pollos > 010101 Trutros.
 model Categoria {
-  id      Int    @id @default(autoincrement())
-  codigo  String @unique
-  nombre  String
-  nivel   Int
+  id     Int    @id @default(autoincrement())
+  codigo String @unique
+  nombre String
+  nivel  Int
 
   padreId Int?
   padre   Categoria?  @relation("CategoriaJerarquia", fields: [padreId], references: [id])
@@ -64,8 +71,8 @@ model Categoria {
 // SQLite no soporta enums nativos en Prisma; el valor permitido
 // ("NORMAL" | "PESABLE" | "IMPORTE") se valida en la capa de API (zod).
 model Producto {
-  id          Int    @id @default(autoincrement())
-  plu         String @unique
+  id          Int     @id @default(autoincrement())
+  plu         String  @unique
   descripcion String
   nombreCorto String?
   marca       String?
@@ -95,12 +102,15 @@ model Producto {
 
   // Se actualiza solo con cada movimiento de inventario (entrada/salida);
   // no se edita a mano desde la ficha del producto.
-  stockActual      Float  @default(0)
-  umbralStockBajo  Float?
+  stockActual     Float  @default(0)
+  umbralStockBajo Float?
 
   historialPrecio       HistorialPrecio[]
   movimientosInventario MovimientoInventario[]
   itemsVenta            ItemVenta[]
+
+  cajasCamara       CajaCamara[]
+  salidasMayoristas SalidaMayorista[]
 }
 
 model HistorialPrecio {
@@ -194,7 +204,7 @@ model SesionCaja {
   id Int @id @default(autoincrement())
 
   usuarioAperturaId Int
-  usuarioApertura   Usuario @relation("SesionesAbiertasPorUsuario", fields: [usuarioAperturaId], references: [id])
+  usuarioApertura   Usuario  @relation("SesionesAbiertasPorUsuario", fields: [usuarioAperturaId], references: [id])
   fondoFijoInicial  Float
   fechaApertura     DateTime @default(now())
 
@@ -311,4 +321,189 @@ model PagoVenta {
   usuarioCobroId    Int?
   usuarioCobro      Usuario?    @relation("CobrosDeCreditoRegistradosPorUsuario", fields: [usuarioCobroId], references: [id])
   fechaCobro        DateTime?
+}
+
+// --- Módulo de Cámara Frigorífica ---
+// Cada caja física en la cámara tiene identidad propia (no es solo un
+// número de stock agregado como en MovimientoInventario/Producto.stockActual
+// — eso sigue siendo el stock de "sala de venta"). La cámara es una zona de
+// almacenamiento aparte: una caja entra a cámara, y solo cuando sale hacia
+// "Sala de venta" es cuando corresponde generar un MovimientoInventario que
+// aumente el stock vendible (Producto.stockActual) — igual que cualquier
+// otra entrada. Ver server/routes/camara.ts para la lógica de cada flujo.
+
+// El número de caja de 6 dígitos que se imprime en la etiqueta se deriva
+// del id (ej. id 28 → "000028") en el código de la aplicación, no se guarda
+// aparte — id ya es único, inmutable y lo asigna la base de datos sola
+// (nunca se calcula el próximo número en el navegador).
+model CajaCamara {
+  id Int @id @default(autoincrement())
+
+  productoId Int
+  producto   Producto @relation(fields: [productoId], references: [id])
+
+  // Instantánea del nombre de la categoría (familia) al momento de ingresar
+  // — si el producto cambia de categoría después, esta caja conserva la
+  // familia que tenía cuando entró a cámara.
+  familiaNombre String
+
+  fechaIngreso  DateTime @default(now())
+  pesoInicialKg Float
+  saldoKg       Float
+  costoNetoKg   Float
+
+  // "en_camara" | "parcial" | "salida" | "ajuste_pendiente"
+  estado String @default("en_camara")
+
+  // Verdadero si el peso se repartió desde un total de lote (ej. factura
+  // con 10 cajas y 225kg totales → 22,5kg estimados por caja) — se puede
+  // corregir después con un ajuste auditado (MovimientoCamara).
+  pesoEstimado Boolean @default(false)
+
+  creadoPorId Int
+  creadoPor   Usuario @relation(fields: [creadoPorId], references: [id])
+
+  // Control de concurrencia optimista: cada operación que modifica el saldo
+  // debe conocer la versión actual y la incrementa — si otra operación ya
+  // la cambió mientras tanto, se rechaza en vez de pisar el cambio ajeno
+  // (dos operadores no pueden descontar la misma caja al mismo tiempo).
+  version Int @default(1)
+
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  movimientos       MovimientoCamara[]
+  esperados         InventarioCamaraEsperado[]
+  escaneos          EscaneoInventarioCamara[]
+  salidasMayoristas SalidaMayorista[]
+}
+
+// Cada cambio a una caja es un movimiento inmutable — nunca se reemplaza el
+// historial editando solo el saldo de la caja (mismo principio que ya usa
+// MovimientoInventario para el stock general).
+model MovimientoCamara {
+  id Int @id @default(autoincrement())
+
+  cajaId Int
+  caja   CajaCamara @relation(fields: [cajaId], references: [id])
+
+  // "entrada" | "salida_parcial" | "salida_completa" | "transferencia" |
+  // "consumo_produccion" | "merma" | "donacion" | "ajuste_entrada" | "ajuste_salida"
+  tipo String
+
+  pesoKg Float // siempre positivo — el signo lo da el tipo
+
+  // "camara" | "sala_venta" | "mayorista" | "produccion" | "merma" | "donacion" | "otro"
+  origen  String?
+  destino String?
+
+  motivo String?
+
+  // Relación opcional con otro registro del sistema que originó este
+  // movimiento (ej. "mayorista" + id de SalidaMayorista).
+  referenciaTipo String?
+  referenciaId   Int?
+
+  usuarioId   Int
+  usuario     Usuario @relation(fields: [usuarioId], references: [id])
+  dispositivo String? // descripción del origen (ej. "Celular Marco", "PC principal")
+
+  // Evita que un reintento (ej. celular sin conexión que reintenta solo al
+  // recuperar señal) duplique el movimiento — igual que el sistema ya
+  // rechaza una segunda salida completa de la misma caja.
+  claveIdempotencia String @unique
+
+  creadoEn DateTime @default(now())
+}
+
+// Cada sesión de inventario por escaneo agrupa una revisión completa de la
+// cámara — solo puede haber una abierta a la vez (mismo patrón que SesionCaja).
+model SesionInventarioCamara {
+  id Int @id @default(autoincrement())
+
+  fechaInicio DateTime  @default(now())
+  fechaFin    DateTime?
+
+  iniciadoPorId Int
+  iniciadoPor   Usuario @relation("SesionesCamaraIniciadasPorUsuario", fields: [iniciadoPorId], references: [id])
+
+  finalizadoPorId Int?
+  finalizadoPor   Usuario? @relation("SesionesCamaraFinalizadasPorUsuario", fields: [finalizadoPorId], references: [id])
+
+  // "abierta" | "finalizada" | "conciliada"
+  estado        String  @default("abierta")
+  observaciones String?
+
+  esperados InventarioCamaraEsperado[]
+  escaneos  EscaneoInventarioCamara[]
+}
+
+// Instantánea de todas las cajas con saldo positivo al momento de ABRIR la
+// sesión de inventario — indispensable para no generar falsos faltantes si
+// entra o sale una caja mientras el conteo está en curso.
+model InventarioCamaraEsperado {
+  id Int @id @default(autoincrement())
+
+  sesionId Int
+  sesion   SesionInventarioCamara @relation(fields: [sesionId], references: [id])
+
+  cajaId Int
+  caja   CajaCamara @relation(fields: [cajaId], references: [id])
+
+  saldoEsperadoKg Float
+  estadoEsperado  String
+  capturadoEn     DateTime @default(now())
+
+  @@unique([sesionId, cajaId])
+}
+
+// Un escaneo por sesión y caja — el índice único evita que un doble escaneo
+// (ej. el operador pasa la pistola dos veces sin querer) duplique el conteo.
+model EscaneoInventarioCamara {
+  id Int @id @default(autoincrement())
+
+  sesionId Int
+  sesion   SesionInventarioCamara @relation(fields: [sesionId], references: [id])
+
+  cajaId Int
+  caja   CajaCamara @relation(fields: [cajaId], references: [id])
+
+  escaneadoEn DateTime @default(now())
+
+  escaneadoPorId Int
+  escaneadoPor   Usuario @relation(fields: [escaneadoPorId], references: [id])
+  dispositivo    String?
+
+  estadoAlEscanear  String
+  saldoAlEscanearKg Float
+
+  @@unique([sesionId, cajaId])
+}
+
+// Salida de cámara hacia un cliente mayorista — registro simple y propio
+// (no pasa por toda la lógica de Caja con sesión abierta/medios de pago),
+// pensado solo para llevar el rastro de cantidad, precio y si ya se cobró.
+model SalidaMayorista {
+  id Int @id @default(autoincrement())
+
+  fecha DateTime @default(now())
+
+  productoId Int
+  producto   Producto @relation(fields: [productoId], references: [id])
+
+  cantidadKg  Float
+  precioTotal Float
+
+  // "pagado" | "pendiente"
+  estadoPago String @default("pendiente")
+
+  clienteNombre String?
+
+  cajaCamaraId Int?
+  cajaCamara   CajaCamara? @relation(fields: [cajaCamaraId], references: [id])
+
+  usuarioId Int
+  usuario   Usuario @relation(fields: [usuarioId], references: [id])
+
+  observaciones String?
 }

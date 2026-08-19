@@ -293,6 +293,7 @@ Todo corre **local**, en el PC de la carnicería, sin depender de internet:
 6. **Asistente de IA** — listo y **confirmado funcionando con una clave de API real** por el usuario. Ver "Decisiones tomadas en el asistente de IA" más abajo.
 7. **Gastos generales** — listo: registro de gastos del negocio (sueldos, luz, agua, etc., separado de las compras de mercadería) con resumen por categoría y total por rango de fechas. Ver "Módulo de gastos generales" más abajo.
 8. **Despachos a domicilio** — listo: comunas con costo de envío fijo, marcar una venta como despacho (suma el costo al total), y reporte por comuna. Ver "Módulo de despachos a domicilio" más abajo.
+9. **Cámara frigorífica** — en construcción, por etapas. Ver "Módulo de cámara frigorífica" más abajo para el detalle completo (alcance, decisiones tomadas, y estado de cada etapa).
 
 ## Instalador de Windows
 Armado con `electron-builder` (`npm run dist:win`, ver README para el
@@ -709,6 +710,104 @@ por seguridad) — la idea era que fuera 100% sin intervención.
   grande, pero **no 100% eliminado todavía** en pantallas chicas. Falta
   confirmar con el usuario el tamaño de pantalla real que usan para seguir
   ajustando si hace falta.
+
+## Módulo de cámara frigorífica
+Módulo nuevo y grande, pedido a partir de un prototipo HTML que el papá del
+usuario (Marco) ya venía usando (`camara_actual_referencia.html`, guardaba
+todo en `localStorage` del navegador — sin base de datos compartida). El
+usuario mandó un README detallado especificando el alcance; se hizo un
+diagnóstico del sistema actual contra lo pedido, y varias rondas de
+preguntas antes de tocar código (ver respuestas abajo). Se construye por
+etapas, cada una probada antes de seguir a la próxima — igual que el resto
+del proyecto.
+
+**Idea central:** la cámara es una zona de almacenamiento *aparte* de la
+sala de venta. Cada caja física tiene identidad propia (número, fecha de
+ingreso, peso inicial, saldo, costo) — no es solo un número de stock
+agregado como ya existe hoy para el resto del inventario
+(`Producto.stockActual`). Una caja entra a cámara, y solo cuando sale hacia
+"Sala de venta" corresponde generar una entrada en el inventario general
+(`MovimientoInventario`) que aumente el stock vendible — recién ahí ese
+producto queda disponible para vender en Caja. Salidas a producción,
+merma, donación o mayorista NO tocan el stock de sala.
+
+### Decisiones tomadas (con el usuario, antes de programar)
+- **Roles/permisos:** no hay roles separados por acción (registrar/ajustar/
+  reconciliar/administrar, como sugería el README original) — igual que el
+  resto del sistema, cualquiera de los dos operadores puede hacer cualquier
+  movimiento, pero queda registrado quién y cuándo.
+- **Impresora de etiquetas:** una Gainscha térmica, ya comprada y conectada,
+  ya probada con el prototipo HTML (que imprime bien, con "algunos ajustes"
+  pendientes de precisar más adelante). El prototipo trae su propio
+  generador de código de barras Code128-C en SVG (sin depender de ninguna
+  librería externa) y usa `@page { size: 100mm 50mm; margin: 0 }` — se
+  reutiliza esa misma lógica en el sistema nuevo, en vez de escribir un
+  generador de códigos de barras desde cero.
+- **Modo sin conexión:** solo para el celular (cuando se aleja del wifi del
+  local), casos ocasionales y breves, necesita poder registrar salidas/
+  ajustes (no solo consultar). Diseño: cada movimiento que cambia stock se
+  guarda primero en el celular con una clave de idempotencia única; si hay
+  conexión se manda al servidor al toque, si no, queda pendiente y se
+  reintenta sola apenas vuelve la señal — sin duplicar ni perder ningún
+  movimiento, gracias a esa clave (ya validada a nivel de base de datos,
+  columna `MovimientoCamara.claveIdempotencia`, única). Falta implementar
+  la cola local en el celular (etapa 7 del plan).
+- **Salida a "Mayorista":** un registro simple y propio (`SalidaMayorista`)
+  — no pasa por toda la lógica de Caja (sesión abierta, medios de pago,
+  vuelto, etc.). Guarda producto, cantidad, precio total, y un estado que
+  se puede marcar rápido entre "pagado" / "pendiente", más el nombre del
+  cliente si corresponde.
+- **Número de caja:** el README pedía un número de 6 dígitos generado por
+  una secuencia de base de datos (nunca calculado en el navegador, para
+  evitar duplicados). Se adaptó a la convención ya usada en todo el
+  proyecto: se deriva del `id` autoincremental de Prisma (ej. id 28 →
+  `"000028"`), sin guardar un campo aparte — mismo patrón que "Venta #22"
+  en el resto del sistema. Sigue cumpliendo el requisito (nunca se calcula
+  el próximo número en el navegador, la base de datos lo asigna sola).
+
+### Modelo de datos (Prisma) — Etapa 1, lista
+Tablas nuevas, todas `CREATE TABLE` (no se tocó ninguna tabla existente):
+- **`CajaCamara`**: producto, familia (instantánea del nombre al ingresar
+  — si el producto cambia de categoría después, la caja conserva la que
+  tenía), fecha de ingreso, peso inicial, saldo, costo neto por kg, estado
+  (`en_camara` | `parcial` | `salida` | `ajuste_pendiente`), si el peso es
+  estimado (repartido desde un total de lote), quién la creó, y un campo
+  `version` para control de concurrencia (evita que dos operadores
+  descuenten la misma caja al mismo tiempo — se valida al momento de hacer
+  el movimiento, etapa 3).
+- **`MovimientoCamara`**: movimiento inmutable por caja (mismo principio
+  que `MovimientoInventario` — nunca se reemplaza el historial editando
+  solo el saldo). Tipo, peso, origen/destino, motivo, referencia opcional a
+  otro registro (ej. una `SalidaMayorista`), usuario, dispositivo, y
+  `claveIdempotencia` única (para el modo sin conexión y para rechazar
+  reintentos duplicados en general).
+- **`SesionInventarioCamara`**, **`InventarioCamaraEsperado`** (instantánea
+  de las cajas con saldo esperado al ABRIR la sesión — indispensable para
+  no generar falsos faltantes si entra/sale una caja durante el conteo) y
+  **`EscaneoInventarioCamara`** (un escaneo por sesión+caja, índice único
+  para que un doble escaneo no duplique el conteo).
+- **`SalidaMayorista`**: producto, cantidad, precio total, estado de pago,
+  cliente, caja de origen opcional, usuario.
+
+Probado con un script de smoke test (no permanece en el repo): crear caja
+→ movimiento → sesión de inventario → esperado → escaneo → salida
+mayorista, y confirmar que el índice único rechaza un doble escaneo y que
+`claveIdempotencia` rechaza un movimiento duplicado — todo correcto.
+Confirmado que el catálogo de productos y las ventas existentes quedan
+exactamente iguales después de la migración (189 productos, 16 ventas,
+sin cambios). La migración nueva se aplica sola en instalaciones
+existentes la próxima vez que se abra el programa, con el mismo mecanismo
+ya usado para el resto de las actualizaciones (`aplicarMigracionesPendientes`,
+`server/lib/migraciones.ts`) — no hace falta nada especial para esta.
+
+### Plan de las próximas etapas (sin empezar todavía)
+2. Entrada de cajas + impresión de etiqueta.
+3. Salida completa y parcial, con aviso FIFO.
+4. Inventario por escaneo + conciliación de faltantes.
+5. Mayorista + reportes.
+6. Importador del prototipo HTML actual (para no perder lo ya cargado ahí).
+7. Modo sin conexión del celular (cola local + reintento).
+8. Pruebas de punta a punta.
 
 ## Ajustes tras la primera semana de uso real: crédito, carrito y modo caja
 Feedback del usuario tras usar el sistema unos días, comparándolo con
