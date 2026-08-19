@@ -551,6 +551,72 @@ select {
   margin-top: 1.5rem;
 }
 
+/* Etiqueta de caja de cámara (100×50mm), portada del prototipo que el
+   usuario ya probó imprimiendo bien en su impresora térmica Gainscha. */
+.etiqueta {
+  width: 100mm;
+  height: 50mm;
+  overflow: hidden;
+  border: 2px solid #111;
+  padding: 5mm 3mm 1mm;
+  background: white;
+  color: #111;
+  font-family: Arial, sans-serif;
+}
+.etiqueta h3 {
+  margin: 0 0 0.7mm;
+  text-align: center;
+  font-size: 10pt;
+  line-height: 1;
+}
+.etiqueta .codigo {
+  text-align: center;
+  font-size: 27pt;
+  line-height: 1;
+  font-weight: 900;
+  letter-spacing: 0.3mm;
+}
+.etiqueta .barcode {
+  display: block;
+  width: 66mm;
+  height: 15mm;
+  max-width: 66mm;
+  margin: 1mm auto 0.3mm;
+  overflow: visible;
+  shape-rendering: crispEdges;
+}
+.etiqueta .fila-etiqueta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 3mm;
+  margin: 0.7mm 0;
+  font-size: 9.5pt;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+.etiqueta .fila-etiqueta.producto {
+  font-size: 11pt;
+}
+.etiqueta .numero-barra {
+  text-align: center;
+  font-size: 8pt;
+  line-height: 1;
+  font-weight: 800;
+  letter-spacing: 1.2mm;
+}
+.etiquetas-camara {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+.etiquetas-camara .etiqueta-bloque {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 @media print {
   /* Impresora térmica de boletas, rollo continuo de 80mm — "auto" en el
      alto le dice al navegador que corte la página apenas termina el
@@ -561,6 +627,11 @@ select {
     size: 80mm auto;
     margin: 0;
   }
+  /* El tamaño de página de la etiqueta de cámara (100×50mm) se activa
+     dinámicamente justo antes de imprimir una, con una hoja de estilo
+     aparte — ver imprimirEtiquetaCamara() en web/src/lib/imprimir.ts —
+     porque no se pudo confirmar que las "páginas con nombre" de CSS se
+     respeten de forma confiable en este motor de impresión. */
   .topbar,
   .no-imprimir {
     display: none !important;
@@ -574,5 +645,14 @@ select {
   .tabla-vale th,
   .tabla-vale td {
     padding: 0.3rem 0.25rem;
+  }
+  /* Solo se imprime la etiqueta marcada como "imprimir-ahora" — igual que
+     el prototipo original, que muestra todas las etiquetas en pantalla
+     pero solo saca una a la vez por la impresora. */
+  .etiquetas-camara .etiqueta {
+    display: none !important;
+  }
+  .etiquetas-camara .etiqueta.imprimir-ahora {
+    display: block !important;
   }
 }

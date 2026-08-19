@@ -800,8 +800,60 @@ existentes la próxima vez que se abra el programa, con el mismo mecanismo
 ya usado para el resto de las actualizaciones (`aplicarMigracionesPendientes`,
 `server/lib/migraciones.ts`) — no hace falta nada especial para esta.
 
+### Etapa 2 — entrada de cajas + impresión de etiqueta, lista
+Pantalla nueva **"Entrada de cámara"** (menú → Cámara → "Entrada de cajas"):
+elegir producto (mismo buscador que ya se usa en el resto del sistema),
+cantidad de cajas, y el peso — **de dos formas**: "se pesó cada caja" (peso
+real, un valor que se copia igual a todas) o "solo se sabe el peso total
+del lote" (se reparte estimado entre las cajas, marcadas `pesoEstimado:
+true` para poder corregirlas después con un ajuste, en una etapa futura).
+Más el costo neto por kilo. Al guardar (`POST /api/camara/cajas`, todo
+dentro de una transacción): crea las N cajas y un `MovimientoCamara` tipo
+`"entrada"` por cada una — **no toca el stock general** (`Producto.
+stockActual`) ni crea `MovimientoInventario`, porque cámara es una zona de
+almacenamiento aparte de sala de venta (ver "Idea central" más arriba); eso
+recién pasa cuando una caja sale con destino `"sala_venta"`, en una etapa
+futura.
+
+- **Reparto exacto del peso total:** se trabaja en gramos enteros y el
+  resto de la división se reparte de a un gramo extra en las primeras
+  cajas (`repartirPesoKg` en `server/routes/camara.ts`) — así la suma de
+  los pesos repartidos siempre da exactamente el total del lote, nunca se
+  pierde ni gana nada por redondeo. Probado con varios casos (225kg/10
+  cajas, 22,567kg/3 cajas, 100kg/7 cajas, etc.) — todos calzan exacto.
+- **Familia:** se guarda una instantánea del nombre de la categoría nivel 1
+  del producto al momento de crear la caja (`obtenerCategoriaRaiz`,
+  `server/lib/categorias.ts`), no una referencia que cambie después si el
+  producto se recategoriza.
+- **Etiqueta (100×50mm):** se porta el código de barras Code128-C del
+  prototipo HTML **tal cual** — se verificó con un script que la tabla de
+  patrones y el resultado del algoritmo son **idénticos, bit por bit**, al
+  del prototipo original para números de caja reales, así que sigue
+  funcionando igual de bien con la impresora Gainscha ya probada. Todas las
+  etiquetas del lote se muestran en pantalla (para poder revisarlas o
+  reimprimir cualquiera después), cada una con su botón "Imprimir" — al
+  apretarlo, solo esa etiqueta se manda a imprimir (no las demás), usando
+  la misma impresión silenciosa de Electron que ya usa el vale de venta
+  (`imprimirSilencioso`, ahora en `web/src/lib/imprimir.ts`, compartida
+  entre boleta y etiqueta en vez de duplicada).
+  **Detalle técnico:** boleta (80mm) y etiqueta (100×50mm) necesitan un
+  tamaño de página de impresión distinto. Se probó primero "páginas con
+  nombre" de CSS (`@page nombre` + `page: nombre`), pero no se pudo
+  confirmar que el motor de impresión las respete de forma confiable —
+  se cambió a una alternativa más simple y sí verificada: justo antes de
+  imprimir una etiqueta se agrega una hoja de estilo aparte que fija el
+  tamaño a 100×50mm, y se saca apenas termina de imprimir (dejando todo
+  como estaba para la próxima boleta). Verificado con una exportación a
+  PDF de prueba que el tamaño de página resultante da exactamente 100×50mm
+  para la etiqueta y no afecta el de la boleta (80mm) en ningún sentido.
+- **Probado de punta a punta** (Playwright): lote de 3 cajas con peso real
+  conocido, lote de 7 cajas con peso total repartido (suma exacta
+  verificada), código de barras con barras renderizadas, impresión de una
+  sola etiqueta sin duplicar las demás, y validaciones del servidor
+  (pedir los dos pesos a la vez, no pedir ninguno, producto o usuario
+  inválido) — todas rechazadas con el mensaje correcto.
+
 ### Plan de las próximas etapas (sin empezar todavía)
-2. Entrada de cajas + impresión de etiqueta.
 3. Salida completa y parcial, con aviso FIFO.
 4. Inventario por escaneo + conciliación de faltantes.
 5. Mayorista + reportes.

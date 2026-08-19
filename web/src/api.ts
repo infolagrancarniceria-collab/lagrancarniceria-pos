@@ -36,6 +36,24 @@ export interface Producto {
   umbralStockBajo: number | null;
 }
 
+export interface CajaCamara {
+  id: number;
+  productoId: number;
+  producto: Producto;
+  familiaNombre: string;
+  fechaIngreso: string;
+  pesoInicialKg: number;
+  saldoKg: number;
+  costoNetoKg: number;
+  estado: "en_camara" | "parcial" | "salida" | "ajuste_pendiente";
+  pesoEstimado: boolean;
+  creadoPorId: number;
+  creadoPor: Usuario;
+  version: number;
+  creadoEn: string;
+  actualizadoEn: string;
+}
+
 export interface FilaImportacionProductos {
   fila: number;
   plu: string;
@@ -629,6 +647,17 @@ export const api = {
     crear: (data: { fecha?: string; categoria: string; descripcion?: string | null; monto: number; usuarioId: number }) =>
       post<Gasto>("/api/gastos", data),
     eliminar: (id: number) => del<void>(`/api/gastos/${id}`),
+  },
+  camara: {
+    entradaLote: (data: {
+      productoId: number;
+      cantidadCajas: number;
+      pesoTotalKg?: number;
+      pesoIndividualKg?: number;
+      costoNetoKg: number;
+      usuarioId: number;
+    }) => post<CajaCamara[]>("/api/camara/cajas", data),
+    obtenerCaja: (id: number) => get<CajaCamara>(`/api/camara/cajas/${id}`),
   },
 };
 

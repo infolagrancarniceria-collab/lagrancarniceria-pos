@@ -30,6 +30,8 @@ import Comunas from "./pages/Comunas";
 import Configuracion from "./pages/Configuracion";
 import Asistente from "./pages/Asistente";
 import Balanza from "./pages/Balanza";
+import Camara from "./pages/Camara";
+import CamaraEntrada from "./pages/CamaraEntrada";
 
 export default function App() {
   // En "modo caja exclusiva" (ver web/src/lib/modoCaja.ts), este PC arranca
@@ -68,6 +70,8 @@ export default function App() {
             <Route path="/comunas" element={<Comunas />} />
             <Route path="/asistente" element={<Asistente />} />
             <Route path="/balanza" element={<Balanza />} />
+            <Route path="/camara" element={<Camara />} />
+            <Route path="/camara/entrada" element={<CamaraEntrada />} />
             <Route path="/configuracion" element={<Configuracion />} />
           </Route>
         </Route>

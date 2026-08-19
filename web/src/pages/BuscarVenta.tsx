@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api, formatoCLP, type Venta } from "../api";
 import ModalConfirmarClave from "../components/ModalConfirmarClave";
+import { imprimirSilencioso as imprimirVale } from "../lib/imprimir";
 
 function fechaHace(dias: number): string {
   const d = new Date();
@@ -18,20 +19,6 @@ const etiquetaMedio: Record<string, string> = {
   tarjeta: "Tarjeta",
   credito: "Crédito",
 };
-
-// En la app instalada (Electron), imprime directo en la impresora
-// predeterminada sin ningún diálogo. En un navegador normal (ej. el PC del
-// mesón conectado por WiFi sin el programa instalado) window.electronAPI no
-// existe — ahí se usa el print() normal del navegador, que sí muestra su
-// propio diálogo por seguridad (no hay forma de evitarlo desde una página
-// web común).
-function imprimirVale() {
-  if (window.electronAPI) {
-    window.electronAPI.imprimirSilencioso();
-  } else {
-    window.print();
-  }
-}
 
 export default function BuscarVenta() {
   const [desde, setDesde] = useState(fechaHace(7));
