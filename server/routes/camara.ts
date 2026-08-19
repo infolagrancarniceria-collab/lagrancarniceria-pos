@@ -105,6 +105,16 @@ camaraRouter.post("/cajas", async (req, res) => {
   res.status(201).json(cajas);
 });
 
+camaraRouter.get("/cajas", async (req, res) => {
+  const estado = typeof req.query.estado === "string" ? req.query.estado : undefined;
+  const cajas = await prisma.cajaCamara.findMany({
+    where: estado ? { estado } : undefined,
+    include: cajaConIncludes,
+    orderBy: { fechaIngreso: "asc" },
+  });
+  res.json(cajas);
+});
+
 camaraRouter.get("/cajas/:id", async (req, res) => {
   const caja = await prisma.cajaCamara.findUnique({
     where: { id: Number(req.params.id) },
@@ -318,4 +328,304 @@ camaraRouter.put("/mayoristas/:id/estado-pago", async (req, res) => {
     include: { producto: true, usuario: true },
   });
   res.json(actualizada);
+});
+
+// --- Inventario por escaneo + conciliación de faltantes ---
+
+function esEstadoActivoCamara(estado: string): boolean {
+  return estado === "en_camara" || estado === "parcial";
+}
+
+const sesionConIncludes = {
+  iniciadoPor: true,
+  finalizadoPor: true,
+} as const;
+
+camaraRouter.post("/inventario/sesiones", async (req, res) => {
+  const usuarioId = Number(req.body?.usuarioId);
+  if (!usuarioId) return res.status(400).json({ error: "Falta el usuario" });
+  const usuario = await validarUsuario(usuarioId);
+  if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
+
+  const sesionAbierta = await prisma.sesionInventarioCamara.findFirst({ where: { estado: "abierta" } });
+  if (sesionAbierta) {
+    return res
+      .status(400)
+      .json({ error: `Ya hay un conteo abierto (sesión #${sesionAbierta.id}) — ciérralo antes de iniciar otro` });
+  }
+
+  // Foto de qué cajas deberían estar en cámara AHORA — se compara contra lo
+  // que se vaya escaneando durante la sesión, sin importar si entran o
+  // salen cajas nuevas mientras tanto (esas no cuentan ni a favor ni en
+  // contra del conteo).
+  const cajasActivas = await prisma.cajaCamara.findMany({ where: { estado: { in: ["en_camara", "parcial"] } } });
+
+  const sesion = await prisma.$transaction(async (tx) => {
+    const creada = await tx.sesionInventarioCamara.create({
+      data: { iniciadoPorId: usuarioId, estado: "abierta" },
+    });
+    if (cajasActivas.length > 0) {
+      await tx.inventarioCamaraEsperado.createMany({
+        data: cajasActivas.map((c) => ({
+          sesionId: creada.id,
+          cajaId: c.id,
+          saldoEsperadoKg: c.saldoKg,
+          estadoEsperado: c.estado,
+        })),
+      });
+    }
+    return creada;
+  });
+
+  res.status(201).json({ ...sesion, totalEsperadas: cajasActivas.length });
+});
+
+camaraRouter.get("/inventario/sesiones", async (req, res) => {
+  const estado = typeof req.query.estado === "string" ? req.query.estado : undefined;
+  const sesiones = await prisma.sesionInventarioCamara.findMany({
+    where: estado ? { estado } : undefined,
+    include: sesionConIncludes,
+    orderBy: { fechaInicio: "desc" },
+  });
+  res.json(sesiones);
+});
+
+camaraRouter.get("/inventario/sesiones/:id", async (req, res) => {
+  const sesionId = Number(req.params.id);
+  const sesion = await prisma.sesionInventarioCamara.findUnique({
+    where: { id: sesionId },
+    include: sesionConIncludes,
+  });
+  if (!sesion) return res.status(404).json({ error: "Sesión no encontrada" });
+
+  const [esperados, escaneos] = await Promise.all([
+    prisma.inventarioCamaraEsperado.findMany({
+      where: { sesionId },
+      include: { caja: { include: cajaConIncludes } },
+    }),
+    prisma.escaneoInventarioCamara.findMany({
+      where: { sesionId },
+      include: { caja: { include: cajaConIncludes }, escaneadoPor: true },
+      orderBy: { escaneadoEn: "desc" },
+    }),
+  ]);
+
+  res.json({ sesion, esperados, escaneos });
+});
+
+const escanearInventarioSchema = z.object({
+  codigo: z.string().trim().min(1, "Falta el código escaneado"),
+  usuarioId: z.number().int().positive(),
+  dispositivo: z.string().trim().optional(),
+});
+
+camaraRouter.post("/inventario/sesiones/:id/escanear", async (req, res) => {
+  const parsed = escanearInventarioSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0].message });
+  }
+  const { codigo, usuarioId, dispositivo } = parsed.data;
+
+  const usuario = await validarUsuario(usuarioId);
+  if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
+
+  const sesionId = Number(req.params.id);
+  const sesion = await prisma.sesionInventarioCamara.findUnique({ where: { id: sesionId } });
+  if (!sesion) return res.status(404).json({ error: "Sesión no encontrada" });
+  if (sesion.estado !== "abierta") {
+    return res.status(400).json({ error: "Esta sesión de conteo ya está cerrada" });
+  }
+
+  const cajaId = Number(codigo);
+  if (!cajaId || !Number.isInteger(cajaId)) {
+    return res.status(400).json({ error: `Código no reconocido: "${codigo}"` });
+  }
+  const caja = await prisma.cajaCamara.findUnique({ where: { id: cajaId }, include: cajaConIncludes });
+  if (!caja) return res.status(404).json({ error: `No existe ninguna caja con el número ${codigo}` });
+
+  // Un doble escaneo de la misma caja no duplica el conteo — se avisa y se
+  // devuelve el escaneo ya existente en vez de fallar.
+  const yaEscaneada = await prisma.escaneoInventarioCamara.findUnique({
+    where: { sesionId_cajaId: { sesionId, cajaId } },
+  });
+  if (yaEscaneada) {
+    const esperado = await prisma.inventarioCamaraEsperado.findUnique({
+      where: { sesionId_cajaId: { sesionId, cajaId } },
+    });
+    return res.json({ escaneo: yaEscaneada, caja, esperada: esperado != null, yaEscaneada: true });
+  }
+
+  const esperado = await prisma.inventarioCamaraEsperado.findUnique({
+    where: { sesionId_cajaId: { sesionId, cajaId } },
+  });
+
+  const escaneo = await prisma.escaneoInventarioCamara.create({
+    data: {
+      sesionId,
+      cajaId,
+      escaneadoPorId: usuarioId,
+      dispositivo: dispositivo || null,
+      estadoAlEscanear: caja.estado,
+      saldoAlEscanearKg: caja.saldoKg,
+    },
+  });
+
+  res.status(201).json({ escaneo, caja, esperada: esperado != null, yaEscaneada: false });
+});
+
+const cerrarSesionSchema = z.object({
+  usuarioId: z.number().int().positive(),
+  observaciones: z.string().trim().optional(),
+});
+
+camaraRouter.post("/inventario/sesiones/:id/cerrar", async (req, res) => {
+  const parsed = cerrarSesionSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0].message });
+  }
+  const { usuarioId, observaciones } = parsed.data;
+
+  const usuario = await validarUsuario(usuarioId);
+  if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
+
+  const sesionId = Number(req.params.id);
+  const sesion = await prisma.sesionInventarioCamara.findUnique({ where: { id: sesionId } });
+  if (!sesion) return res.status(404).json({ error: "Sesión no encontrada" });
+  if (sesion.estado !== "abierta") {
+    return res.status(400).json({ error: "Esta sesión de conteo ya está cerrada" });
+  }
+
+  const [esperados, escaneos] = await Promise.all([
+    prisma.inventarioCamaraEsperado.findMany({ where: { sesionId } }),
+    prisma.escaneoInventarioCamara.findMany({ where: { sesionId } }),
+  ]);
+  const cajaIdsEscaneadas = new Set(escaneos.map((e) => e.cajaId));
+  const cajaIdsEsperadas = new Set(esperados.map((e) => e.cajaId));
+
+  const candidatasFaltante = esperados.filter((e) => !cajaIdsEscaneadas.has(e.cajaId));
+  const idsNoEsperadas = escaneos.filter((e) => !cajaIdsEsperadas.has(e.cajaId)).map((e) => e.cajaId);
+
+  // Solo se marca "ajuste_pendiente" si la caja SIGUE activa en cámara — si
+  // mientras tanto salió por el flujo normal (Etapa 3), no faltó nada,
+  // simplemente ya no correspondía contarla en este conteo.
+  const cajasFaltantes = await prisma.$transaction(async (tx) => {
+    const marcadas = [];
+    for (const candidata of candidatasFaltante) {
+      const cajaActual = await tx.cajaCamara.findUnique({ where: { id: candidata.cajaId } });
+      if (cajaActual && esEstadoActivoCamara(cajaActual.estado)) {
+        const actualizada = await tx.cajaCamara.update({
+          where: { id: cajaActual.id },
+          data: { estado: "ajuste_pendiente", version: { increment: 1 } },
+          include: cajaConIncludes,
+        });
+        marcadas.push(actualizada);
+      }
+    }
+    await tx.sesionInventarioCamara.update({
+      where: { id: sesionId },
+      data: {
+        estado: "finalizada",
+        fechaFin: new Date(),
+        finalizadoPorId: usuarioId,
+        observaciones: observaciones || null,
+      },
+    });
+    return marcadas;
+  });
+
+  const cajasNoEsperadas = idsNoEsperadas.length
+    ? await prisma.cajaCamara.findMany({ where: { id: { in: idsNoEsperadas } }, include: cajaConIncludes })
+    : [];
+
+  res.json({
+    totalEsperadas: esperados.length,
+    totalEscaneadas: escaneos.length,
+    faltantes: cajasFaltantes,
+    noEsperadas: cajasNoEsperadas,
+  });
+});
+
+// --- Resolver cajas marcadas "ajuste_pendiente" tras un conteo ---
+
+const resolverAjusteSchema = z.object({
+  usuarioId: z.number().int().positive(),
+  motivo: z.string().trim().optional(),
+});
+
+camaraRouter.post("/cajas/:id/confirmar-falta", async (req, res) => {
+  const parsed = resolverAjusteSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0].message });
+  const { usuarioId, motivo } = parsed.data;
+
+  const usuario = await validarUsuario(usuarioId);
+  if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
+
+  const caja = await prisma.cajaCamara.findUnique({ where: { id: Number(req.params.id) } });
+  if (!caja) return res.status(404).json({ error: "Caja no encontrada" });
+  if (caja.estado !== "ajuste_pendiente") {
+    return res.status(400).json({ error: "Esta caja no está pendiente de ajuste" });
+  }
+
+  const resultado = await prisma.$transaction(async (tx) => {
+    const cajaActualizada = await tx.cajaCamara.update({
+      where: { id: caja.id },
+      data: { saldoKg: 0, estado: "salida", version: { increment: 1 } },
+      include: cajaConIncludes,
+    });
+    const movimiento = await tx.movimientoCamara.create({
+      data: {
+        cajaId: caja.id,
+        tipo: "ajuste_salida",
+        pesoKg: Math.max(caja.saldoKg, 0.001),
+        origen: "camara",
+        destino: "ajuste",
+        motivo: motivo || "Faltante de inventario (conteo por escaneo)",
+        usuarioId,
+        claveIdempotencia: randomUUID(),
+      },
+    });
+    return { caja: cajaActualizada, movimiento };
+  });
+
+  res.json(resultado);
+});
+
+camaraRouter.post("/cajas/:id/encontrada", async (req, res) => {
+  const parsed = resolverAjusteSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0].message });
+  const { usuarioId, motivo } = parsed.data;
+
+  const usuario = await validarUsuario(usuarioId);
+  if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
+
+  const caja = await prisma.cajaCamara.findUnique({ where: { id: Number(req.params.id) } });
+  if (!caja) return res.status(404).json({ error: "Caja no encontrada" });
+  if (caja.estado !== "ajuste_pendiente") {
+    return res.status(400).json({ error: "Esta caja no está pendiente de ajuste" });
+  }
+
+  const nuevoEstado = caja.saldoKg >= caja.pesoInicialKg - EPSILON_KG ? "en_camara" : "parcial";
+
+  const resultado = await prisma.$transaction(async (tx) => {
+    const cajaActualizada = await tx.cajaCamara.update({
+      where: { id: caja.id },
+      data: { estado: nuevoEstado, version: { increment: 1 } },
+      include: cajaConIncludes,
+    });
+    const movimiento = await tx.movimientoCamara.create({
+      data: {
+        cajaId: caja.id,
+        tipo: "ajuste_entrada",
+        pesoKg: Math.max(caja.saldoKg, 0.001),
+        origen: "ajuste",
+        destino: "camara",
+        motivo: motivo || "Caja encontrada tras conteo por escaneo",
+        usuarioId,
+        claveIdempotencia: randomUUID(),
+      },
+    });
+    return { caja: cajaActualizada, movimiento };
+  });
+
+  res.json(resultado);
 });

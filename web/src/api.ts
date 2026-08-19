@@ -95,6 +95,66 @@ export interface ResultadoSalidaCamara {
   salidaMayorista: SalidaMayorista | null;
 }
 
+export interface SesionInventarioCamara {
+  id: number;
+  fechaInicio: string;
+  fechaFin: string | null;
+  iniciadoPorId: number;
+  iniciadoPor: Usuario;
+  finalizadoPorId: number | null;
+  finalizadoPor: Usuario | null;
+  estado: "abierta" | "finalizada" | "conciliada";
+  observaciones: string | null;
+  totalEsperadas?: number;
+}
+
+export interface EscaneoInventarioCamara {
+  id: number;
+  sesionId: number;
+  cajaId: number;
+  caja: CajaCamara;
+  escaneadoEn: string;
+  escaneadoPorId: number;
+  escaneadoPor: Usuario;
+  dispositivo: string | null;
+  estadoAlEscanear: string;
+  saldoAlEscanearKg: number;
+}
+
+export interface InventarioCamaraEsperado {
+  id: number;
+  sesionId: number;
+  cajaId: number;
+  caja: CajaCamara;
+  saldoEsperadoKg: number;
+  estadoEsperado: string;
+}
+
+export interface DetalleSesionInventarioCamara {
+  sesion: SesionInventarioCamara;
+  esperados: InventarioCamaraEsperado[];
+  escaneos: EscaneoInventarioCamara[];
+}
+
+export interface ResultadoEscaneoInventarioCamara {
+  escaneo: EscaneoInventarioCamara;
+  caja: CajaCamara;
+  esperada: boolean;
+  yaEscaneada: boolean;
+}
+
+export interface ResultadoCierreSesionCamara {
+  totalEsperadas: number;
+  totalEscaneadas: number;
+  faltantes: CajaCamara[];
+  noEsperadas: CajaCamara[];
+}
+
+export interface ResultadoAjusteCamara {
+  caja: CajaCamara;
+  movimiento: MovimientoCamara;
+}
+
 export interface FilaImportacionProductos {
   fila: number;
   plu: string;
@@ -721,6 +781,30 @@ export const api = {
     },
     marcarEstadoPagoMayorista: (id: number, estadoPago: "pagado" | "pendiente", usuarioId: number) =>
       put<SalidaMayorista>(`/api/camara/mayoristas/${id}/estado-pago`, { estadoPago, usuarioId }),
+    cajas: (params: { estado?: string } = {}) => {
+      const qs = new URLSearchParams();
+      if (params.estado) qs.set("estado", params.estado);
+      const query = qs.toString();
+      return get<CajaCamara[]>(`/api/camara/cajas${query ? `?${query}` : ""}`);
+    },
+    confirmarFalta: (cajaId: number, usuarioId: number, motivo?: string) =>
+      post<ResultadoAjusteCamara>(`/api/camara/cajas/${cajaId}/confirmar-falta`, { usuarioId, motivo }),
+    marcarEncontrada: (cajaId: number, usuarioId: number, motivo?: string) =>
+      post<ResultadoAjusteCamara>(`/api/camara/cajas/${cajaId}/encontrada`, { usuarioId, motivo }),
+    abrirSesionInventario: (usuarioId: number) =>
+      post<SesionInventarioCamara>("/api/camara/inventario/sesiones", { usuarioId }),
+    sesionesInventario: (params: { estado?: string } = {}) => {
+      const qs = new URLSearchParams();
+      if (params.estado) qs.set("estado", params.estado);
+      const query = qs.toString();
+      return get<SesionInventarioCamara[]>(`/api/camara/inventario/sesiones${query ? `?${query}` : ""}`);
+    },
+    detalleSesionInventario: (id: number) =>
+      get<DetalleSesionInventarioCamara>(`/api/camara/inventario/sesiones/${id}`),
+    escanearInventario: (sesionId: number, data: { codigo: string; usuarioId: number }) =>
+      post<ResultadoEscaneoInventarioCamara>(`/api/camara/inventario/sesiones/${sesionId}/escanear`, data),
+    cerrarSesionInventario: (sesionId: number, data: { usuarioId: number; observaciones?: string }) =>
+      post<ResultadoCierreSesionCamara>(`/api/camara/inventario/sesiones/${sesionId}/cerrar`, data),
   },
 };
 

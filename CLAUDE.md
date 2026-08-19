@@ -922,8 +922,67 @@ escribe a mano** (el operador lo pesa aparte).
   por mayor" y confirmar, verla aparecer en el listado nuevo) — todos los
   casos correctos.
 
+### Etapa 4 — inventario por escaneo + conciliación de faltantes, lista
+Nueva pantalla **"Inventario por escaneo"** (menú → Cámara → "Inventario
+por escaneo") y una pantalla de resolución aparte, **"Ajustes
+pendientes"**. Antes de programar se preguntó al usuario el alcance de
+cada conteo (¿toda la cámara o por familia?), qué hacer si se escanea una
+caja que no estaba en la foto esperada, qué hacer con las que faltan al
+cerrar, y cómo se resuelven después — respuestas: **toda la cámara de una
+vez** (sin filtro por familia por ahora), un escaneo no esperado **se
+registra aparte sin bloquear**, las faltantes **quedan pendientes de
+revisión manual** (no se ajustan solas), y se resuelven con **una pantalla
+simple de dos botones** ("Confirmar que falta" / "Se encontró").
+
+- **Abrir un conteo** (`POST /api/camara/inventario/sesiones`): toma una
+  foto de qué cajas deberían estar en cámara en ese momento (todas las
+  `en_camara`/`parcial`) guardada en `InventarioCamaraEsperado` — esta foto
+  es indispensable para no generar falsos faltantes si entra o sale una
+  caja mientras el conteo está en curso (esas cajas, ni a favor ni en
+  contra, quedan fuera de la comparación). Solo puede haber **un conteo
+  abierto a la vez** en todo el sistema — si alguien ya abrió uno, hay que
+  cerrarlo antes de iniciar otro (evita que dos personas cuenten cámara al
+  mismo tiempo con fotos distintas). Si se recarga la pantalla o alguien
+  más la abre desde otro equipo, retoma automáticamente el conteo abierto
+  en vez de ofrecer iniciar uno nuevo.
+- **Escanear** (`POST /.../escanear`): reutiliza el mismo detector de
+  lector de código de barras que ya usan Punto de Venta y Salida de
+  cámara. Un doble escaneo de la misma caja **no duplica el conteo** (hay
+  un índice único `sesionId+cajaId` en `EscaneoInventarioCamara`) — se
+  avisa que ya estaba escaneada en vez de fallar. Si la caja escaneada no
+  estaba en la foto esperada (ej. entró después de abrir el conteo, o
+  técnicamente ya había salido pero seguía físicamente ahí), el escaneo se
+  guarda igual y queda marcado como "no esperada" para revisar al cerrar —
+  no bloquea el conteo.
+- **Cerrar** (`POST /.../cerrar`): compara lo esperado contra lo
+  escaneado. Las cajas esperadas que nunca se escanearon (posibles
+  faltantes) quedan marcadas `estado: "ajuste_pendiente"` — **solo si
+  siguen activas en cámara en ese momento**: si mientras tanto salieron
+  por el flujo normal (Etapa 3), no faltó nada, simplemente ya no
+  correspondía contarlas en este conteo. El reporte de cierre muestra
+  ambas listas (faltantes y no esperadas) para revisar de un vistazo.
+- **Ajustes pendientes** (pantalla nueva, listado de `estado:
+  "ajuste_pendiente"`, mismo patrón que "Revisiones" para stock negativo):
+  dos acciones por caja — **"Confirmar que falta"** la deja en saldo 0 y
+  sale de cámara (`MovimientoCamara` tipo `"ajuste_salida"`, motivo
+  "Faltante de inventario"), sin tocar el stock vendible de sala (la caja
+  nunca pasó por "Sala de venta"); **"Se encontró"** la reactiva con el
+  saldo que tenía antes del conteo (vuelve a `en_camara` o `parcial` según
+  corresponda, `MovimientoCamara` tipo `"ajuste_entrada"`) — ambas quedan
+  auditadas igual que cualquier otro movimiento de cámara.
+- **Probado de punta a punta**: contra el backend real (foto esperada
+  correcta al abrir, no deja abrir dos conteos a la vez, reintento de
+  escaneo no duplica, caja creada después de abrir el conteo queda
+  correctamente fuera de lo esperado, cierre marca solo las cajas
+  realmente faltantes como `ajuste_pendiente`, no deja escanear ni cerrar
+  una sesión ya cerrada, resolver como "encontrada" restaura el saldo
+  exacto, resolver como "falta" no afecta el stock de sala) y con
+  Playwright contra las pantallas reales (iniciar conteo, escanear
+  simulando el lector físico, cerrar y ver el reporte, ver la caja
+  faltante en "Ajustes pendientes" y resolverla) — todos los casos
+  correctos.
+
 ### Plan de las próximas etapas (sin empezar todavía)
-4. Inventario por escaneo + conciliación de faltantes.
 5. Importador del prototipo HTML actual (para no perder lo ya cargado ahí).
 6. Modo sin conexión del celular (cola local + reintento).
 7. Pruebas de punta a punta.
