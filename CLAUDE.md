@@ -900,8 +900,58 @@ conectadas (muestra un aviso en vez de una lista vacía confusa), y se
 confirmó que pedir imprimir con un nombre de impresora inválido devuelve
 un error claro (`"Invalid deviceName provided"`) en vez de fallar en
 silencio — la persona sabrá exactamente qué revisar la próxima vez que
-pase algo así. **Pendiente:** confirmación del usuario probando con la
-Gainscha real, eligiéndola por nombre en Configuración.
+pase algo así.
+
+### Segunda vuelta: elegir la impresora por nombre no fue suficiente
+El usuario probó con la Gainscha real, ya elegida por nombre en
+Configuración (el arreglo de arriba) — la etiqueta salía igual, esta vez
+"tira la etiqueta, pero no imprime, sale en blanco" (antes no salía nada
+en absoluto). Se descartó de a uno cada sospechoso con preguntas al
+usuario en vez de adivinar: no es un problema de dos impresoras
+compitiendo (solo hay una conectada en ese PC), no es que la Gainscha no
+tenga página de prueba disponible, y **no es que estuviera mal
+seleccionada** — el usuario confirmó que la había elegido por nombre en la
+lista de Configuración.
+
+El dato decisivo: **imprimir la misma pantalla con el diálogo normal de
+Windows (Ctrl+P desde Chrome) sí funciona bien con esa misma impresora
+física.** Eso aísla el problema a la impresión *silenciosa* de Electron
+(`webContents.print({ silent: true, deviceName })`) en sí — con esta
+impresora/driver en particular, ese camino no funciona aunque el
+`deviceName` esté bien apuntado, mientras que el camino con diálogo
+(`window.print()`) sí.
+
+**Arreglo final:** la etiqueta de cámara ahora **siempre** usa el diálogo
+normal de impresión (`window.print()`), incluso desde la app instalada —
+a diferencia de la boleta, que se queda con la impresión silenciosa (ese
+camino nunca se ha reportado fallando). Como imprimir una etiqueta es
+algo ocasional (al recibir mercadería, no varias veces por hora como la
+boleta), el clic extra de confirmar el diálogo es un costo aceptable a
+cambio de que realmente imprima. Se sacó el selector "Etiquetas de
+cámara" de Configuración → Impresoras (ya no tiene sentido, ese camino no
+usa `deviceName`) y se dejó una nota explicando que las etiquetas siempre
+muestran el diálogo de Windows.
+
+Como la boleta (80mm) y la etiqueta (100×50mm) necesitan un tamaño de
+página de impresión distinto y CSS no permite tener dos reglas `@page`
+activas a la vez para el mismo documento, `imprimirEtiquetaCamara()`
+(`web/src/lib/imprimir.ts`) agrega una hoja de estilo aparte que
+sobrescribe el tamaño a 100×50mm justo antes de llamar a `window.print()`,
+y la saca después — dejando todo como estaba para la próxima boleta (se
+había probado antes "páginas con nombre" de CSS para esto, pero no se
+pudo confirmar que el motor de impresión las respete de forma confiable).
+
+Probado en el sandbox: el flujo completo (crear etiqueta → clic Imprimir
+→ se agrega el estilo de página → se llama a `window.print()` → se saca
+el estilo después) funciona correctamente. También se verificó, abriendo
+la app real de Electron, que el clic ahora sí dispara un diálogo nativo de
+impresión de verdad (se detectó el proceso de sistema que Chromium/Electron
+usa específicamente para el diálogo de impresión, algo que no aparece con
+impresión silenciosa) — confirmando que el cambio de código realmente
+cambió el comportamiento y no se quedó pegado en el camino silencioso de
+antes. **Pendiente:** confirmación del usuario de que, con el diálogo de
+Windows apareciendo esta vez, la etiqueta física sale con contenido real
+(no en blanco).
 
 ## Ajustes tras la primera semana de uso real: crédito, carrito y modo caja
 Feedback del usuario tras usar el sistema unos días, comparándolo con

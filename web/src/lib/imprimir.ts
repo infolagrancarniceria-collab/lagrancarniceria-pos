@@ -1,4 +1,4 @@
-import { obtenerImpresoraBoletas, obtenerImpresoraEtiquetas } from "./impresoras";
+import { obtenerImpresoraBoletas } from "./impresoras";
 
 // En la app instalada (Electron), imprime directo en la impresora elegida
 // (o la predeterminada de Windows si no se eligió ninguna en Configuración)
@@ -10,23 +10,20 @@ import { obtenerImpresoraBoletas, obtenerImpresoraEtiquetas } from "./impresoras
 // ya no existe, o no hay ninguna predeterminada configurada en Windows),
 // se avisa con una alerta — antes fallaba sin decir nada, lo que parecía
 // que el botón de imprimir no hacía nada.
-async function imprimir(deviceName: string | null, etiquetaError: string) {
+export async function imprimirSilencioso() {
   if (!window.electronAPI) {
     window.print();
     return;
   }
+  const deviceName = obtenerImpresoraBoletas();
   const resultado = await window.electronAPI.imprimirSilencioso(deviceName ? { deviceName } : undefined);
   if (!resultado.exito) {
     window.alert(
-      `No se pudo imprimir ${etiquetaError}. ${
+      `No se pudo imprimir la boleta. ${
         resultado.razonError ? `Motivo: ${resultado.razonError}. ` : ""
       }Revisa en Configuración → Impresoras que la impresora elegida siga conectada y encendida.`
     );
   }
-}
-
-export function imprimirSilencioso() {
-  return imprimir(obtenerImpresoraBoletas(), "la boleta");
 }
 
 // El sistema imprime dos cosas de tamaño de página distinto: el vale
@@ -55,11 +52,20 @@ function activarPaginaEtiqueta(activar: boolean) {
   document.head.appendChild(estilo);
 }
 
-export async function imprimirEtiquetaCamara() {
+// La etiqueta SIEMPRE usa el diálogo normal de impresión (window.print()),
+// incluso en la app instalada — a diferencia del vale. Se probó primero la
+// impresión silenciosa de Electron (igual que el vale), pero salía en
+// blanco con la impresora térmica de etiquetas (Gainscha) del usuario, ya
+// elegida por nombre en Configuración — mientras que imprimiendo con el
+// diálogo normal desde un navegador (Ctrl+P) sí funcionaba bien con la
+// misma impresora. Como imprimir una etiqueta es algo ocasional (no varias
+// veces por hora, como el vale), el clic extra del diálogo es un costo
+// aceptable a cambio de que realmente funcione.
+export function imprimirEtiquetaCamara() {
   activarPaginaEtiqueta(true);
-  await imprimir(obtenerImpresoraEtiquetas(), "la etiqueta");
-  // Tiempo suficiente para que el navegador/Electron ya haya capturado la
-  // página a imprimir antes de sacar la hoja de estilo — mismo margen que
-  // ya usaba el prototipo original entre marcar/desmarcar la etiqueta.
+  window.print();
+  // Tiempo suficiente para que el navegador ya haya capturado la página a
+  // imprimir antes de sacar la hoja de estilo — mismo margen que ya usaba
+  // el prototipo original entre marcar/desmarcar la etiqueta.
   setTimeout(() => activarPaginaEtiqueta(false), 500);
 }
