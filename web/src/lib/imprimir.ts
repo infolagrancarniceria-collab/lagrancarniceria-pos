@@ -1,15 +1,32 @@
-// En la app instalada (Electron), imprime directo en la impresora
-// predeterminada sin ningún diálogo. En un navegador normal (ej. el PC del
-// mesón conectado por WiFi sin el programa instalado) window.electronAPI no
+import { obtenerImpresoraBoletas, obtenerImpresoraEtiquetas } from "./impresoras";
+
+// En la app instalada (Electron), imprime directo en la impresora elegida
+// (o la predeterminada de Windows si no se eligió ninguna en Configuración)
+// sin ningún diálogo. En un navegador normal (ej. el PC del mesón
+// conectado por WiFi sin el programa instalado) window.electronAPI no
 // existe — ahí se usa el print() normal del navegador, que sí muestra su
 // propio diálogo por seguridad (no hay forma de evitarlo desde una página
-// web común).
-export function imprimirSilencioso() {
-  if (window.electronAPI) {
-    window.electronAPI.imprimirSilencioso();
-  } else {
+// web común). Si la impresión silenciosa falla (ej. la impresora elegida
+// ya no existe, o no hay ninguna predeterminada configurada en Windows),
+// se avisa con una alerta — antes fallaba sin decir nada, lo que parecía
+// que el botón de imprimir no hacía nada.
+async function imprimir(deviceName: string | null, etiquetaError: string) {
+  if (!window.electronAPI) {
     window.print();
+    return;
   }
+  const resultado = await window.electronAPI.imprimirSilencioso(deviceName ? { deviceName } : undefined);
+  if (!resultado.exito) {
+    window.alert(
+      `No se pudo imprimir ${etiquetaError}. ${
+        resultado.razonError ? `Motivo: ${resultado.razonError}. ` : ""
+      }Revisa en Configuración → Impresoras que la impresora elegida siga conectada y encendida.`
+    );
+  }
+}
+
+export function imprimirSilencioso() {
+  return imprimir(obtenerImpresoraBoletas(), "la boleta");
 }
 
 // El sistema imprime dos cosas de tamaño de página distinto: el vale
@@ -38,9 +55,9 @@ function activarPaginaEtiqueta(activar: boolean) {
   document.head.appendChild(estilo);
 }
 
-export function imprimirEtiquetaCamara() {
+export async function imprimirEtiquetaCamara() {
   activarPaginaEtiqueta(true);
-  imprimirSilencioso();
+  await imprimir(obtenerImpresoraEtiquetas(), "la etiqueta");
   // Tiempo suficiente para que el navegador/Electron ya haya capturado la
   // página a imprimir antes de sacar la hoja de estilo — mismo margen que
   // ya usaba el prototipo original entre marcar/desmarcar la etiqueta.

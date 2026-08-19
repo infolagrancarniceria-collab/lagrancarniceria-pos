@@ -861,6 +861,48 @@ futura.
 7. Modo sin conexión del celular (cola local + reintento).
 8. Pruebas de punta a punta.
 
+## Elegir qué impresora usa cada cosa (arreglo de "la etiqueta no imprime")
+El usuario probó imprimir una etiqueta de cámara desde el PC principal y no
+salió nada — ni aviso, ni papel. Diagnosticado junto al usuario: en ese PC
+hay una sola impresora física conectada (la Gainscha, para etiquetas — el
+PC principal no tiene la impresora de boletas conectada). El código de
+impresión silenciosa siempre mandaba el trabajo a la impresora
+**predeterminada de Windows**, sin poder elegir una en particular ni
+avisar si algo fallaba — así que si la predeterminada resultaba ser otra
+cosa (ej. una impresora virtual como "Microsoft Print to PDF", que Windows
+no siempre reemplaza sola al conectar una impresora nueva), el trabajo se
+iba silenciosamente a ningún lado.
+
+**Arreglado con dos cambios:**
+- **Elegir impresora por tipo de documento**, en Configuración → nueva
+  sección "Impresoras" (solo visible en la app instalada, no en el
+  navegador): dos listas desplegables, "Boletas de venta" y "Etiquetas de
+  cámara", con todas las impresoras que Windows detecta en ese PC (`electron.
+  webContents.getPrintersAsync()`, expuesto como `listarImpresoras()` en
+  `electron/preload.js`) — dejando "La predeterminada de Windows" como
+  opción por defecto para no obligar a configurar nada si no hace falta.
+  Es una preferencia de **ese PC en particular** (cada equipo tiene sus
+  propias impresoras conectadas), guardada en `localStorage`
+  (`web/src/lib/impresoras.ts`), mismo patrón que "modo caja exclusiva".
+  `imprimir-silencioso` (`electron/main.js`) ahora acepta un `deviceName`
+  opcional para mandar el trabajo a esa impresora puntual en vez de la
+  predeterminada.
+- **Avisar si la impresión falla**, en vez de no hacer nada: `web/src/lib/
+  imprimir.ts` ahora revisa el resultado de `imprimirSilencioso()` y, si
+  falló, muestra una alerta con el motivo (cuando Electron lo informa) y
+  sugiere revisar Configuración → Impresoras. Antes, cualquier falla
+  quedaba completamente en silencio — parecía que el botón "Imprimir" no
+  hacía nada, exactamente el problema reportado.
+
+Probado en el sandbox (sin impresora física real, pero validando la
+mecánica): `listarImpresoras()` no revienta cuando no hay impresoras
+conectadas (muestra un aviso en vez de una lista vacía confusa), y se
+confirmó que pedir imprimir con un nombre de impresora inválido devuelve
+un error claro (`"Invalid deviceName provided"`) en vez de fallar en
+silencio — la persona sabrá exactamente qué revisar la próxima vez que
+pase algo así. **Pendiente:** confirmación del usuario probando con la
+Gainscha real, eligiéndola por nombre en Configuración.
+
 ## Ajustes tras la primera semana de uso real: crédito, carrito y modo caja
 Feedback del usuario tras usar el sistema unos días, comparándolo con
 Gexus (con fotos de ambos). Antes de tocar nada se le hicieron preguntas —

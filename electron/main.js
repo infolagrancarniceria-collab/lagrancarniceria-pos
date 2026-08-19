@@ -31,18 +31,36 @@ function crearVentana(url) {
   ventana.loadURL(url);
 }
 
-// Imprime el vale directo en la impresora predeterminada de Windows, sin
-// mostrar el diálogo de impresión — a diferencia de window.print() en un
-// navegador normal (usado en equipos conectados por WiFi sin el programa
-// instalado), acá sí se puede saltar el diálogo porque es la propia app,
-// no una página web cualquiera.
-ipcMain.handle("imprimir-silencioso", (evento) => {
+// Imprime el vale/etiqueta directo en una impresora, sin mostrar el diálogo
+// de impresión — a diferencia de window.print() en un navegador normal
+// (usado en equipos conectados por WiFi sin el programa instalado), acá sí
+// se puede saltar el diálogo porque es la propia app, no una página web
+// cualquiera. Si se pasa "deviceName", imprime en ESA impresora puntual en
+// vez de la predeterminada de Windows — necesario porque boletas y
+// etiquetas de cámara suelen salir por impresoras físicas distintas, y
+// dejarlo siempre en la predeterminada puede mandar el trabajo a la
+// impresora equivocada (o a una impresora virtual como "Microsoft Print to
+// PDF") sin ningún aviso.
+ipcMain.handle("imprimir-silencioso", (evento, opciones) => {
   const ventana = BrowserWindow.fromWebContents(evento.sender);
+  const deviceName = opciones && opciones.deviceName ? opciones.deviceName : undefined;
   return new Promise((resolve) => {
-    ventana.webContents.print({ silent: true, printBackground: true }, (exito, razonError) => {
-      resolve({ exito, razonError });
-    });
+    ventana.webContents.print(
+      { silent: true, printBackground: true, ...(deviceName ? { deviceName } : {}) },
+      (exito, razonError) => {
+        resolve({ exito, razonError });
+      }
+    );
   });
+});
+
+// Lista las impresoras que Windows conoce en este PC, para que la persona
+// pueda elegir cuál usar para boletas y cuál para etiquetas de cámara en
+// vez de depender de cuál esté puesta como predeterminada (algo que no
+// siempre es obvio ni fácil de cambiar para alguien no técnico).
+ipcMain.handle("listar-impresoras", async (evento) => {
+  const ventana = BrowserWindow.fromWebContents(evento.sender);
+  return ventana.webContents.getPrintersAsync();
 });
 
 // La carpeta donde se instala el programa queda de solo lectura una vez

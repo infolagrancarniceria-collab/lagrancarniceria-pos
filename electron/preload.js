@@ -4,9 +4,11 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("electronAPI", {
-  // Imprime la página actual (el vale) directo en la impresora predeterminada
-  // de Windows, sin mostrar ningún diálogo — usado en vez de window.print()
-  // cuando el programa corre como app instalada (no en un navegador normal,
-  // donde por seguridad siempre se muestra el diálogo de impresión).
-  imprimirSilencioso: () => ipcRenderer.invoke("imprimir-silencioso"),
+  // Imprime la página actual (el vale o una etiqueta) directo en una
+  // impresora, sin mostrar ningún diálogo — usado en vez de window.print()
+  // cuando el programa corre como app instalada. Si se pasa deviceName,
+  // imprime en esa impresora puntual en vez de la predeterminada de
+  // Windows (ver electron/main.js para el motivo).
+  imprimirSilencioso: (opciones) => ipcRenderer.invoke("imprimir-silencioso", opciones),
+  listarImpresoras: () => ipcRenderer.invoke("listar-impresoras"),
 });
