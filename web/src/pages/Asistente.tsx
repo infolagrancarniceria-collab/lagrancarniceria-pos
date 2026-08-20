@@ -114,6 +114,25 @@ async function ejecutarPropuesta(accion: PropuestaAsistente["accion"], usuarioId
         contacto: d.contacto != null ? String(d.contacto) : null,
       });
       return;
+    case "proponer_crear_producto":
+      await api.productos.crear({
+        plu: String(d.plu),
+        descripcion: String(d.descripcion),
+        categoriaId: Number(d.categoriaId),
+        precio: Number(d.precio),
+        flagBalanza: d.flagBalanza as "NORMAL" | "PESABLE" | "IMPORTE",
+        marca: d.marca != null ? String(d.marca) : null,
+        codigoBarras: d.codigoBarras != null ? String(d.codigoBarras) : null,
+        nombreCorto: null,
+        contenido: null,
+        capacidadPorCaja: null,
+        envase: null,
+        impuestoAdicional: null,
+        duracion: null,
+        codigoProveedor: null,
+        umbralStockBajo: null,
+      });
+      return;
     case "proponer_desactivar_producto":
       await api.productos.eliminar(Number(d.productoId));
       return;

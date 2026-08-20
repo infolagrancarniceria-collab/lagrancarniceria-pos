@@ -20,6 +20,7 @@ const HERRAMIENTAS_PROPONER = new Set([
   "proponer_registrar_gasto",
   "proponer_marcar_credito_cobrado",
   "proponer_crear_proveedor",
+  "proponer_crear_producto",
   "proponer_desactivar_producto",
   "proponer_crear_comuna",
   "proponer_entrada_camara",
@@ -366,6 +367,29 @@ export const herramientas: Anthropic.Tool[] = [
     },
   },
   {
+    name: "proponer_crear_producto",
+    description:
+      "Propone crear un producto nuevo en el catálogo. No lo crea todavía. Usa buscar_productos primero para confirmar que el PLU no esté ya usado, y listar_categorias para tener el categoriaId — nunca inventes ninguno de los dos.",
+    input_schema: {
+      type: "object",
+      properties: {
+        plu: { type: "string", description: "Código PLU del producto, sin ceros a la izquierda" },
+        descripcion: { type: "string" },
+        categoriaId: { type: "integer" },
+        precio: { type: "number", description: "Precio de venta en pesos chilenos, mayor a 0" },
+        flagBalanza: {
+          type: "string",
+          enum: ["NORMAL", "PESABLE", "IMPORTE"],
+          description: "NORMAL = se vende por unidad con código de barras propio; PESABLE/IMPORTE = va a la balanza",
+        },
+        marca: { type: "string", description: "Opcional" },
+        codigoBarras: { type: "string", description: "Opcional — solo aplica si flagBalanza es NORMAL" },
+        resumen: { type: "string" },
+      },
+      required: ["plu", "descripcion", "categoriaId", "precio", "flagBalanza", "resumen"],
+    },
+  },
+  {
     name: "proponer_desactivar_producto",
     description: "Propone dar de baja (desactivar) un producto — no lo elimina del historial, solo deja de aparecer en el catálogo activo. No lo hace todavía. Usar buscar_productos primero para tener el productoId.",
     input_schema: {
@@ -690,7 +714,9 @@ Sobre comparar períodos (ej. "¿vendimos más este mes que el anterior?"): no h
 
 Sobre la cámara frigorífica: cada caja tiene una "version" que cambia cada vez que se le saca algo — para proponer_salida_camara, usa siempre el cajaId y la version que te devolvió consultar_camara en la MISMA conversación (no reuses una version vieja de un mensaje anterior, puede estar desactualizada).
 
-Sobre créditos (ventas fiadas): usa creditos_pendientes primero para tener el pagoId real antes de proponer_marcar_credito_cobrado — nunca inventes un pagoId.`;
+Sobre créditos (ventas fiadas): usa creditos_pendientes primero para tener el pagoId real antes de proponer_marcar_credito_cobrado — nunca inventes un pagoId.
+
+Sobre crear un producto nuevo: usa buscar_productos primero para confirmar que el PLU que te dieron no esté ya en uso (si ya existe, avisa en vez de proponer un duplicado) y listar_categorias para tener el categoriaId real. Si no te dan la categoría, pregunta antes de asumir una.`;
 
 export async function procesarMensaje(
   apiKey: string,

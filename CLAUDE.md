@@ -1833,3 +1833,64 @@ respondiendo con normalidad** al pedido siguiente — confirmado pidiendo
 `/api/usuarios` justo después y agregando un producto real a una venta de
 verdad sin ningún problema, sin ningún cambio de comportamiento para los
 pedidos normales.
+
+## Confirmar una venta se queda en Punto de Venta (antes saltaba a "Buscar venta")
+A pedido del usuario: al confirmar una venta, el sistema saltaba a la
+pantalla "Buscar venta" para imprimir el vale — un paso extra e innecesario
+cuando lo urgente es seguir cobrando a la siguiente persona en la fila.
+Confirmado con una captura de la pantalla vacía de Punto de Venta cuál es
+el estado exacto al que debe volver solo.
+
+- **Vale extraído a un componente reutilizable** (`web/src/components/
+  ValeVenta.tsx`): el markup del vale (antes solo dentro de
+  `BuscarVenta.tsx`) se separó para poder reutilizarlo también en Punto de
+  Venta sin duplicar la tabla de productos, pagos, descuentos, etc.
+  `BuscarVenta.tsx` sigue funcionando igual (con sus botones Imprimir/
+  Anular); de paso se sacó el código que ya no se usa (leer `?imprimir=<id>`
+  de la URL — ya no lo manda nadie).
+- **Impresión en segundo plano, sin salir de la pantalla**
+  (`PuntoDeVenta.tsx`): al confirmar, en vez de navegar a `/caja/buscar
+  ?imprimir=...`, el sistema pide el detalle de la venta recién confirmada
+  y lo guarda en un estado nuevo (`ventaParaImprimir`) que renderiza un
+  `<ValeVenta>` **oculto en pantalla** (clase nueva
+  `.vale-oculto-hasta-imprimir` en `styles.css`: `display: none` normal,
+  `display: block` solo dentro de `@media print`) — invisible para el
+  cajero, pero es lo que la impresión (`imprimirSilencioso()`) termina
+  capturando. Al mismo tiempo se llama a `iniciarVenta()` (la misma función
+  que ya arma una venta nueva vacía al entrar a la pantalla) para dejar
+  todo listo para el siguiente cliente, sin ningún salto de página.
+- Verificado con `npm run typecheck` (limpio) y contra el servidor de
+  desarrollo real: confirmar una venta imprime el vale y la pantalla se
+  queda en Punto de Venta con el carrito vacío, listo para la siguiente
+  venta — el mismo estado que el usuario confirmó por captura de pantalla
+  como el correcto.
+
+## Asistente de IA: aclaración sobre productoId, y capacidad de crear productos
+El usuario preguntó por qué, al pedirle al asistente que leyera el texto de
+una factura, mencionaba un "id de producto" en vez del PLU. **Aclaración:**
+son dos cosas distintas a propósito — el PLU es el código que el negocio
+usa para identificar un producto (el mismo de siempre, el que se tipea en
+Caja o se manda a la balanza); el "productoId" es el identificador interno
+de la base de datos (un correlativo interno, sin relación con el PLU) que
+usa el asistente puertas adentro para no confundir productos con nombres
+parecidos — nunca se le pide a la persona que lo escriba ni aparece en
+ninguna pantalla del sistema, solo lo usa la IA internamente al armar una
+propuesta (siempre después de buscar el producto con `buscar_productos`,
+nunca inventado).
+
+Además, a pedido del usuario, se agregó una herramienta nueva:
+**`proponer_crear_producto`** (mismo patrón "propone, la persona confirma"
+de siempre) — crear proveedores nuevos ya existía (`proponer_crear_proveedor`,
+agregado en la ampliación anterior), así que solo faltaba poder crear
+productos nuevos completos, no solo cambiarles precio/categoría a uno ya
+existente. Pide PLU, descripción, categoría, precio y Flag Balanza
+(NORMAL/PESABLE/IMPORTE) — más marca y código de barras si aplica. El
+prompt le exige al asistente usar `buscar_productos` primero para
+confirmar que el PLU no esté ya en uso (evita proponer un duplicado que el
+servidor rechazaría igual, pero mejor avisarlo antes) y `listar_categorias`
+para tener el `categoriaId` real, igual que ya exigía para el resto de las
+herramientas de escritura. La confirmación en pantalla llama exactamente
+al mismo endpoint (`POST /api/productos`) que usaría una persona creando un
+producto a mano desde la pantalla de Productos — mismas validaciones
+(PLU/código de barras duplicado, categoría inexistente, código de barras
+solo permitido si Flag Balanza es NORMAL).
