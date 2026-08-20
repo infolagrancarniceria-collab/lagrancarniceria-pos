@@ -1,4 +1,12 @@
 import "dotenv/config";
+// Parcha Express para que una promesa rechazada dentro de un handler async
+// (ej. Prisma tirando una excepción por un id inválido) llegue al
+// errorHandler de abajo en vez de quedar como una excepción no manejada —
+// eso hacía que Node terminara TODO el proceso del servidor por un solo
+// pedido con datos raros (ej. POST /api/caja/ventas/:id/items con un id
+// que no corresponde a ninguna venta). Tiene que importarse antes de crear
+// los routers de abajo, porque parcha Router.prototype al cargarse.
+import "express-async-errors";
 import express, { type ErrorRequestHandler } from "express";
 import path from "node:path";
 import fs from "node:fs";

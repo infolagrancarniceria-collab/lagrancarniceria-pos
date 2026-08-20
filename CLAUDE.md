@@ -1804,3 +1804,32 @@ Venta que ese es el estado al que debe volver solo.
   total vuelve a $0 y el carrito muestra "Todavía no hay productos en el
   carrito" — el mismo estado vacío que el usuario confirmó por captura de
   pantalla como el correcto.
+
+## Un pedido con datos raros ya no puede tirar abajo todo el servidor
+Bug de robustez que se había detectado antes (ver "Ampliación del
+asistente de IA") y había quedado pendiente de decidir — el usuario pidió
+corregirlo. La causa era general, no específica de un solo endpoint:
+Express 4 (la versión que usa este sistema) **no** reenvía sola una
+promesa rechazada dentro de un handler `async` hacia el manejador de
+errores — si nadie la atrapa con `try/catch`, Node la trata como una
+excepción no manejada y **termina todo el proceso del servidor**, no solo
+esa petición puntual. Como ninguna ruta del sistema usaba `try/catch` (se
+apoyaban, sin saberlo, en que Express lo atrapara solo — cosa que no pasa
+en la versión 4), una petición con datos raros en cualquier pantalla podía
+tirar abajo el programa completo para todos los que lo estuvieran usando
+en ese momento, no solo fallar esa acción puntual.
+
+**Arreglado con `express-async-errors`** (paquete chico y muy usado,
+importado al principio de `server/index.ts`, antes de crear las rutas):
+hace que Express sí reenvíe esas promesas rechazadas al manejador de
+errores que ya existía (`errorHandler`, que ya devolvía un error 500
+prolijo) — en vez de agregar `try/catch` ruta por ruta en todo el sistema,
+mucho más grande y fácil de dejar alguna sin cubrir.
+
+Probado contra el servidor real: un pedido con un ID de venta que no es un
+número (`POST /api/caja/ventas/no-es-un-numero/items`, el caso que antes
+crasheaba todo) ahora devuelve un error 500 prolijo y **el servidor sigue
+respondiendo con normalidad** al pedido siguiente — confirmado pidiendo
+`/api/usuarios` justo después y agregando un producto real a una venta de
+verdad sin ningún problema, sin ningún cambio de comportamiento para los
+pedidos normales.
