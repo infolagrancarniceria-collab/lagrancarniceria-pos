@@ -867,8 +867,8 @@ cajaRouter.post("/creditos/:pagoId/cobrar", async (req, res) => {
 // --- Registro de anulaciones (pantalla aparte, para verlas todas juntas sin
 // tener que abrir venta por venta en "Buscar venta") ---
 
-cajaRouter.get("/anulaciones", async (req, res) => {
-  const { desde, hasta } = rangoFechasDesdeTexto(req.query.desde, req.query.hasta);
+export async function calcularReporteAnulaciones(desdeTexto?: unknown, hastaTexto?: unknown) {
+  const { desde, hasta } = rangoFechasDesdeTexto(desdeTexto, hastaTexto);
 
   const items = await prisma.itemVenta.findMany({
     where: { anulado: true, fechaAnulacion: { gte: desde, lte: hasta } },
@@ -882,5 +882,9 @@ cajaRouter.get("/anulaciones", async (req, res) => {
     orderBy: { fechaAnulacion: "desc" },
   });
 
-  res.json({ items, ventas });
+  return { items, ventas };
+}
+
+cajaRouter.get("/anulaciones", async (req, res) => {
+  res.json(await calcularReporteAnulaciones(req.query.desde, req.query.hasta));
 });

@@ -1700,3 +1700,73 @@ que no tocan ese modelo:
 - Sin vulnerabilidades conocidas en las dependencias (`npm audit` limpio).
 - `.env` y la clave de la IA nunca se suben a git (ya documentado antes,
   ver "Decisiones tomadas en el asistente de IA").
+
+## Ampliación del asistente de IA: 17 herramientas nuevas
+A pedido del usuario, tras mostrarle el listado de las 14 herramientas que
+tenía el asistente hasta ahora y proponerle una lista de cosas que podrían
+agregarse — pidió incluirlas todas. Se agregaron **17 herramientas nuevas**
+(10 de lectura, 7 de escritura con el mismo patrón "propone, la persona
+confirma" de siempre), quedando **31 en total**.
+
+### Lectura (se ejecutan directo, nunca cambian nada)
+`consultar_venta` (detalle de una venta de Caja por número), `creditos_pendientes`,
+`reporte_anulaciones`, `reporte_despachos`, `reporte_gastos`,
+`historial_precio_producto` (todo el historial de UN producto, a diferencia
+de `reporte_precios` que es agregado por rango de fechas),
+`productos_stock_negativo`, `productos_sin_venta_reciente` (productos
+activos sin ninguna venta confirmada en los últimos N días — para detectar
+productos estancados), `consultar_camara` y `ventas_mayoristas_pendientes`
+— el asistente antes no sabía nada de Caja, gastos, despachos ni cámara
+frigorífica.
+
+### Escritura (proponer_*)
+`proponer_registrar_gasto`, `proponer_marcar_credito_cobrado`,
+`proponer_crear_proveedor`, `proponer_desactivar_producto`,
+`proponer_crear_comuna`, `proponer_entrada_camara` y
+`proponer_salida_camara`.
+
+- **Cámara frigorífica**: se decidió incluirla también para escritura (no
+  solo lectura, que era la opción "seguro" planteada originalmente) porque
+  el patrón de propuesta+confirmación ya delega toda la validación real al
+  mismo endpoint que usa la pantalla de Salida de cámara — la IA no
+  reimplementa el control de concurrencia (`version`) ni el aviso FIFO, solo
+  arma la propuesta con los datos que sacó de `consultar_camara` en la
+  misma conversación. Si la `version` quedó desactualizada para cuando la
+  persona confirma (ej. alguien más le sacó algo a esa caja mientras
+  tanto), el endpoint ya existente la rechaza igual que rechazaría un clic
+  humano — la IA no tiene ningún camino para saltarse esa protección.
+- **Créditos**: el prompt exige usar `creditos_pendientes` primero para
+  tener el `pagoId` real — mismo principio de "nunca adivinar un id" que ya
+  regía para productos/categorías.
+- **Comparar períodos** (ej. "¿vendimos más este mes que el anterior?"): no
+  se agregó una herramienta aparte — el prompt ahora indica que puede
+  llamar la herramienta de reporte que corresponda más de una vez, con
+  rangos de fechas distintos, y comparar los resultados en su propia
+  respuesta.
+
+Para reutilizar la lógica ya probada en vez de duplicarla, se extrajeron
+tres funciones que antes vivían solo dentro de su ruta (`calcularReporteDespachos`
+en `server/routes/reportes.ts`, `calcularReporteGastos` en `server/routes/gastos.ts`,
+`calcularReporteAnulaciones` en `server/routes/caja.ts`) — mismo patrón que
+ya existía para `calcularReporteVentas`, ahora usadas tanto por su endpoint
+REST normal como por el asistente.
+
+**Probado de punta a punta**: las 10 herramientas de lectura, contra el
+backend real (cada una con datos de prueba creados a propósito, verificando
+que trae exactamente lo esperado). Las 7 de escritura, simulando la
+respuesta de la IA (este entorno no tiene una clave de Anthropic real) pero
+ejercitando el código real de confirmación de `web/src/pages/Asistente.tsx`
+contra la pantalla real con Playwright — clic en "Confirmar" y verificación
+en la base de datos de que el cambio se aplicó de verdad (gasto creado,
+proveedor creado, comuna creada, producto desactivado, crédito marcado
+cobrado, caja de cámara creada y luego sacada a merma).
+
+**Hallazgo aparte, no relacionado con esta ampliación**: durante las
+pruebas se encontró que `agregarItemAVenta` (`server/routes/caja.ts`) puede
+tirar abajo el proceso completo del servidor si se le pasa un `ventaId`
+que no corresponde a ninguna venta (la promesa rechazada no queda atrapada
+en ningún try/catch, así que Node la trata como una excepción no manejada
+y termina el proceso) — un bug de robustez preexistente, no algo que esta
+ampliación haya introducido. **Pendiente:** decidir si vale la pena
+corregirlo (envolver ese llamado en un try/catch, o agregar un manejador
+global de errores no capturados).

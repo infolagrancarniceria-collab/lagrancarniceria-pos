@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { api, formatoCLP, type PropuestaAsistente } from "../api";
+import { api, formatoCLP, type PropuestaAsistente, type DestinoSalidaCamara } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 
@@ -92,6 +92,54 @@ async function ejecutarPropuesta(accion: PropuestaAsistente["accion"], usuarioId
           usuarioId,
         });
       }
+      return;
+    }
+    case "proponer_registrar_gasto":
+      await api.gastos.crear({
+        categoria: String(d.categoria),
+        monto: Number(d.monto),
+        descripcion: d.descripcion != null ? String(d.descripcion) : null,
+        usuarioId,
+      });
+      return;
+    case "proponer_marcar_credito_cobrado":
+      await api.caja.cobrarCredito(Number(d.pagoId), {
+        medioCobro: d.medioCobro === "tarjeta" ? "tarjeta" : "efectivo",
+        usuarioId,
+      });
+      return;
+    case "proponer_crear_proveedor":
+      await api.proveedores.crear({
+        nombre: String(d.nombre),
+        contacto: d.contacto != null ? String(d.contacto) : null,
+      });
+      return;
+    case "proponer_desactivar_producto":
+      await api.productos.eliminar(Number(d.productoId));
+      return;
+    case "proponer_crear_comuna":
+      await api.comunas.crear({ nombre: String(d.nombre), costoEnvio: Number(d.costoEnvio) });
+      return;
+    case "proponer_entrada_camara":
+      await api.camara.entradaLote({
+        productoId: Number(d.productoId),
+        cantidadCajas: Number(d.cantidadCajas),
+        ...(d.pesoTotalKg != null ? { pesoTotalKg: Number(d.pesoTotalKg) } : {}),
+        ...(d.pesoIndividualKg != null ? { pesoIndividualKg: Number(d.pesoIndividualKg) } : {}),
+        costoNetoKg: Number(d.costoNetoKg),
+        usuarioId,
+      });
+      return;
+    case "proponer_salida_camara": {
+      const mayorista = d.mayorista as { clienteNombre?: string; precioTotal: number; estadoPago: "pagado" | "pendiente" } | undefined;
+      await api.camara.salida(Number(d.cajaId), {
+        destino: d.destino as DestinoSalidaCamara,
+        version: Number(d.version),
+        ...(d.pesoKg != null ? { pesoKg: Number(d.pesoKg) } : {}),
+        ...(d.motivo != null ? { motivo: String(d.motivo) } : {}),
+        ...(mayorista ? { mayorista } : {}),
+        usuarioId,
+      });
       return;
     }
     default:

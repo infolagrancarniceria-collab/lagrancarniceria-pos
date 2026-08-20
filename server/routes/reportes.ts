@@ -164,8 +164,8 @@ reportesRouter.get("/ventas", async (req, res) => {
   res.json(await calcularReporteVentas(query.desde, query.hasta));
 });
 
-reportesRouter.get("/despachos", async (req, res) => {
-  const { desde, hasta } = rangoFechas(req.query as Record<string, unknown>);
+export async function calcularReporteDespachos(desdeTexto?: unknown, hastaTexto?: unknown) {
+  const { desde, hasta } = rangoFechasDesdeTexto(desdeTexto, hastaTexto);
 
   const ventas = await prisma.venta.findMany({
     where: { estado: "pagada", esDespacho: true, fecha: { gte: desde, lte: hasta } },
@@ -193,11 +193,16 @@ reportesRouter.get("/despachos", async (req, res) => {
     (a, b) => b.cantidadDespachos - a.cantidadDespachos
   );
 
-  res.json({
+  return {
     desde: desde.toISOString(),
     hasta: hasta.toISOString(),
     cantidadDespachos: ventas.length,
     totalCostoEnvio: ventas.reduce((s, v) => s + (v.costoEnvio ?? 0), 0),
     porComuna: porComunaOrdenado,
-  });
+  };
+}
+
+reportesRouter.get("/despachos", async (req, res) => {
+  const query = req.query as Record<string, unknown>;
+  res.json(await calcularReporteDespachos(query.desde, query.hasta));
 });

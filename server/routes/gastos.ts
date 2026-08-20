@@ -26,8 +26,8 @@ gastosRouter.get("/", async (req, res) => {
   res.json(gastos);
 });
 
-gastosRouter.get("/reporte", async (req, res) => {
-  const { desde, hasta } = rangoFechasDesdeTexto(req.query.desde, req.query.hasta);
+export async function calcularReporteGastos(desdeTexto?: unknown, hastaTexto?: unknown) {
+  const { desde, hasta } = rangoFechasDesdeTexto(desdeTexto, hastaTexto);
   const gastos = await prisma.gasto.findMany({ where: { fecha: { gte: desde, lte: hasta } } });
 
   const totalPorCategoria: Record<string, number> = {};
@@ -37,7 +37,11 @@ gastosRouter.get("/reporte", async (req, res) => {
     total += g.monto;
   }
 
-  res.json({ desde: desde.toISOString(), hasta: hasta.toISOString(), total, totalPorCategoria });
+  return { desde: desde.toISOString(), hasta: hasta.toISOString(), total, totalPorCategoria };
+}
+
+gastosRouter.get("/reporte", async (req, res) => {
+  res.json(await calcularReporteGastos(req.query.desde, req.query.hasta));
 });
 
 const crearGastoSchema = z.object({

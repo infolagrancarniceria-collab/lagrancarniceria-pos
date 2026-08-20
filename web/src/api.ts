@@ -781,11 +781,25 @@ export const api = {
     }) => post<CajaCamara[]>("/api/camara/cajas", data),
     obtenerCaja: (id: number) => get<CajaCamara>(`/api/camara/cajas/${id}`),
     avisoFifo: (cajaId: number) => get<AvisoFifoCamara>(`/api/camara/cajas/${cajaId}/fifo`),
-    // La salida de una caja se manda con web/src/lib/colaOffline.ts
-    // (ejecutarOEncolar) en vez de un método acá — necesita una clave de
-    // idempotencia para poder reintentarse sola sin duplicar si el celular
-    // se queda sin conexión a mitad de camino (ver "Modo sin conexión del
-    // celular" en CLAUDE.md).
+    // Desde la pantalla de Salida de cámara, la salida se manda con
+    // web/src/lib/colaOffline.ts (ejecutarOEncolar) en vez de este método —
+    // necesita una clave de idempotencia para poder reintentarse sola sin
+    // duplicar si el celular se queda sin conexión a mitad de camino (ver
+    // "Modo sin conexión del celular" en CLAUDE.md). Este método directo
+    // se mantiene para el otro llamador legítimo: confirmar una propuesta
+    // del Asistente de IA, que siempre corre con conexión (no pasa por el
+    // flujo de escaneo del celular).
+    salida: (
+      cajaId: number,
+      data: {
+        destino: DestinoSalidaCamara;
+        pesoKg?: number;
+        motivo?: string;
+        usuarioId: number;
+        version: number;
+        mayorista?: { clienteNombre?: string; precioTotal: number; estadoPago: "pagado" | "pendiente" };
+      }
+    ) => post<ResultadoSalidaCamara>(`/api/camara/cajas/${cajaId}/salida`, data),
     mayoristas: (params: { desde?: string; hasta?: string; estadoPago?: string } = {}) => {
       const qs = new URLSearchParams();
       if (params.desde) qs.set("desde", params.desde);

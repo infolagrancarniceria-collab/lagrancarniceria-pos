@@ -1,6 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "../db";
-import { rangoFechasDesdeTexto, calcularReporteVentas } from "../routes/reportes";
+import { rangoFechasDesdeTexto, calcularReporteVentas, calcularReporteDespachos } from "../routes/reportes";
+import { calcularReporteGastos } from "../routes/gastos";
+import { calcularReporteAnulaciones } from "../routes/caja";
 
 // Herramientas de solo lectura: el asistente las ejecuta directo, nunca
 // cambian datos. Las herramientas "proponer_*" son distintas a propósito:
@@ -15,9 +17,16 @@ const HERRAMIENTAS_PROPONER = new Set([
   "proponer_entrada_inventario",
   "proponer_entradas_inventario_masivas",
   "proponer_salida_inventario",
+  "proponer_registrar_gasto",
+  "proponer_marcar_credito_cobrado",
+  "proponer_crear_proveedor",
+  "proponer_desactivar_producto",
+  "proponer_crear_comuna",
+  "proponer_entrada_camara",
+  "proponer_salida_camara",
 ]);
 
-const herramientas: Anthropic.Tool[] = [
+export const herramientas: Anthropic.Tool[] = [
   {
     name: "buscar_productos",
     description:
@@ -230,9 +239,202 @@ const herramientas: Anthropic.Tool[] = [
       required: ["productoId", "cantidad", "motivo", "resumen"],
     },
   },
+  {
+    name: "consultar_venta",
+    description: "Trae el detalle completo de una venta de Caja por su número (ej. 'Venta #22' → numeroVenta: 22): productos, pagos, total, estado, comuna de despacho si aplica.",
+    input_schema: {
+      type: "object",
+      properties: { numeroVenta: { type: "integer" } },
+      required: ["numeroVenta"],
+    },
+  },
+  {
+    name: "creditos_pendientes",
+    description: "Lista los créditos (ventas fiadas) todavía sin cobrar, con el nombre del cliente y el monto. Usar esto ANTES de proponer_marcar_credito_cobrado, para tener el pagoId real.",
+    input_schema: { type: "object", properties: {} },
+  },
+  {
+    name: "reporte_anulaciones",
+    description: "Productos anulados y ventas canceladas/anuladas en un rango de fechas, con motivo y quién anuló.",
+    input_schema: {
+      type: "object",
+      properties: {
+        desde: { type: "string", description: "Fecha de inicio, formato YYYY-MM-DD" },
+        hasta: { type: "string", description: "Fecha de fin, formato YYYY-MM-DD" },
+      },
+    },
+  },
+  {
+    name: "reporte_despachos",
+    description: "Despachos a domicilio en un rango de fechas: cantidad y costo de envío cobrado, desglosado por comuna.",
+    input_schema: {
+      type: "object",
+      properties: {
+        desde: { type: "string", description: "Fecha de inicio, formato YYYY-MM-DD" },
+        hasta: { type: "string", description: "Fecha de fin, formato YYYY-MM-DD" },
+      },
+    },
+  },
+  {
+    name: "reporte_gastos",
+    description: "Gastos generales del negocio (sueldos, luz, agua, etc. — no incluye compra de mercadería) en un rango de fechas, con el total por categoría.",
+    input_schema: {
+      type: "object",
+      properties: {
+        desde: { type: "string", description: "Fecha de inicio, formato YYYY-MM-DD" },
+        hasta: { type: "string", description: "Fecha de fin, formato YYYY-MM-DD" },
+      },
+    },
+  },
+  {
+    name: "historial_precio_producto",
+    description: "Todos los cambios de precio de UN producto puntual, del más reciente al más antiguo (a diferencia de reporte_precios, que es agregado por rango de fechas, no por producto). Usar buscar_productos primero para tener el productoId.",
+    input_schema: {
+      type: "object",
+      properties: { productoId: { type: "integer" } },
+      required: ["productoId"],
+    },
+  },
+  {
+    name: "productos_stock_negativo",
+    description: "Lista los productos que quedaron con stock negativo (se vendieron sin que el sistema tuviera stock suficiente registrado) — pendientes de un ajuste manual.",
+    input_schema: { type: "object", properties: {} },
+  },
+  {
+    name: "productos_sin_venta_reciente",
+    description: "Lista productos activos que no han tenido ninguna venta confirmada en los últimos N días (útil para detectar productos estancados o que convendría liquidar).",
+    input_schema: {
+      type: "object",
+      properties: {
+        diasSinVenta: { type: "integer", description: "Cantidad de días hacia atrás a revisar (opcional, por defecto 30)" },
+      },
+    },
+  },
+  {
+    name: "consultar_camara",
+    description: "Lista las cajas activas (en cámara o con saldo parcial) en la cámara frigorífica, opcionalmente filtradas por producto. Trae el id, saldo y version de cada caja — necesario para proponer_salida_camara.",
+    input_schema: {
+      type: "object",
+      properties: {
+        productoId: { type: "integer", description: "Opcional, para filtrar por un producto puntual" },
+      },
+    },
+  },
+  {
+    name: "ventas_mayoristas_pendientes",
+    description: "Ventas por mayor (desde la cámara frigorífica) que todavía están pendientes de pago.",
+    input_schema: { type: "object", properties: {} },
+  },
+  {
+    name: "proponer_registrar_gasto",
+    description: "Propone registrar un gasto general del negocio (sueldos, luz, agua, arriendo, etc. — no mercadería, eso es entrada de inventario). No lo registra todavía.",
+    input_schema: {
+      type: "object",
+      properties: {
+        categoria: { type: "string" },
+        monto: { type: "number", description: "Mayor a 0" },
+        descripcion: { type: "string", description: "Opcional" },
+        resumen: { type: "string" },
+      },
+      required: ["categoria", "monto", "resumen"],
+    },
+  },
+  {
+    name: "proponer_marcar_credito_cobrado",
+    description: "Propone marcar un crédito (venta fiada) como cobrado. No lo marca todavía. Usar creditos_pendientes primero para tener el pagoId real — nunca adivinarlo.",
+    input_schema: {
+      type: "object",
+      properties: {
+        pagoId: { type: "integer" },
+        medioCobro: { type: "string", enum: ["efectivo", "tarjeta"], description: "Con qué se cobró realmente" },
+        resumen: { type: "string" },
+      },
+      required: ["pagoId", "medioCobro", "resumen"],
+    },
+  },
+  {
+    name: "proponer_crear_proveedor",
+    description: "Propone crear un proveedor nuevo. No lo crea todavía.",
+    input_schema: {
+      type: "object",
+      properties: {
+        nombre: { type: "string" },
+        contacto: { type: "string", description: "Opcional" },
+        resumen: { type: "string" },
+      },
+      required: ["nombre", "resumen"],
+    },
+  },
+  {
+    name: "proponer_desactivar_producto",
+    description: "Propone dar de baja (desactivar) un producto — no lo elimina del historial, solo deja de aparecer en el catálogo activo. No lo hace todavía. Usar buscar_productos primero para tener el productoId.",
+    input_schema: {
+      type: "object",
+      properties: {
+        productoId: { type: "integer" },
+        resumen: { type: "string" },
+      },
+      required: ["productoId", "resumen"],
+    },
+  },
+  {
+    name: "proponer_crear_comuna",
+    description: "Propone agregar una comuna nueva con su costo de envío fijo, para el módulo de despachos a domicilio. No la crea todavía.",
+    input_schema: {
+      type: "object",
+      properties: {
+        nombre: { type: "string" },
+        costoEnvio: { type: "number", description: "Costo de envío en pesos chilenos, 0 o más" },
+        resumen: { type: "string" },
+      },
+      required: ["nombre", "costoEnvio", "resumen"],
+    },
+  },
+  {
+    name: "proponer_entrada_camara",
+    description: "Propone registrar la entrada de un lote de cajas a la cámara frigorífica. No la registra todavía. Usar buscar_productos primero para tener el productoId.",
+    input_schema: {
+      type: "object",
+      properties: {
+        productoId: { type: "integer" },
+        cantidadCajas: { type: "integer", description: "Cantidad de cajas del lote" },
+        pesoTotalKg: { type: "number", description: "Peso total del lote — usar esto O pesoIndividualKg, nunca ambos" },
+        pesoIndividualKg: { type: "number", description: "Peso de cada caja, si se pesó cada una por separado" },
+        costoNetoKg: { type: "number" },
+        resumen: { type: "string" },
+      },
+      required: ["productoId", "cantidadCajas", "costoNetoKg", "resumen"],
+    },
+  },
+  {
+    name: "proponer_salida_camara",
+    description:
+      "Propone sacar peso de UNA caja de la cámara frigorífica (completa o parcial) con destino a sala de venta, producción, merma, donación o venta por mayor. No la registra todavía. Usar consultar_camara primero para tener el cajaId y su version exactos — nunca adivinarlos. Si el destino es 'mayorista', hay que incluir también los datos de esa venta.",
+    input_schema: {
+      type: "object",
+      properties: {
+        cajaId: { type: "integer" },
+        version: { type: "integer", description: "La version de la caja, tal como la devolvió consultar_camara" },
+        destino: { type: "string", enum: ["sala_venta", "produccion", "merma", "donacion", "mayorista"] },
+        pesoKg: { type: "number", description: "Opcional — si no se indica, se saca el saldo completo de la caja" },
+        motivo: { type: "string", description: "Opcional" },
+        mayorista: {
+          type: "object",
+          description: "Obligatorio solo si destino es 'mayorista'",
+          properties: {
+            clienteNombre: { type: "string", description: "Opcional" },
+            precioTotal: { type: "number" },
+            estadoPago: { type: "string", enum: ["pagado", "pendiente"] },
+          },
+        },
+        resumen: { type: "string" },
+      },
+      required: ["cajaId", "version", "destino", "resumen"],
+    },
+  },
 ];
 
-async function ejecutarHerramientaLectura(nombre: string, input: Record<string, unknown>): Promise<unknown> {
+export async function ejecutarHerramientaLectura(nombre: string, input: Record<string, unknown>): Promise<unknown> {
   switch (nombre) {
     case "buscar_productos": {
       const texto = typeof input.texto === "string" ? input.texto.trim() : "";
@@ -311,6 +513,150 @@ async function ejecutarHerramientaLectura(nombre: string, input: Record<string, 
     }
     case "reporte_ventas":
       return calcularReporteVentas(input.desde, input.hasta);
+    case "consultar_venta": {
+      const numeroVenta = Number(input.numeroVenta);
+      const venta = await prisma.venta.findUnique({
+        where: { id: numeroVenta },
+        include: {
+          items: { include: { producto: true } },
+          pagos: true,
+          usuario: true,
+          comuna: true,
+        },
+      });
+      if (!venta) return { error: `No existe la venta #${numeroVenta}` };
+      return {
+        numero: venta.id,
+        fecha: venta.fecha.toISOString(),
+        estado: venta.estado,
+        total: venta.total,
+        vendedor: venta.usuario.nombre,
+        comentario: venta.comentario,
+        esDespacho: venta.esDespacho,
+        comuna: venta.comuna?.nombre ?? null,
+        items: venta.items.map((it) => ({
+          producto: it.producto.descripcion,
+          cantidad: it.cantidad,
+          subtotal: it.subtotal,
+          anulado: it.anulado,
+        })),
+        pagos: venta.pagos.map((p) => ({ medio: p.medio, monto: p.monto, clienteNombre: p.clienteNombre })),
+      };
+    }
+    case "creditos_pendientes": {
+      const creditos = await prisma.pagoVenta.findMany({
+        where: { medio: "credito", cobrado: false },
+        include: { venta: true },
+        orderBy: { venta: { fecha: "asc" } },
+      });
+      return creditos.map((c) => ({
+        pagoId: c.id,
+        cliente: c.clienteNombre,
+        monto: c.monto,
+        venta: c.ventaId,
+        fecha: c.venta.fecha.toISOString(),
+      }));
+    }
+    case "reporte_anulaciones": {
+      const { items, ventas } = await calcularReporteAnulaciones(input.desde, input.hasta);
+      return {
+        productosAnulados: items.map((it) => ({
+          venta: it.ventaId,
+          producto: it.producto.descripcion,
+          cantidad: it.cantidad,
+          motivo: it.motivoAnulacion,
+          quien: it.usuarioAnulacion?.nombre ?? null,
+          fecha: it.fechaAnulacion?.toISOString() ?? null,
+        })),
+        ventasAnuladas: ventas.map((v) => ({
+          venta: v.id,
+          total: v.total,
+          motivo: v.motivoAnulacion,
+          quien: v.usuarioAnulacion?.nombre ?? null,
+          fecha: v.fechaAnulacion?.toISOString() ?? null,
+        })),
+      };
+    }
+    case "reporte_despachos":
+      return calcularReporteDespachos(input.desde, input.hasta);
+    case "reporte_gastos":
+      return calcularReporteGastos(input.desde, input.hasta);
+    case "historial_precio_producto": {
+      const productoId = Number(input.productoId);
+      const cambios = await prisma.historialPrecio.findMany({
+        where: { productoId },
+        include: { usuario: true },
+        orderBy: { fecha: "desc" },
+      });
+      return cambios.map((c) => ({
+        fecha: c.fecha.toISOString(),
+        precioAnterior: c.precioAnterior,
+        precioNuevo: c.precioNuevo,
+        quien: c.usuario.nombre,
+      }));
+    }
+    case "productos_stock_negativo": {
+      const productos = await prisma.producto.findMany({
+        where: { activo: true, stockActual: { lt: 0 } },
+        include: { categoria: true },
+        orderBy: { stockActual: "asc" },
+      });
+      return productos.map((p) => ({ id: p.id, plu: p.plu, descripcion: p.descripcion, categoria: p.categoria.nombre, stockActual: p.stockActual }));
+    }
+    case "productos_sin_venta_reciente": {
+      const dias = Number(input.diasSinVenta) > 0 ? Number(input.diasSinVenta) : 30;
+      const umbral = new Date(Date.now() - dias * 24 * 60 * 60 * 1000);
+      const vendidosRecientes = await prisma.itemVenta.findMany({
+        where: { anulado: false, venta: { estado: "pagada", fecha: { gte: umbral } } },
+        select: { productoId: true },
+        distinct: ["productoId"],
+      });
+      const idsVendidos = new Set(vendidosRecientes.map((v) => v.productoId));
+      const productosActivos = await prisma.producto.findMany({
+        where: { activo: true },
+        include: { categoria: true },
+        orderBy: { descripcion: "asc" },
+      });
+      const sinVenta = productosActivos.filter((p) => !idsVendidos.has(p.id));
+      return {
+        diasSinVenta: dias,
+        totalSinVentaReciente: sinVenta.length,
+        productos: sinVenta.slice(0, 60).map((p) => ({ id: p.id, plu: p.plu, descripcion: p.descripcion, categoria: p.categoria.nombre, stockActual: p.stockActual })),
+      };
+    }
+    case "consultar_camara": {
+      const productoId = input.productoId != null ? Number(input.productoId) : undefined;
+      const cajas = await prisma.cajaCamara.findMany({
+        where: { estado: { in: ["en_camara", "parcial"] }, ...(productoId ? { productoId } : {}) },
+        include: { producto: true },
+        orderBy: { fechaIngreso: "asc" },
+      });
+      return cajas.map((c) => ({
+        cajaId: c.id,
+        numero: String(c.id).padStart(6, "0"),
+        producto: c.producto.descripcion,
+        familia: c.familiaNombre,
+        fechaIngreso: c.fechaIngreso.toISOString(),
+        saldoKg: c.saldoKg,
+        estado: c.estado,
+        version: c.version,
+      }));
+    }
+    case "ventas_mayoristas_pendientes": {
+      const salidas = await prisma.salidaMayorista.findMany({
+        where: { estadoPago: "pendiente" },
+        include: { producto: true },
+        orderBy: { fecha: "asc" },
+      });
+      return salidas.map((s) => ({
+        id: s.id,
+        producto: s.producto.descripcion,
+        cliente: s.clienteNombre,
+        cantidadKg: s.cantidadKg,
+        precioTotal: s.precioTotal,
+        fecha: s.fecha.toISOString(),
+      }));
+    }
     default:
       return { error: `Herramienta desconocida: ${nombre}` };
   }
@@ -338,7 +684,13 @@ Sobre pedidos con varias líneas (ej. la persona pega el texto de una factura, o
 - Identifica cada línea/producto por separado y usa buscar_productos para encontrar su productoId real — nunca inventes un id ni asumas cuál es sin buscarlo.
 - Si el nombre de una línea no tiene un match único y claro en el catálogo (no aparece, o hay varios productos parecidos y no es obvio cuál es), NO lo incluyas en la propuesta ni elijas uno al azar: dile a la persona qué línea(s) no pudiste identificar con confianza y pregúntale a cuál producto corresponde, antes de proponer el resto.
 - Arma la propuesta final (una sola llamada a la herramienta "proponer_*" masiva correspondiente) solo con las líneas que sí identificaste con confianza.
-- Sé breve. No hace falta repetir toda la data cruda de una consulta, resume lo relevante.`;
+- Sé breve. No hace falta repetir toda la data cruda de una consulta, resume lo relevante.
+
+Sobre comparar períodos (ej. "¿vendimos más este mes que el anterior?"): no hay una herramienta aparte para esto — llama la herramienta de reporte que corresponda (reporte_ventas, reporte_inventario, reporte_precios, reporte_gastos o reporte_despachos) más de una vez, una por cada rango de fechas que necesites, y compará los resultados vos mismo en la respuesta.
+
+Sobre la cámara frigorífica: cada caja tiene una "version" que cambia cada vez que se le saca algo — para proponer_salida_camara, usa siempre el cajaId y la version que te devolvió consultar_camara en la MISMA conversación (no reuses una version vieja de un mensaje anterior, puede estar desactualizada).
+
+Sobre créditos (ventas fiadas): usa creditos_pendientes primero para tener el pagoId real antes de proponer_marcar_credito_cobrado — nunca inventes un pagoId.`;
 
 export async function procesarMensaje(
   apiKey: string,
