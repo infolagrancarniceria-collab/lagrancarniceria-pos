@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useState } from "react";
 import { api, formatoCLP, type Venta } from "../api";
 import ModalConfirmarClave from "../components/ModalConfirmarClave";
+import { ValeVenta } from "../components/ValeVenta";
 import { imprimirSilencioso as imprimirVale } from "../lib/imprimir";
 
 function fechaHace(dias: number): string {
@@ -14,12 +14,6 @@ function hoy(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-const etiquetaMedio: Record<string, string> = {
-  efectivo: "Efectivo",
-  tarjeta: "Tarjeta",
-  credito: "Crédito",
-};
-
 export default function BuscarVenta() {
   const [desde, setDesde] = useState(fechaHace(7));
   const [hasta, setHasta] = useState(hoy());
@@ -29,31 +23,6 @@ export default function BuscarVenta() {
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(false);
   const [anulandoVenta, setAnulandoVenta] = useState(false);
-
-  // Confirmar una venta en Punto de Venta redirige acá con ?imprimir=<id>
-  // para imprimir el vale automáticamente, sin tener que buscarla a mano
-  // después. Se captura el ID una sola vez al montar (no se vuelve a leer
-  // de la URL) para no reintentar la impresión si el usuario navega o
-  // refresca la pantalla — el parámetro se limpia de la URL apenas se usa.
-  const [searchParams, setSearchParams] = useSearchParams();
-  const [idAImprimir] = useState(() => searchParams.get("imprimir"));
-
-  useEffect(() => {
-    if (!idAImprimir) return;
-    api.caja
-      .obtenerVenta(Number(idAImprimir))
-      .then(setVentaDetalle)
-      .catch((e) => setError((e as Error).message));
-    setSearchParams({}, { replace: true });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    if (idAImprimir && ventaDetalle?.id === Number(idAImprimir)) {
-      imprimirVale();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ventaDetalle]);
 
   async function buscar(e: React.FormEvent) {
     e.preventDefault();
@@ -83,9 +52,6 @@ export default function BuscarVenta() {
       setError((e as Error).message);
     }
   }
-
-  const itemsActivos = ventaDetalle?.items.filter((i) => !i.anulado) ?? [];
-  const itemsAnulados = ventaDetalle?.items.filter((i) => i.anulado) ?? [];
 
   // Anular una venta YA pagada devuelve el stock de todos sus productos —
   // por eso pide clave de supervisor igual que anular un ítem o cancelar una
@@ -158,108 +124,7 @@ export default function BuscarVenta() {
       </div>
 
       {ventaDetalle && (
-        <div className="vale">
-          <div className="no-imprimir fila-inline">
-            <button type="button" onClick={imprimirVale}>
-              Imprimir
-            </button>
-            {ventaDetalle.estado === "pagada" && (
-              <button type="button" onClick={() => setAnulandoVenta(true)}>
-                Anular venta
-              </button>
-            )}
-          </div>
-          {ventaDetalle.estado === "anulada" && (
-            <p className="error no-imprimir">
-              Venta anulada — {ventaDetalle.motivoAnulacion ?? "sin motivo especificado"}
-              {ventaDetalle.usuarioAnulacion ? ` (autorizó: ${ventaDetalle.usuarioAnulacion.nombre})` : ""}
-              {ventaDetalle.fechaAnulacion ? `, ${new Date(ventaDetalle.fechaAnulacion).toLocaleString("es-CL")}` : ""}
-            </p>
-          )}
-          <h2>La Gran Carnicería</h2>
-          <p>
-            Venta #{ventaDetalle.id} — {new Date(ventaDetalle.fecha).toLocaleString("es-CL")}
-          </p>
-          <p>Vendedor: {ventaDetalle.usuario?.nombre ?? "—"}</p>
-          {ventaDetalle.comentario && <p>Comentario: {ventaDetalle.comentario}</p>}
-          {ventaDetalle.esDespacho && (
-            <p>
-              Despacho a {ventaDetalle.comuna?.nombre ?? "—"} ({formatoCLP(ventaDetalle.costoEnvio ?? 0)})
-            </p>
-          )}
-          <table className="tabla tabla-vale">
-            <thead>
-              <tr>
-                <th>Producto</th>
-                <th>Cant.</th>
-                <th>Precio</th>
-                <th>Subtotal</th>
-              </tr>
-            </thead>
-            <tbody>
-              {itemsActivos.map((item) => (
-                <tr key={item.id}>
-                  <td>{item.producto.descripcion}</td>
-                  <td>{item.cantidad}</td>
-                  <td>{formatoCLP(item.precioUnitario)}</td>
-                  <td>
-                    {formatoCLP(item.subtotal)}
-                    {item.descuentoTipo && (
-                      <div className="ayuda">
-                        desc. {item.descuentoTipo === "porcentaje" ? `${item.descuentoValor}%` : formatoCLP(item.descuentoValor ?? 0)}
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {itemsAnulados.length > 0 && (
-            <div className="no-imprimir">
-              <h3>Productos anulados</h3>
-              <table className="tabla">
-                <thead>
-                  <tr>
-                    <th>Producto</th>
-                    <th>Cantidad</th>
-                    <th>Motivo</th>
-                    <th>Anulado por</th>
-                    <th>Fecha</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {itemsAnulados.map((item) => (
-                    <tr key={item.id}>
-                      <td>{item.producto.descripcion}</td>
-                      <td>{item.cantidad}</td>
-                      <td>{item.motivoAnulacion ?? "—"}</td>
-                      <td>{item.usuarioAnulacion?.nombre ?? "—"}</td>
-                      <td>{item.fechaAnulacion ? new Date(item.fechaAnulacion).toLocaleString("es-CL") : "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-          {ventaDetalle.descuentoTipo && (
-            <p>
-              Subtotal: {formatoCLP(itemsActivos.reduce((s, i) => s + i.subtotal, 0))} · Descuento:{" "}
-              {ventaDetalle.descuentoTipo === "porcentaje"
-                ? `${ventaDetalle.descuentoValor}%`
-                : formatoCLP(ventaDetalle.descuentoValor ?? 0)}
-            </p>
-          )}
-          <h2>Total: {formatoCLP(ventaDetalle.total)}</h2>
-          <h3>Pagos</h3>
-          <ul>
-            {ventaDetalle.pagos.map((p) => (
-              <li key={p.id}>
-                {etiquetaMedio[p.medio] ?? p.medio}
-                {p.medio === "credito" ? ` (${p.clienteNombre})` : ""}: {formatoCLP(p.monto)}
-              </li>
-            ))}
-          </ul>
-        </div>
+        <ValeVenta venta={ventaDetalle} onImprimir={imprimirVale} onAnular={() => setAnulandoVenta(true)} />
       )}
 
       {anulandoVenta && (

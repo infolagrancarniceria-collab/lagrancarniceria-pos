@@ -551,6 +551,19 @@ select {
   margin-top: 1.5rem;
 }
 
+/* Vale de la venta recién confirmada en Punto de Venta: oculto en pantalla
+   (el cajero se queda en la pantalla de venta, no ve el vale) pero visible
+   al imprimir — es lo único que no se tapa con ".no-imprimir" en ese
+   momento, ver PuntoDeVenta.tsx. */
+.vale-oculto-hasta-imprimir {
+  display: none;
+}
+@media print {
+  .vale-oculto-hasta-imprimir {
+    display: block;
+  }
+}
+
 /* Etiqueta de caja de cámara (100×50mm), portada del prototipo que el
    usuario ya probó imprimiendo bien en su impresora térmica Gainscha.
    Estos tamaños son los del AJUSTE FINAL del prototipo (su tercer bloque

@@ -6,12 +6,19 @@ import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 import { useEscanerCodigoBarras } from "../hooks/useEscanerCodigoBarras";
 import { TecladoNumerico } from "../components/TecladoNumerico";
 import ModalConfirmarClave from "../components/ModalConfirmarClave";
+import { ValeVenta } from "../components/ValeVenta";
+import { imprimirSilencioso } from "../lib/imprimir";
 
 export default function PuntoDeVenta() {
   const { usuario } = useUsuario();
   const navigate = useNavigate();
 
   const [venta, setVenta] = useState<Venta | null>(null);
+  // Venta recién confirmada, guardada solo para imprimir el vale sola en
+  // segundo plano — no se muestra en pantalla (ver ".vale-oculto-hasta-imprimir"
+  // en styles.css), para que el cajero se quede en Punto de Venta listo para
+  // la siguiente venta en vez de saltar a otra pantalla.
+  const [ventaParaImprimir, setVentaParaImprimir] = useState<Venta | null>(null);
   const [productos, setProductos] = useState<Producto[]>([]);
   const [comunas, setComunas] = useState<Comuna[]>([]);
   const [mostrarSelectorComuna, setMostrarSelectorComuna] = useState(false);
@@ -58,6 +65,15 @@ export default function PuntoDeVenta() {
     setComentarioValor(venta?.comentario ?? "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [venta?.id]);
+
+  // Imprime el vale de la venta que se acaba de confirmar, sin salir de
+  // Punto de Venta — el vale se renderiza oculto en pantalla (ver
+  // ".vale-oculto-hasta-imprimir" en styles.css) solo para que
+  // imprimirSilencioso() tenga contenido que capturar.
+  useEffect(() => {
+    if (!ventaParaImprimir) return;
+    imprimirSilencioso().finally(() => setVentaParaImprimir(null));
+  }, [ventaParaImprimir]);
 
   useEffect(() => {
     iniciarVenta();
@@ -425,7 +441,15 @@ export default function PuntoDeVenta() {
     setProcesando(true);
     try {
       await api.caja.confirmarVenta(venta.id, usuario.id);
-      navigate(`/caja/buscar?imprimir=${venta.id}`);
+      // A pedido del usuario: en vez de saltar a "Buscar venta" para
+      // imprimir, el vale se imprime solo en segundo plano (ver el efecto
+      // que observa ventaParaImprimir) y la pantalla se queda en Punto de
+      // Venta lista para la siguiente venta, para no perder tiempo yendo y
+      // volviendo entre pantallas.
+      const ventaConfirmada = await api.caja.obtenerVenta(venta.id);
+      setVentaParaImprimir(ventaConfirmada);
+      await iniciarVenta();
+      setMensaje(`Venta #${venta.id} confirmada — imprimiendo vale...`);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -443,16 +467,20 @@ export default function PuntoDeVenta() {
 
   if (!venta) {
     return (
-      <div className="punto-de-venta">
-        <h1>Punto de venta</h1>
-        {error && <p className="error">{error}</p>}
-        <p>Cargando...</p>
-      </div>
+      <>
+        <div className="punto-de-venta no-imprimir">
+          <h1>Punto de venta</h1>
+          {error && <p className="error">{error}</p>}
+          <p>Cargando...</p>
+        </div>
+        <div className="vale-oculto-hasta-imprimir">{ventaParaImprimir && <ValeVenta venta={ventaParaImprimir} />}</div>
+      </>
     );
   }
 
   return (
-    <div className="punto-de-venta">
+    <>
+    <div className="punto-de-venta no-imprimir">
       <div className="encabezado-venta">
         <h1>Punto de venta</h1>
         <div className="total-venta-destacado">Total: {formatoCLP(totalVenta)}</div>
@@ -918,5 +946,7 @@ export default function PuntoDeVenta() {
         />
       )}
     </div>
+    <div className="vale-oculto-hasta-imprimir">{ventaParaImprimir && <ValeVenta venta={ventaParaImprimir} />}</div>
+    </>
   );
 }

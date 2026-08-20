@@ -1770,3 +1770,37 @@ y termina el proceso) — un bug de robustez preexistente, no algo que esta
 ampliación haya introducido. **Pendiente:** decidir si vale la pena
 corregirlo (envolver ese llamado en un try/catch, o agregar un manejador
 global de errores no capturados).
+
+## Confirmar una venta ya no saca de Punto de Venta
+El usuario probó el sistema con normalidad y notó que, al confirmar una
+venta, la pantalla saltaba a "Buscar venta" para imprimir el vale — un
+paso extra e innecesario cuando lo urgente es seguir cobrando a la
+siguiente persona en la fila. Pidió explícitamente: imprimir el vale y
+quedarse en Punto de Venta, listo para la próxima venta, sin navegar a
+otra pantalla — confirmó con una captura de la pantalla vacía de Punto de
+Venta que ese es el estado al que debe volver solo.
+
+- **Vale extraído a un componente reutilizable** (`web/src/components/
+  ValeVenta.tsx`): el markup del vale (antes solo dentro de
+  `BuscarVenta.tsx`) se separó para poder reutilizarlo también en Punto de
+  Venta sin duplicar la tabla de productos, pagos, descuentos, etc.
+  `BuscarVenta.tsx` sigue funcionando igual (con sus botones Imprimir/
+  Anular), y de paso se le sacó el código que ya no se usa (leer
+  `?imprimir=<id>` de la URL — ya no lo manda nadie).
+- **Impresión en segundo plano, sin salir de la pantalla**
+  (`PuntoDeVenta.tsx`): al confirmar, en vez de `navigate("/caja/buscar
+  ?imprimir=...")`, el sistema pide el detalle de la venta recién
+  confirmada y lo guarda en un estado nuevo (`ventaParaImprimir`) que
+  renderiza un `<ValeVenta>` **oculto en pantalla** (clase nueva
+  `.vale-oculto-hasta-imprimir` en `styles.css`: `display: none` normal,
+  `display: block` solo dentro de `@media print`) — invisible para el
+  cajero, pero es lo que la impresión (`imprimirSilencioso()`) termina
+  capturando. Al mismo tiempo se llama a `iniciarVenta()` (la misma
+  función que ya arma una venta nueva vacía al entrar a la pantalla) para
+  dejar todo listo para el siguiente cliente, sin ningún salto de página.
+- **Probado de punta a punta con Playwright** contra el servidor de
+  desarrollo real (no simulado): confirmar una venta real dispara
+  exactamente una llamada a imprimir, la URL se queda en `/caja/venta`, el
+  total vuelve a $0 y el carrito muestra "Todavía no hay productos en el
+  carrito" — el mismo estado vacío que el usuario confirmó por captura de
+  pantalla como el correcto.
