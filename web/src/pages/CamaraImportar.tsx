@@ -174,10 +174,15 @@ export default function CamaraImportar() {
       {!resultado && !previsualizacion && (
         <section className="tarjeta">
           <p className="ayuda">
-            Para traer las cajas ya registradas en el sistema anterior (camara_actual_referencia.html): abre ese
-            archivo en el navegador, presiona F12 para abrir la consola, escribe{" "}
-            <code>copy(localStorage.getItem('granCarniceria_camara_v1')))</code> y presiona Enter (copia el
-            contenido solo). Pega ese contenido acá abajo, o súbelo como archivo .json si lo guardaste aparte.
+            Para traer las cajas ya registradas en el sistema anterior: abre ese archivo en el navegador, presiona
+            F12 para abrir la consola, escribe <code>copy(localStorage.getItem('granCarniceria_camara_v1')))</code> y
+            presiona Enter (copia el contenido solo). Pega ese contenido acá abajo, o súbelo como archivo .json si lo
+            guardaste aparte.
+          </p>
+          <p className="ayuda">
+            Si la consola no funcionó, también se acepta un resumen armado a mano a partir de fotos de la pantalla de
+            Existencias (totales por lote, sin peso individual por caja) — pégalo o súbelo igual, el sistema lo
+            reconoce solo.
           </p>
           <label>
             Archivo .json (opcional)

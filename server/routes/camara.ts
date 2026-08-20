@@ -1117,45 +1117,126 @@ function parsearJsonPrototipo(
   return { ok: true, cajas: validado.data.cajas };
 }
 
+// --- Importador de un "resumen transcrito desde capturas" ---
+//
+// Cuando el export directo de localStorage no funcionó (ej. el navegador
+// del prototipo no dejaba usar la consola), se puede armar a mano un JSON
+// con los totales por lote a partir de fotos de la pantalla de Existencias
+// del sistema anterior — sin peso individual por caja, solo totales por
+// lote (fecha, hora, familia, producto, cantidad de cajas, sus números, kg
+// totales y valor neto total). Mismo principio que el importador de
+// arriba (nunca adivina el producto, revisa conflictos de número de caja),
+// pero acá el peso de cada caja se reparte desde el total del lote
+// (repartirPesoKg, igual que en Entrada de cámara) porque no está
+// disponible por caja — y sí se crea el LoteCamara explícito, con los
+// datos reales del lote en vez de una reconstrucción heurística.
+
+const loteResumenSchema = z.object({
+  fecha: z.string(),
+  hora: z.string().optional(),
+  familia: z.string(),
+  producto: z.string(),
+  procedencia: z.string().optional(),
+  cantidad_cajas: z.number().int().positive(),
+  numeros_caja: z.array(z.string()).min(1),
+  kilos_totales: z.number().positive(),
+  total_neto: z.number().nonnegative(),
+});
+
+const dbResumenSchema = z.object({
+  lotes: z.array(loteResumenSchema),
+});
+
+type LoteResumen = z.infer<typeof loteResumenSchema>;
+
+function detectarFormatoImportacion(crudo: unknown): { formato: "prototipo" | "resumen" | "invalido"; parseado?: unknown } {
+  if (typeof crudo !== "string" || !crudo.trim()) return { formato: "invalido" };
+  let parseado: unknown;
+  try {
+    parseado = JSON.parse(crudo);
+  } catch {
+    return { formato: "invalido" };
+  }
+  if (parseado && typeof parseado === "object") {
+    if (Array.isArray((parseado as Record<string, unknown>).cajas)) return { formato: "prototipo", parseado };
+    if (Array.isArray((parseado as Record<string, unknown>).lotes)) return { formato: "resumen", parseado };
+  }
+  return { formato: "invalido", parseado };
+}
+
+function parsearJsonResumen(parseado: unknown): { ok: true; lotes: LoteResumen[] } | { ok: false; error: string } {
+  const validado = dbResumenSchema.safeParse(parseado);
+  if (!validado.success) {
+    return { ok: false, error: "El JSON no tiene la forma esperada (¿es realmente el resumen de la cámara anterior?)" };
+  }
+  for (const lote of validado.data.lotes) {
+    if (lote.numeros_caja.length !== lote.cantidad_cajas) {
+      return {
+        ok: false,
+        error: `El lote de "${lote.producto}" dice ${lote.cantidad_cajas} caja(s) pero trae ${lote.numeros_caja.length} número(s) de caja — revisa el archivo`,
+      };
+    }
+    if (lote.familia === "Vacuno" && !lote.procedencia) {
+      return {
+        ok: false,
+        error: `El lote de "${lote.producto}" es familia Vacuno pero no indica procedencia (Nacional/Brasil/Paraguay) — agrégala al archivo antes de importar`,
+      };
+    }
+  }
+  return { ok: true, lotes: validado.data.lotes };
+}
+
 camaraRouter.post("/importar-prototipo/previsualizar", async (req, res) => {
-  const resultado = parsearJsonPrototipo(req.body?.json);
-  if (!resultado.ok) return res.status(400).json({ error: resultado.error });
-  const cajasPrototipo = resultado.cajas;
+  const { formato, parseado } = detectarFormatoImportacion(req.body?.json);
+  if (formato === "invalido") {
+    return res.status(400).json({ error: "Pega el contenido exportado del sistema anterior (JSON válido)" });
+  }
 
-  const idsNumericos = cajasPrototipo.map((c) => Number(c.id)).filter((n) => Number.isInteger(n));
-  const existentes = idsNumericos.length
-    ? await prisma.cajaCamara.findMany({ where: { id: { in: idsNumericos } }, select: { id: true } })
-    : [];
-  const cajasConConflicto = existentes.map((c) => c.id);
-
-  // Agrupar por producto+familia — se pide UNA sola confirmación de mapeo
-  // por grupo, no una por cada caja individual (puede haber decenas de
-  // cajas del mismo corte).
   const productosActivos = await prisma.producto.findMany({ where: { activo: true } });
   const porDescripcion = new Map(productosActivos.map((p) => [p.descripcion.trim().toLowerCase(), p]));
 
-  const grupos = new Map<
-    string,
-    { clave: string; familia: string; producto: string; cantidadCajas: number; productoIdSugerido: number | null; productoSugerido: string | null }
-  >();
-  for (const c of cajasPrototipo) {
-    const clave = claveGrupoPrototipo(c.familia, c.producto);
+  type Grupo = { clave: string; familia: string; producto: string; cantidadCajas: number; productoIdSugerido: number | null; productoSugerido: string | null };
+  const grupos = new Map<string, Grupo>();
+  function acumular(familia: string, producto: string, cantidad: number) {
+    const clave = claveGrupoPrototipo(familia, producto);
     if (!grupos.has(clave)) {
-      const match = porDescripcion.get(c.producto.trim().toLowerCase());
+      const match = porDescripcion.get(producto.trim().toLowerCase());
       grupos.set(clave, {
         clave,
-        familia: c.familia,
-        producto: c.producto,
+        familia,
+        producto,
         cantidadCajas: 0,
         productoIdSugerido: match ? match.id : null,
         productoSugerido: match ? match.descripcion : null,
       });
     }
-    grupos.get(clave)!.cantidadCajas++;
+    grupos.get(clave)!.cantidadCajas += cantidad;
   }
 
+  let totalCajas = 0;
+  let idsNumericos: number[] = [];
+
+  if (formato === "prototipo") {
+    const resultado = parsearJsonPrototipo(req.body?.json);
+    if (!resultado.ok) return res.status(400).json({ error: resultado.error });
+    for (const c of resultado.cajas) acumular(c.familia, c.producto, 1);
+    idsNumericos = resultado.cajas.map((c) => Number(c.id)).filter((n) => Number.isInteger(n));
+    totalCajas = resultado.cajas.length;
+  } else {
+    const resultado = parsearJsonResumen(parseado);
+    if (!resultado.ok) return res.status(400).json({ error: resultado.error });
+    for (const l of resultado.lotes) acumular(l.familia, l.producto, l.cantidad_cajas);
+    idsNumericos = resultado.lotes.flatMap((l) => l.numeros_caja.map((n) => Number(n))).filter((n) => Number.isInteger(n));
+    totalCajas = idsNumericos.length;
+  }
+
+  const existentes = idsNumericos.length
+    ? await prisma.cajaCamara.findMany({ where: { id: { in: idsNumericos } }, select: { id: true } })
+    : [];
+  const cajasConConflicto = existentes.map((c) => c.id);
+
   res.json({
-    totalCajas: cajasPrototipo.length,
+    totalCajas,
     cajasConConflicto,
     grupos: [...grupos.values()],
   });
@@ -1175,92 +1256,180 @@ camaraRouter.post("/importar-prototipo/confirmar", async (req, res) => {
   const usuario = await validarUsuario(usuarioId);
   if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
 
-  const resultado = parsearJsonPrototipo(parsed.data.json);
-  if (!resultado.ok) return res.status(400).json({ error: resultado.error });
-  const cajasPrototipo = resultado.cajas;
+  const { formato, parseado } = detectarFormatoImportacion(parsed.data.json);
+  if (formato === "invalido") {
+    return res.status(400).json({ error: "Pega el contenido exportado del sistema anterior (JSON válido)" });
+  }
 
   const mapaProducto = new Map(mapeo.map((m) => [m.clave, m.productoId]));
-
-  const idsNumericos = cajasPrototipo.map((c) => Number(c.id)).filter((n) => Number.isInteger(n));
-  const existentes = idsNumericos.length
-    ? await prisma.cajaCamara.findMany({ where: { id: { in: idsNumericos } }, select: { id: true } })
-    : [];
-  const idsConflicto = new Set(existentes.map((c) => c.id));
-
   let importadas = 0;
   const omitidasPorConflicto: number[] = [];
   const omitidasPorProducto: number[] = [];
 
-  await prisma.$transaction(async (tx) => {
-    for (const c of cajasPrototipo) {
-      const idNum = Number(c.id);
-      if (!Number.isInteger(idNum)) continue;
-      if (idsConflicto.has(idNum)) {
-        omitidasPorConflicto.push(idNum);
-        continue;
-      }
-      const productoId = mapaProducto.get(claveGrupoPrototipo(c.familia, c.producto));
-      if (!productoId) {
-        omitidasPorProducto.push(idNum);
-        continue;
-      }
+  if (formato === "prototipo") {
+    const resultado = parsearJsonPrototipo(parsed.data.json);
+    if (!resultado.ok) return res.status(400).json({ error: resultado.error });
+    const cajasPrototipo = resultado.cajas;
 
-      const pesoInicial = c.pesoInicial;
-      const saldo = Math.max(0, c.saldo);
-      const estado = saldo <= EPSILON_KG ? "salida" : saldo < pesoInicial - EPSILON_KG ? "parcial" : "en_camara";
-      const fechaIngreso = new Date(c.ingreso);
+    const idsNumericos = cajasPrototipo.map((c) => Number(c.id)).filter((n) => Number.isInteger(n));
+    const existentes = idsNumericos.length
+      ? await prisma.cajaCamara.findMany({ where: { id: { in: idsNumericos } }, select: { id: true } })
+      : [];
+    const idsConflicto = new Set(existentes.map((c) => c.id));
 
-      await tx.cajaCamara.create({
-        data: {
-          id: idNum,
-          productoId,
-          familiaNombre: c.familia,
-          fechaIngreso,
-          pesoInicialKg: pesoInicial,
-          saldoKg: saldo,
-          costoNetoKg: c.costo,
-          estado,
-          pesoEstimado: c.pesoEstimado ?? false,
-          creadoPorId: usuarioId,
-        },
-      });
+    await prisma.$transaction(async (tx) => {
+      for (const c of cajasPrototipo) {
+        const idNum = Number(c.id);
+        if (!Number.isInteger(idNum)) continue;
+        if (idsConflicto.has(idNum)) {
+          omitidasPorConflicto.push(idNum);
+          continue;
+        }
+        const productoId = mapaProducto.get(claveGrupoPrototipo(c.familia, c.producto));
+        if (!productoId) {
+          omitidasPorProducto.push(idNum);
+          continue;
+        }
 
-      await tx.movimientoCamara.create({
-        data: {
-          cajaId: idNum,
-          tipo: "entrada",
-          pesoKg: pesoInicial,
-          destino: "camara",
-          motivo: "Importado del sistema anterior",
-          usuarioId,
-          claveIdempotencia: randomUUID(),
-          creadoEn: fechaIngreso,
-        },
-      });
+        const pesoInicial = c.pesoInicial;
+        const saldo = Math.max(0, c.saldo);
+        const estado = saldo <= EPSILON_KG ? "salida" : saldo < pesoInicial - EPSILON_KG ? "parcial" : "en_camara";
+        const fechaIngreso = new Date(c.ingreso);
 
-      // No se migra el historial de salidas del prototipo tal cual (los
-      // destinos registrados ahí no calzan uno a uno con los del sistema
-      // nuevo) — se resume en un solo movimiento que deja el saldo
-      // correcto y auditado, aclarando en el motivo que el detalle
-      // original no se migró.
-      if (saldo < pesoInicial - EPSILON_KG) {
+        await tx.cajaCamara.create({
+          data: {
+            id: idNum,
+            productoId,
+            familiaNombre: c.familia,
+            fechaIngreso,
+            pesoInicialKg: pesoInicial,
+            saldoKg: saldo,
+            costoNetoKg: c.costo,
+            estado,
+            pesoEstimado: c.pesoEstimado ?? false,
+            creadoPorId: usuarioId,
+          },
+        });
+
         await tx.movimientoCamara.create({
           data: {
             cajaId: idNum,
-            tipo: saldo <= EPSILON_KG ? "salida_completa" : "salida_parcial",
-            pesoKg: Math.round((pesoInicial - saldo) * 1000) / 1000,
-            origen: "camara",
-            destino: "otro",
-            motivo: "Salida registrada en el sistema anterior (detalle no migrado)",
+            tipo: "entrada",
+            pesoKg: pesoInicial,
+            destino: "camara",
+            motivo: "Importado del sistema anterior",
             usuarioId,
             claveIdempotencia: randomUUID(),
+            creadoEn: fechaIngreso,
           },
         });
-      }
 
-      importadas++;
-    }
-  });
+        // No se migra el historial de salidas del prototipo tal cual (los
+        // destinos registrados ahí no calzan uno a uno con los del sistema
+        // nuevo) — se resume en un solo movimiento que deja el saldo
+        // correcto y auditado, aclarando en el motivo que el detalle
+        // original no se migró.
+        if (saldo < pesoInicial - EPSILON_KG) {
+          await tx.movimientoCamara.create({
+            data: {
+              cajaId: idNum,
+              tipo: saldo <= EPSILON_KG ? "salida_completa" : "salida_parcial",
+              pesoKg: Math.round((pesoInicial - saldo) * 1000) / 1000,
+              origen: "camara",
+              destino: "otro",
+              motivo: "Salida registrada en el sistema anterior (detalle no migrado)",
+              usuarioId,
+              claveIdempotencia: randomUUID(),
+            },
+          });
+        }
+
+        importadas++;
+      }
+    });
+  } else {
+    const resultado = parsearJsonResumen(parseado);
+    if (!resultado.ok) return res.status(400).json({ error: resultado.error });
+    const lotes = resultado.lotes;
+
+    const idsNumericos = lotes.flatMap((l) => l.numeros_caja.map((n) => Number(n)));
+    const existentes = idsNumericos.length
+      ? await prisma.cajaCamara.findMany({ where: { id: { in: idsNumericos } }, select: { id: true } })
+      : [];
+    const idsConflicto = new Set(existentes.map((c) => c.id));
+
+    await prisma.$transaction(async (tx) => {
+      for (const lote of lotes) {
+        const numerosLote = lote.numeros_caja.map((n) => Number(n));
+        const productoId = mapaProducto.get(claveGrupoPrototipo(lote.familia, lote.producto));
+        const indicesSinConflicto = numerosLote
+          .map((n, i) => ({ n, i }))
+          .filter(({ n }) => !idsConflicto.has(n));
+
+        for (const { n } of numerosLote.map((n) => ({ n })).filter(({ n }) => idsConflicto.has(n))) {
+          omitidasPorConflicto.push(n);
+        }
+        if (!productoId) {
+          for (const { n } of indicesSinConflicto) omitidasPorProducto.push(n);
+          continue;
+        }
+        if (indicesSinConflicto.length === 0) continue;
+
+        const costoNetoKg = lote.total_neto / lote.kilos_totales;
+        const fechaIngreso = new Date(`${lote.fecha}T${lote.hora ?? "00:00"}:00`);
+        const pesos = repartirPesoKg(lote.kilos_totales, lote.cantidad_cajas);
+        const pesoTotalCreado = Math.round(indicesSinConflicto.reduce((s, { i }) => s + pesos[i], 0) * 1000) / 1000;
+
+        const loteCreado = await tx.loteCamara.create({
+          data: {
+            productoId,
+            familiaNombre: lote.familia,
+            procedencia: lote.procedencia ?? null,
+            cantidadCajas: indicesSinConflicto.length,
+            pesoTotalKg: pesoTotalCreado,
+            costoNetoKg,
+            totalNeto: Math.round(pesoTotalCreado * costoNetoKg),
+            fechaIngreso,
+            creadoPorId: usuarioId,
+            reconstruido: false,
+          },
+        });
+
+        for (const { n, i } of indicesSinConflicto) {
+          const peso = pesos[i];
+          await tx.cajaCamara.create({
+            data: {
+              id: n,
+              loteId: loteCreado.id,
+              productoId,
+              familiaNombre: lote.familia,
+              procedencia: lote.procedencia ?? null,
+              fechaIngreso,
+              pesoInicialKg: peso,
+              saldoKg: peso,
+              costoNetoKg,
+              estado: "en_camara",
+              pesoEstimado: true,
+              creadoPorId: usuarioId,
+            },
+          });
+          await tx.movimientoCamara.create({
+            data: {
+              cajaId: n,
+              tipo: "entrada",
+              pesoKg: peso,
+              destino: "camara",
+              motivo: "Importado del sistema anterior (resumen transcrito de capturas, sin peso individual por caja)",
+              usuarioId,
+              claveIdempotencia: randomUUID(),
+              creadoEn: fechaIngreso,
+            },
+          });
+          importadas++;
+        }
+      }
+    });
+  }
 
   res.json({ importadas, omitidasPorConflicto, omitidasPorProducto });
 });

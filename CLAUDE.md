@@ -1988,3 +1988,49 @@ familia, ej. "Vacuno · Brasil") y como columna en "Revisar entradas". El
 asistente de IA también la conoce: `consultar_camara` la incluye en la
 respuesta y `proponer_entrada_camara` la pide (obligatoria solo si la
 familia es Vacuno).
+
+## Importar cámara: también acepta un resumen transcrito a mano (sin consola)
+El usuario intentó exportar las cajas ya cargadas en el archivo de su papá
+con el método de siempre (consola del navegador,
+`copy(localStorage.getItem(...))`), pero no funcionó — la consola no le
+devolvía los datos. Como alternativa, armó (con otra conversación, a partir
+de fotos de la pantalla de Existencias) un JSON con los **totales por
+lote** (fecha, hora, familia, producto, cantidad de cajas, sus números,
+kilos totales y valor neto total) — sin el peso individual de cada caja,
+que las capturas no mostraban.
+
+**La pantalla "Importar del sistema anterior" ahora acepta los dos
+formatos**, detectando solo con el JSON pegado cuál es cuál (`server/routes/
+camara.ts`, `detectarFormatoImportacion`): si trae un arreglo `cajas` es el
+volcado crudo de siempre; si trae un arreglo `lotes` es este resumen
+transcrito nuevo. Mismo flujo de dos pasos (previsualizar → confirmar),
+mismo principio de nunca adivinar (revisa conflicto de número de caja,
+nunca asigna un producto sin que la persona lo confirme) — la pantalla no
+necesitó ningún cambio, ambos formatos devuelven la misma forma de
+respuesta.
+
+Diferencias de este camino nuevo, por no tener el peso de cada caja:
+- El peso total del lote se reparte entre sus cajas con la misma función
+  ya usada en Entrada de cámara (`repartirPesoKg`, sin perder ni un gramo
+  por redondeo) y quedan marcadas `pesoEstimado: true`.
+- El costo neto por kilo se calcula como `total_neto ÷ kilos_totales` del
+  lote.
+- A diferencia del importador original (que no crea `LoteCamara`, porque el
+  volcado crudo no tenía el concepto de lote y se apoya en la
+  reconstrucción automática al iniciar el programa), este camino sí crea el
+  `LoteCamara` real y explícito por cada lote del resumen — con sus datos
+  reales, no una reconstrucción heurística.
+- Si un lote es familia Vacuno, exige que el JSON traiga también su
+  procedencia (el resumen no la tenía en este caso porque los lotes reales
+  eran Cerdo y Pollo) — se rechaza con un mensaje claro en vez de
+  inventarla.
+
+Probado de punta a punta contra el backend real con el archivo real que
+mandó el usuario (35 cajas en 8 lotes, Cerdo y Pollo): detecta el formato
+solo, agrupa y sugiere producto correctamente (match exacto insensible a
+mayúsculas para los que ya existían con el mismo nombre en el catálogo de
+prueba), reparte el peso de cada lote exacto (ej. 209,48 kg entre 10 cajas
+→ 20,948 kg cada una, suma exacta), calcula el costo neto correctamente, no
+crea ningún lote para el grupo que se dejó sin producto elegido a
+propósito, y crea el resto (32 cajas, 7 lotes) con `pesoEstimado: true` y
+`procedencia: null`.
