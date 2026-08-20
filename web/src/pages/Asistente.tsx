@@ -1,6 +1,13 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { api, formatoCLP, type PropuestaAsistente, type DestinoSalidaCamara } from "../api";
+import {
+  api,
+  formatoCLP,
+  type PropuestaAsistente,
+  type DestinoSalidaCamara,
+  type FamiliaCamara,
+  type ProcedenciaCamara,
+} from "../api";
 import { useUsuario } from "../context/UsuarioContext";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 
@@ -142,6 +149,8 @@ async function ejecutarPropuesta(accion: PropuestaAsistente["accion"], usuarioId
     case "proponer_entrada_camara":
       await api.camara.entradaLote({
         productoId: Number(d.productoId),
+        familia: d.familia as FamiliaCamara,
+        ...(d.procedencia != null ? { procedencia: d.procedencia as ProcedenciaCamara } : {}),
         cantidadCajas: Number(d.cantidadCajas),
         ...(d.pesoTotalKg != null ? { pesoTotalKg: Number(d.pesoTotalKg) } : {}),
         ...(d.pesoIndividualKg != null ? { pesoIndividualKg: Number(d.pesoIndividualKg) } : {}),

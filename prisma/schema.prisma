@@ -32,6 +32,8 @@ model Usuario {
   gastos                     Gasto[]
 
   cajasCamaraCreadas          CajaCamara[]
+  lotesCamaraCreados          LoteCamara[]
+  correccionesLoteCamara      CorreccionLoteCamara[]
   movimientosCamara           MovimientoCamara[]
   sesionesCamaraIniciadas     SesionInventarioCamara[]  @relation("SesionesCamaraIniciadasPorUsuario")
   sesionesCamaraFinalizadas   SesionInventarioCamara[]  @relation("SesionesCamaraFinalizadasPorUsuario")
@@ -110,6 +112,7 @@ model Producto {
   itemsVenta            ItemVenta[]
 
   cajasCamara       CajaCamara[]
+  lotesCamara       LoteCamara[]
   salidasMayoristas SalidaMayorista[]
 }
 
@@ -332,6 +335,73 @@ model PagoVenta {
 // aumente el stock vendible (Producto.stockActual) — igual que cualquier
 // otra entrada. Ver server/routes/camara.ts para la lógica de cada flujo.
 
+// Agrupa las cajas que se ingresaron juntas en una misma entrada (mismo
+// producto, familia, peso total y costo neto) — para poder corregir,
+// reimprimir o anular todas sus cajas de una vez, igual que el sistema que
+// ya usaba el papá del usuario antes de este. Las cajas siguen siendo el
+// registro real de stock (CajaCamara); el lote es solo el "grupo" al que
+// pertenecen, y por sí solo no tiene saldo ni movimientos propios.
+model LoteCamara {
+  id Int @id @default(autoincrement())
+
+  productoId Int
+  producto   Producto @relation(fields: [productoId], references: [id])
+
+  familiaNombre String // Vacuno | Cerdo | Pollo | Otros
+
+  // Solo aplica (y es obligatorio) para familia "Vacuno" — de dónde viene
+  // la carne: Nacional, Brasil o Paraguay. Null para las demás familias.
+  procedencia String?
+
+  cantidadCajas Int
+  pesoTotalKg   Float
+  costoNetoKg   Float
+  totalNeto     Float // round(pesoTotalKg * costoNetoKg)
+
+  fechaIngreso DateTime @default(now())
+
+  creadoPorId Int
+  creadoPor   Usuario @relation(fields: [creadoPorId], references: [id])
+
+  // Verdadero para lotes armados automáticamente al agrupar cajas que ya
+  // existían antes de que este modelo se agregara — informativo, no cambia
+  // ningún comportamiento (ver server/lib/migraciones.ts).
+  reconstruido Boolean @default(false)
+
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  cajas        CajaCamara[]
+  correcciones CorreccionLoteCamara[]
+}
+
+// Historial de correcciones a un lote — nunca se sobrescribe el lote sin
+// dejar rastro, se agrega un registro nuevo por cada corrección (mismo
+// principio que HistorialPrecio para productos).
+model CorreccionLoteCamara {
+  id Int @id @default(autoincrement())
+
+  loteId Int
+  lote   LoteCamara @relation(fields: [loteId], references: [id])
+
+  familiaAnterior     String
+  procedenciaAnterior String?
+  productoAnterior    String // nombre del producto al momento de corregir, no un id — es solo un dato histórico para mostrar
+  pesoTotalAnteriorKg Float
+  costoAnteriorKg     Float
+
+  familiaNueva     String
+  procedenciaNueva String?
+  productoNuevo    String
+  pesoTotalNuevoKg Float
+  costoNuevoKg     Float
+
+  usuarioId Int
+  usuario   Usuario @relation(fields: [usuarioId], references: [id])
+
+  creadoEn DateTime @default(now())
+}
+
 // El número de caja de 6 dígitos que se imprime en la etiqueta se deriva
 // del id (ej. id 28 → "000028") en el código de la aplicación, no se guarda
 // aparte — id ya es único, inmutable y lo asigna la base de datos sola
@@ -342,17 +412,32 @@ model CajaCamara {
   productoId Int
   producto   Producto @relation(fields: [productoId], references: [id])
 
-  // Instantánea del nombre de la categoría (familia) al momento de ingresar
-  // — si el producto cambia de categoría después, esta caja conserva la
-  // familia que tenía cuando entró a cámara.
+  // El lote agrupa las cajas que se ingresaron juntas en una misma entrada
+  // (mismo producto, familia, peso total y costo) — permite corregir,
+  // reimprimir o anular todas sus cajas de una vez. Opcional solo por las
+  // cajas que ya existían antes de que este campo se agregara (se les
+  // reconstruye un lote propio automáticamente al iniciar el programa, ver
+  // server/lib/migraciones.ts) — toda caja nueva siempre tiene lote.
+  loteId Int?
+  lote   LoteCamara? @relation(fields: [loteId], references: [id])
+
+  // Familia fija elegida a mano al ingresar (Vacuno/Cerdo/Pollo/Otros) —
+  // antes se sacaba sola de la categoría del producto; se guarda igual en
+  // este campo para no duplicar la idea de "instantánea que no cambia si
+  // el producto se recategoriza después".
   familiaNombre String
+
+  // Solo aplica (y es obligatorio) para familia "Vacuno": Nacional, Brasil
+  // o Paraguay — para saber de dónde viene esa carne. Null en las demás
+  // familias.
+  procedencia String?
 
   fechaIngreso  DateTime @default(now())
   pesoInicialKg Float
   saldoKg       Float
   costoNetoKg   Float
 
-  // "en_camara" | "parcial" | "salida" | "ajuste_pendiente"
+  // "en_camara" | "parcial" | "salida" | "ajuste_pendiente" | "anulada"
   estado String @default("en_camara")
 
   // Verdadero si el peso se repartió desde un total de lote (ej. factura

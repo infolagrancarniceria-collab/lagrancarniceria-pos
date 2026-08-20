@@ -38,6 +38,8 @@ import CamaraInventario from "./pages/CamaraInventario";
 import CamaraAjustesPendientes from "./pages/CamaraAjustesPendientes";
 import CamaraImportar from "./pages/CamaraImportar";
 import CamaraEntradas from "./pages/CamaraEntradas";
+import CamaraExistencias from "./pages/CamaraExistencias";
+import CamaraReporteSalidas from "./pages/CamaraReporteSalidas";
 
 export default function App() {
   // En "modo caja exclusiva" (ver web/src/lib/modoCaja.ts), este PC arranca
@@ -84,6 +86,8 @@ export default function App() {
             <Route path="/camara/ajustes-pendientes" element={<CamaraAjustesPendientes />} />
             <Route path="/camara/importar" element={<CamaraImportar />} />
             <Route path="/camara/entradas" element={<CamaraEntradas />} />
+            <Route path="/camara/existencias" element={<CamaraExistencias />} />
+            <Route path="/camara/reporte-salidas" element={<CamaraReporteSalidas />} />
             <Route path="/configuracion" element={<Configuracion />} />
           </Route>
         </Route>

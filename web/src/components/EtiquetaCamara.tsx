@@ -4,6 +4,7 @@ interface Props {
   numero: string;
   producto: string;
   familia: string;
+  procedencia?: string | null;
   fechaIngreso: string;
   pesoInicialKg: number;
   pesoEstimado: boolean;
@@ -15,7 +16,16 @@ interface Props {
 // Solo la etiqueta con imprimiendo=true queda visible durante la impresión
 // (ver ".etiqueta" / ".etiqueta.imprimir-ahora" en styles.css) — las demás
 // quedan igual en pantalla, para poder revisarlas o reimprimirlas después.
-export function EtiquetaCamara({ numero, producto, familia, fechaIngreso, pesoInicialKg, pesoEstimado, imprimiendo }: Props) {
+export function EtiquetaCamara({
+  numero,
+  producto,
+  familia,
+  procedencia,
+  fechaIngreso,
+  pesoInicialKg,
+  pesoEstimado,
+  imprimiendo,
+}: Props) {
   return (
     <div className={`etiqueta${imprimiendo ? " imprimir-ahora" : ""}`}>
       <h3>LA GRAN CARNICERÍA</h3>
@@ -24,7 +34,7 @@ export function EtiquetaCamara({ numero, producto, familia, fechaIngreso, pesoIn
       </div>
       <div className="fila-etiqueta producto">
         <b>{producto}</b>
-        <span>{familia}</span>
+        <span>{procedencia ? `${familia} · ${procedencia}` : familia}</span>
       </div>
       <div className="fila-etiqueta">
         <span>

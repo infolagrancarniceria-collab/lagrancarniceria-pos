@@ -416,30 +416,33 @@ export const herramientas: Anthropic.Tool[] = [
   },
   {
     name: "proponer_entrada_camara",
-    description: "Propone registrar la entrada de un lote de cajas a la cámara frigorífica. No la registra todavía. Usar buscar_productos primero para tener el productoId.",
+    description:
+      "Propone registrar la entrada de un lote de cajas a la cámara frigorífica. No la registra todavía. Usar buscar_productos primero para tener el productoId. Si familia es 'Vacuno', procedencia es obligatoria (Nacional, Brasil o Paraguay); para las demás familias no se debe incluir.",
     input_schema: {
       type: "object",
       properties: {
         productoId: { type: "integer" },
+        familia: { type: "string", enum: ["Vacuno", "Cerdo", "Pollo", "Otros"] },
+        procedencia: { type: "string", enum: ["Nacional", "Brasil", "Paraguay"], description: "Obligatoria solo si familia es 'Vacuno'" },
         cantidadCajas: { type: "integer", description: "Cantidad de cajas del lote" },
         pesoTotalKg: { type: "number", description: "Peso total del lote — usar esto O pesoIndividualKg, nunca ambos" },
         pesoIndividualKg: { type: "number", description: "Peso de cada caja, si se pesó cada una por separado" },
         costoNetoKg: { type: "number" },
         resumen: { type: "string" },
       },
-      required: ["productoId", "cantidadCajas", "costoNetoKg", "resumen"],
+      required: ["productoId", "familia", "cantidadCajas", "costoNetoKg", "resumen"],
     },
   },
   {
     name: "proponer_salida_camara",
     description:
-      "Propone sacar peso de UNA caja de la cámara frigorífica (completa o parcial) con destino a sala de venta, producción, merma, donación o venta por mayor. No la registra todavía. Usar consultar_camara primero para tener el cajaId y su version exactos — nunca adivinarlos. Si el destino es 'mayorista', hay que incluir también los datos de esa venta.",
+      "Propone sacar peso de UNA caja de la cámara frigorífica (completa o parcial) con destino a sala de venta, producción, merma, donación, venta por mayor u otro. No la registra todavía. Usar consultar_camara primero para tener el cajaId y su version exactos — nunca adivinarlos. Si el destino es 'mayorista', hay que incluir también los datos de esa venta.",
     input_schema: {
       type: "object",
       properties: {
         cajaId: { type: "integer" },
         version: { type: "integer", description: "La version de la caja, tal como la devolvió consultar_camara" },
-        destino: { type: "string", enum: ["sala_venta", "produccion", "merma", "donacion", "mayorista"] },
+        destino: { type: "string", enum: ["sala_venta", "produccion", "merma", "donacion", "mayorista", "otro"] },
         pesoKg: { type: "number", description: "Opcional — si no se indica, se saca el saldo completo de la caja" },
         motivo: { type: "string", description: "Opcional" },
         mayorista: {
@@ -660,6 +663,7 @@ export async function ejecutarHerramientaLectura(nombre: string, input: Record<s
         numero: String(c.id).padStart(6, "0"),
         producto: c.producto.descripcion,
         familia: c.familiaNombre,
+        procedencia: c.procedencia,
         fechaIngreso: c.fechaIngreso.toISOString(),
         saldoKg: c.saldoKg,
         estado: c.estado,

@@ -25,7 +25,7 @@ import { balanzaRouter } from "./routes/balanza";
 import { gastosRouter } from "./routes/gastos";
 import { comunasRouter } from "./routes/comunas";
 import { camaraRouter } from "./routes/camara";
-import { aplicarMigracionesPendientes } from "./lib/migraciones";
+import { aplicarMigracionesPendientes, reconstruirLotesCamaraFaltantes } from "./lib/migraciones";
 
 const app = express();
 const PORT = Number(process.env.PORT) || 5175;
@@ -120,6 +120,11 @@ export async function iniciarServidor(): Promise<void> {
     ? path.join(resourcesPath, "migrations")
     : path.join(__dirname, "../prisma/migrations");
   await aplicarMigracionesPendientes(carpetaMigraciones);
+  // Le agrega un lote a las cajas de cámara que ya existían antes de que
+  // ese concepto se agregara — ver el comentario de la función para el
+  // detalle de por qué es seguro y por qué no hace falta hacerlo desde una
+  // migración .sql.
+  await reconstruirLotesCamaraFaltantes();
 
   return new Promise((resolve) => {
     app.listen(PORT, "0.0.0.0", () => {

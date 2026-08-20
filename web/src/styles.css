@@ -641,6 +641,26 @@ select {
   gap: 0.5rem;
 }
 
+/* Fila de subtotal por familia, en la tabla de Existencias. */
+.fila-total td {
+  font-weight: 900;
+  background: #f5efe8;
+}
+
+/* Sección desplegable "Ver lotes ingresados", en Existencias. */
+.detalle-lotes {
+  margin-top: 1.5rem;
+  border: 1px solid #e2d8cd;
+  border-radius: 10px;
+  background: #fffaf1;
+  padding: 0.25rem 1rem 1rem;
+}
+.detalle-lotes summary {
+  cursor: pointer;
+  padding: 0.75rem 0;
+  font-weight: 800;
+}
+
 @media print {
   /* Impresora térmica de boletas, rollo continuo de 80mm — "auto" en el
      alto le dice al navegador que corte la página apenas termina el
@@ -678,5 +698,16 @@ select {
   }
   .etiquetas-camara .etiqueta.imprimir-ahora {
     display: block !important;
+  }
+  /* "Imprimir lote completo": varias etiquetas quedan marcadas
+     imprimir-ahora a la vez — cada una en su propia página, para que no se
+     corten entre sí. */
+  .etiquetas-camara.imprimiendo-lote .etiqueta.imprimir-ahora {
+    break-after: page;
+    page-break-after: always;
+  }
+  .etiquetas-camara.imprimiendo-lote .etiqueta.imprimir-ahora:last-child {
+    break-after: auto;
+    page-break-after: auto;
   }
 }

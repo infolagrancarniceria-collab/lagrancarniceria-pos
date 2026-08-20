@@ -113,6 +113,7 @@ export default function CamaraEntradas() {
             <th>Caja</th>
             <th>Producto</th>
             <th>Familia</th>
+            <th>Procedencia</th>
             <th>Ingreso</th>
             <th>Peso inicial (kg)</th>
             <th>Saldo (kg)</th>
@@ -125,7 +126,7 @@ export default function CamaraEntradas() {
         <tbody>
           {cajas.length === 0 && !cargando && (
             <tr>
-              <td colSpan={10}>Sin cajas en este rango.</td>
+              <td colSpan={11}>Sin cajas en este rango.</td>
             </tr>
           )}
           {cajas.map((c) => (
@@ -133,6 +134,7 @@ export default function CamaraEntradas() {
               <td>{String(c.id).padStart(6, "0")}</td>
               <td>{c.producto.descripcion}</td>
               <td>{c.familiaNombre}</td>
+              <td>{c.procedencia ?? "—"}</td>
               <td>{new Date(c.fechaIngreso).toLocaleString("es-CL")}</td>
               <td>{c.pesoInicialKg.toFixed(3)}</td>
               <td>{c.saldoKg.toFixed(3)}</td>

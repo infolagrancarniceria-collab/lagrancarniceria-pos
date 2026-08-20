@@ -13,6 +13,7 @@ const DESTINOS: { valor: DestinoSalidaCamara; etiqueta: string }[] = [
   { valor: "merma", etiqueta: "Merma" },
   { valor: "donacion", etiqueta: "Donación" },
   { valor: "mayorista", etiqueta: "Venta por mayor" },
+  { valor: "otro", etiqueta: "Otro" },
 ];
 
 export default function CamaraSalida() {

@@ -1894,3 +1894,97 @@ al mismo endpoint (`POST /api/productos`) que usaría una persona creando un
 producto a mano desde la pantalla de Productos — mismas validaciones
 (PLU/código de barras duplicado, categoría inexistente, código de barras
 solo permitido si Flag Balanza es NORMAL).
+
+## Cámara: ajustado al sistema que ya usaba el papá del usuario, en paralelo
+El papá del usuario venía trabajando, en paralelo, en su propio archivo
+HTML de referencia (`camara_prueba_3_una_etiqueta...html`, con el mismo
+mecanismo de `localStorage` que el prototipo original ya portado) —
+evolucionado con ideas propias (agrupar cajas en "lotes", familia como
+lista fija, corregir/reimprimir/anular un lote completo). El usuario pidió
+que el módulo ya construido se ajustara para quedar "igual o lo más
+similar posible" a ese archivo, ya que su papá se familiarizó con ese
+flujo. Antes de tocar código se le mandó el README y luego el HTML real
+para revisar, y se hicieron varias preguntas de alcance antes de
+implementar — respuestas: replicar fiel (aunque cambie el modelo de
+datos), familia como lista fija, **seguir usando el catálogo real de
+Productos** (no adoptar el catálogo simple del prototipo, que era solo
+nombre+familia sin PLU/precio — necesario para que "Salida → Sala de
+venta" siga sumando stock al producto vendible correcto), y agregar
+Corregir/Reimprimir/Anular a nivel de lote. Confirmado con el usuario que
+las pocas cajas de prueba que su papá alcanzó a cargar en ese archivo no
+hacía falta migrarlas.
+
+- **`LoteCamara`** (tabla nueva): agrupa las cajas que entraron juntas en
+  una misma entrada (producto, familia, cantidad, peso total, costo, total
+  neto). Las cajas (`CajaCamara`) siguen siendo el registro real de stock;
+  el lote es solo el "grupo" al que pertenecen — no tiene saldo ni
+  movimientos propios. `CajaCamara.loteId` es opcional solo por las cajas
+  que ya existían antes de este campo: al iniciar el programa,
+  `reconstruirLotesCamaraFaltantes()` (`server/lib/migraciones.ts`) les
+  arma un lote automáticamente agrupándolas por producto/familia/
+  procedencia/costo/usuario y cercanía en el tiempo de ingreso (ventana de
+  5 minutos, el margen real entre cajas de un mismo lote creado por el
+  for-loop de la entrada) — si la agrupación no calza perfecto en algún
+  caso raro, el peor resultado es un lote de una sola caja, nunca se
+  pierde ni se altera ningún dato. Se corre en cada arranque pero es
+  segura de repetir (no hace nada si ya no quedan cajas sin lote).
+  Verificado con la base de datos de prueba real: 72 cajas sin lote se
+  agruparon en 21 lotes, con la suma de kilos exactamente igual antes y
+  después, y una segunda llamada no crea nada más.
+- **Familia fija**: pasó de sacarse sola de la categoría del producto
+  (`obtenerCategoriaRaiz`) a una lista fija elegida a mano — Vacuno /
+  Cerdo / Pollo / Otros, igual que el archivo de su papá — se sigue
+  guardando en el mismo campo `familiaNombre` (instantánea, como ya
+  funcionaba).
+- **Paso de revisión antes de guardar** (`CamaraEntrada.tsx`): "Revise el
+  lote antes de ingresarlo" con el resumen (familia, producto, cantidad,
+  peso total, costo, total neto) — recién al confirmar ahí se crean las
+  cajas, igual que el archivo de su papá.
+- **"⚡ Imprimir lote completo"**: además del botón que ya existía para
+  imprimir una etiqueta a la vez, un botón nuevo manda todas las etiquetas
+  de un lote en un solo trabajo de impresión (una por página, con salto de
+  página entre cada una — `.imprimiendo-lote` en `styles.css`), con un
+  aviso recordando dejar "Copias" en 1 antes de imprimir.
+- **Pantalla nueva "Existencias"** (`CamaraExistencias.tsx`): cajas
+  disponibles agrupadas por familia y producto con subtotal por familia
+  (arriba), y una sección desplegable "Ver lotes ingresados" con el
+  detalle de cada lote y tres acciones — **Corregir** (cambia familia/
+  producto/peso total/costo de todo el lote a la vez, repartiendo el peso
+  corregido entre sus cajas con el mismo reparto exacto que al crearlas;
+  queda auditado en `CorreccionLoteCamara`, y cada caja recibe un
+  `MovimientoCamara` tipo `"correccion_entrada"` con su peso nuevo, sin
+  sobrescribir el movimiento de entrada original), **Reimprimir** (vuelve
+  a mostrar las etiquetas con los mismos números, no crea ningún registro
+  nuevo) y **Anular** (mismo principio que ya existía para anular una caja
+  individual, aplicado a todas las cajas del lote de una vez, con motivo
+  obligatorio). Las tres quedan **bloqueadas si cualquier caja del lote ya
+  tuvo una salida** — mismo principio que "Anular una entrada" ya usaba
+  para una caja sola.
+- **"Otro" como destino de salida** (agregado al lado de Sala de venta/
+  Producción/Merma/Donación/Venta mayorista), y pantalla nueva **"Reporte
+  de salidas"** (`CamaraReporteSalidas.tsx`): kilos y valor neto egresado
+  por destino en un rango de fechas, más los últimos 50 movimientos.
+- **Probado de punta a punta**: contra el backend real (rechazo de
+  entrada/corrección sin datos válidos, reparto exacto del peso corregido,
+  bloqueo de las tres acciones de lote apenas una caja tiene una salida,
+  reporte de salidas con los destinos correctos) y con Playwright contra
+  las pantallas reales (familia fija con Vacuno mostrando el campo de
+  procedencia, revisión antes de guardar, etiqueta impresa con los datos
+  correctos, Existencias con sus tres acciones de lote funcionando,
+  Revisar entradas y Reporte de salidas sin errores de consola).
+
+### Procedencia del vacuno (Nacional / Brasil / Paraguay)
+A pedido del usuario, para saber de dónde viene la carne de vacuno. Campo
+nuevo `procedencia` en `LoteCamara` y `CajaCamara` (texto libre a nivel de
+base de datos, pero la interfaz solo deja elegir entre esas tres
+opciones) — **obligatorio si la familia es Vacuno, y no aplica a las
+demás familias** (el servidor rechaza ambos casos: falta procedencia en
+Vacuno, o procedencia puesta en una familia que no es Vacuno). Se pide en
+Entrada de cámara (aparece solo si se elige familia Vacuno) y se puede
+corregir junto con el resto de los datos del lote en Existencias — ambos
+casos quedan auditados en `CorreccionLoteCamara` (`procedenciaAnterior`/
+`procedenciaNueva`). Se muestra en la etiqueta impresa (junto a la
+familia, ej. "Vacuno · Brasil") y como columna en "Revisar entradas". El
+asistente de IA también la conoce: `consultar_camara` la incluye en la
+respuesta y `proponer_entrada_camara` la pide (obligatoria solo si la
+familia es Vacuno).

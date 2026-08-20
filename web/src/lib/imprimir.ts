@@ -71,3 +71,15 @@ export function imprimirEtiquetaCamara() {
   // el prototipo original entre marcar/desmarcar la etiqueta.
   setTimeout(() => activarPaginaEtiqueta(false), 500);
 }
+
+// Imprime TODAS las etiquetas de un lote en un solo trabajo, una por
+// página (ver ".imprimiendo-lote" en styles.css) — además del botón que ya
+// imprime una por una. El componente que llama a esta función es
+// responsable de marcar cada <EtiquetaCamara> como "imprimiendo" antes de
+// invocarla (mismo mecanismo que ya usa imprimirEtiquetaCamara, solo que
+// para varias a la vez).
+export function imprimirEtiquetasLoteCamara() {
+  activarPaginaEtiqueta(true);
+  window.print();
+  setTimeout(() => activarPaginaEtiqueta(false), 500);
+}

@@ -2,10 +2,29 @@ import { randomUUID } from "node:crypto";
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../db";
-import { obtenerCategoriaRaiz } from "../lib/categorias";
 import { rangoFechasDesdeTexto } from "./reportes";
 
 export const camaraRouter = Router();
+
+// Lista fija, igual a la que ya usaba el papá del usuario en su propio
+// sistema — reemplaza la familia que antes se sacaba sola de la categoría
+// del producto (más flexible en teoría, pero no calzaba con la lista corta
+// que él ya conoce de memoria).
+export const FAMILIAS_CAMARA = ["Vacuno", "Cerdo", "Pollo", "Otros"] as const;
+const familiaCamaraEnum = z.enum(FAMILIAS_CAMARA);
+
+// Solo aplica a la familia "Vacuno" — de dónde viene la carne.
+export const PROCEDENCIAS_VACUNO = ["Nacional", "Brasil", "Paraguay"] as const;
+const procedenciaCamaraEnum = z.enum(PROCEDENCIAS_VACUNO);
+
+// Vacuno exige elegir procedencia; las demás familias no la usan — se
+// valida acá en vez de en el schema de zod porque depende de otro campo
+// (familia), y para dar un mensaje de error específico según el caso.
+function validarProcedencia(familia: string, procedencia: string | undefined | null): string | null {
+  if (familia === "Vacuno" && !procedencia) return "Falta indicar la procedencia (Nacional, Brasil o Paraguay)";
+  if (familia !== "Vacuno" && procedencia) return "La procedencia solo aplica a la familia Vacuno";
+  return null;
+}
 
 async function validarUsuario(usuarioId: number) {
   const usuario = await prisma.usuario.findUnique({ where: { id: usuarioId } });
@@ -27,6 +46,7 @@ export function repartirPesoKg(pesoTotalKg: number, cantidadCajas: number): numb
 const cajaConIncludes = {
   producto: true,
   creadoPor: true,
+  lote: true,
 } as const;
 
 // --- Entrada de cajas (lote) ---
@@ -34,6 +54,8 @@ const cajaConIncludes = {
 const entradaLoteSchema = z
   .object({
     productoId: z.number().int().positive(),
+    familia: familiaCamaraEnum,
+    procedencia: procedenciaCamaraEnum.optional(),
     cantidadCajas: z.number().int().positive("La cantidad de cajas debe ser mayor a 0"),
     pesoTotalKg: z.number().positive().optional(),
     pesoIndividualKg: z.number().positive().optional(),
@@ -51,7 +73,11 @@ camaraRouter.post("/cajas", async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.issues[0].message });
   }
-  const { productoId, cantidadCajas, pesoTotalKg, pesoIndividualKg, costoNetoKg, usuarioId, dispositivo } = parsed.data;
+  const { productoId, familia, procedencia, cantidadCajas, pesoTotalKg, pesoIndividualKg, costoNetoKg, usuarioId, dispositivo } =
+    parsed.data;
+
+  const errorProcedencia = validarProcedencia(familia, procedencia);
+  if (errorProcedencia) return res.status(400).json({ error: errorProcedencia });
 
   const usuario = await validarUsuario(usuarioId);
   if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
@@ -59,9 +85,8 @@ camaraRouter.post("/cajas", async (req, res) => {
   const producto = await prisma.producto.findUnique({ where: { id: productoId } });
   if (!producto) return res.status(404).json({ error: "Producto no encontrado" });
 
-  const familia = await obtenerCategoriaRaiz(producto.categoriaId);
-
   const pesoEstimado = pesoTotalKg != null;
+  const pesoTotalReal = pesoTotalKg ?? pesoIndividualKg! * cantidadCajas;
   const pesosPorCaja = pesoEstimado
     ? repartirPesoKg(pesoTotalKg!, cantidadCajas)
     : Array.from({ length: cantidadCajas }, () => pesoIndividualKg!);
@@ -72,12 +97,26 @@ camaraRouter.post("/cajas", async (req, res) => {
   // poder encadenar pasos que dependen del resultado del paso anterior,
   // todo o nada igual que el resto del sistema.
   const cajas = await prisma.$transaction(async (tx) => {
+    const lote = await tx.loteCamara.create({
+      data: {
+        productoId,
+        familiaNombre: familia,
+        procedencia: procedencia ?? null,
+        cantidadCajas,
+        pesoTotalKg: pesoTotalReal,
+        costoNetoKg,
+        totalNeto: Math.round(pesoTotalReal * costoNetoKg),
+        creadoPorId: usuarioId,
+      },
+    });
     const creadas = [];
     for (const pesoKg of pesosPorCaja) {
       const caja = await tx.cajaCamara.create({
         data: {
           productoId,
-          familiaNombre: familia.nombre,
+          loteId: lote.id,
+          familiaNombre: familia,
+          procedencia: procedencia ?? null,
           pesoInicialKg: pesoKg,
           saldoKg: pesoKg,
           costoNetoKg,
@@ -196,6 +235,287 @@ const ESTADOS_ACTIVOS = ["en_camara", "parcial"] as const;
 // comparar el peso que sale contra el saldo (ambos con precisión de gramo).
 const EPSILON_KG = 0.0005;
 
+// --- Lotes de cámara (agrupan las cajas que entraron juntas) ---
+
+function numerosCajasResumen(cajas: { id: number }[]): string {
+  if (cajas.length === 0) return "sin cajas";
+  const ordenadas = [...cajas].sort((a, b) => a.id - b.id);
+  if (ordenadas.length <= 5) return ordenadas.map((c) => String(c.id).padStart(6, "0")).join(", ");
+  return `${String(ordenadas[0].id).padStart(6, "0")} a ${String(ordenadas[ordenadas.length - 1].id).padStart(6, "0")}`;
+}
+
+// Un lote se puede corregir, reimprimir o anular como grupo solo mientras
+// TODAS sus cajas sigan exactamente como se crearon — sin ninguna salida
+// registrada todavía — mismo principio que anular una caja individual
+// (ver /cajas/:id/anular-entrada más arriba). Una corrección no cambia esta
+// elegibilidad (deja la caja en el mismo estado "recién creada"), así que
+// se puede corregir un lote más de una vez mientras nadie le haya sacado
+// nada todavía.
+function loteElegibleParaEditar(cajas: { estado: string; saldoKg: number; pesoInicialKg: number }[]): boolean {
+  return cajas.every((c) => c.estado === "en_camara" && Math.abs(c.saldoKg - c.pesoInicialKg) <= EPSILON_KG);
+}
+
+camaraRouter.get("/lotes", async (req, res) => {
+  const hayRangoFechas = req.query.desde != null || req.query.hasta != null;
+  const { desde, hasta } = rangoFechasDesdeTexto(req.query.desde, req.query.hasta);
+  const lotes = await prisma.loteCamara.findMany({
+    where: hayRangoFechas ? { fechaIngreso: { gte: desde, lte: hasta } } : {},
+    include: { producto: true, creadoPor: true, cajas: true },
+    orderBy: { fechaIngreso: "desc" },
+  });
+  res.json(
+    lotes.map((l) => ({
+      ...l,
+      numerosCajas: numerosCajasResumen(l.cajas),
+      bloqueado: !loteElegibleParaEditar(l.cajas),
+    }))
+  );
+});
+
+camaraRouter.get("/lotes/:id", async (req, res) => {
+  const lote = await prisma.loteCamara.findUnique({
+    where: { id: Number(req.params.id) },
+    include: {
+      producto: true,
+      creadoPor: true,
+      cajas: { orderBy: { id: "asc" } },
+      correcciones: { include: { usuario: true }, orderBy: { creadoEn: "desc" } },
+    },
+  });
+  if (!lote) return res.status(404).json({ error: "Lote no encontrado" });
+  res.json({ ...lote, numerosCajas: numerosCajasResumen(lote.cajas), bloqueado: !loteElegibleParaEditar(lote.cajas) });
+});
+
+const corregirLoteSchema = z.object({
+  productoId: z.number().int().positive(),
+  familia: familiaCamaraEnum,
+  procedencia: procedenciaCamaraEnum.optional(),
+  pesoTotalKg: z.number().positive("El peso total debe ser mayor a 0"),
+  costoNetoKg: z.number().positive("El costo debe ser mayor a 0"),
+  usuarioId: z.number().int().positive(),
+});
+
+// Corrige familia/producto/peso total/costo de TODO el lote a la vez,
+// repartiendo el peso corregido entre sus cajas (mismo reparto exacto que
+// al crearlas) — bloqueado si cualquier caja del lote ya tuvo una salida.
+// Queda auditado en CorreccionLoteCamara (qué cambió, quién y cuándo) y
+// además cada caja recibe un MovimientoCamara "correccion_entrada" con su
+// peso nuevo, sin sobrescribir el movimiento de entrada original.
+camaraRouter.put("/lotes/:id", async (req, res) => {
+  const parsed = corregirLoteSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0].message });
+  const { productoId, familia, procedencia, pesoTotalKg, costoNetoKg, usuarioId } = parsed.data;
+
+  const errorProcedencia = validarProcedencia(familia, procedencia);
+  if (errorProcedencia) return res.status(400).json({ error: errorProcedencia });
+
+  const usuario = await validarUsuario(usuarioId);
+  if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
+
+  const loteId = Number(req.params.id);
+  const lote = await prisma.loteCamara.findUnique({
+    where: { id: loteId },
+    include: { cajas: { orderBy: { id: "asc" } }, producto: true },
+  });
+  if (!lote) return res.status(404).json({ error: "Lote no encontrado" });
+  if (!loteElegibleParaEditar(lote.cajas)) {
+    return res.status(400).json({
+      error: "Este lote ya tiene alguna salida registrada — no se puede corregir. Corrígelo con un ajuste manual en vez de editar la entrada.",
+    });
+  }
+
+  const productoNuevo = await prisma.producto.findUnique({ where: { id: productoId } });
+  if (!productoNuevo) return res.status(404).json({ error: "Producto no encontrado" });
+
+  const pesosPorCaja = repartirPesoKg(pesoTotalKg, lote.cajas.length);
+  const totalNeto = Math.round(pesoTotalKg * costoNetoKg);
+
+  const resultado = await prisma.$transaction(async (tx) => {
+    await tx.correccionLoteCamara.create({
+      data: {
+        loteId,
+        familiaAnterior: lote.familiaNombre,
+        procedenciaAnterior: lote.procedencia,
+        productoAnterior: lote.producto.descripcion,
+        pesoTotalAnteriorKg: lote.pesoTotalKg,
+        costoAnteriorKg: lote.costoNetoKg,
+        familiaNueva: familia,
+        procedenciaNueva: procedencia ?? null,
+        productoNuevo: productoNuevo.descripcion,
+        pesoTotalNuevoKg: pesoTotalKg,
+        costoNuevoKg: costoNetoKg,
+        usuarioId,
+      },
+    });
+    const loteActualizado = await tx.loteCamara.update({
+      where: { id: loteId },
+      data: { productoId, familiaNombre: familia, procedencia: procedencia ?? null, pesoTotalKg, costoNetoKg, totalNeto },
+      include: { producto: true, creadoPor: true },
+    });
+    const cajas = [];
+    for (let i = 0; i < lote.cajas.length; i++) {
+      const caja = lote.cajas[i];
+      const pesoNuevo = pesosPorCaja[i];
+      const cajaActualizada = await tx.cajaCamara.update({
+        where: { id: caja.id },
+        data: {
+          productoId,
+          familiaNombre: familia,
+          procedencia: procedencia ?? null,
+          pesoInicialKg: pesoNuevo,
+          saldoKg: pesoNuevo,
+          costoNetoKg,
+          pesoEstimado: lote.cajas.length > 1,
+          version: { increment: 1 },
+        },
+        include: cajaConIncludes,
+      });
+      await tx.movimientoCamara.create({
+        data: {
+          cajaId: caja.id,
+          tipo: "correccion_entrada",
+          pesoKg: pesoNuevo,
+          origen: "camara",
+          destino: "camara",
+          motivo: "Corrección del lote",
+          usuarioId,
+          claveIdempotencia: randomUUID(),
+        },
+      });
+      cajas.push(cajaActualizada);
+    }
+    return { lote: loteActualizado, cajas };
+  });
+
+  res.json(resultado);
+});
+
+const anularLoteSchema = z.object({
+  usuarioId: z.number().int().positive(),
+  motivo: z.string().trim().min(1, "Indica el motivo de la anulación"),
+});
+
+// Igual que /cajas/:id/anular-entrada, pero aplicado a todas las cajas del
+// lote de una vez — bloqueado si cualquiera ya tuvo una salida.
+camaraRouter.post("/lotes/:id/anular", async (req, res) => {
+  const parsed = anularLoteSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0].message });
+  const { usuarioId, motivo } = parsed.data;
+
+  const usuario = await validarUsuario(usuarioId);
+  if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
+
+  const loteId = Number(req.params.id);
+  const lote = await prisma.loteCamara.findUnique({ where: { id: loteId }, include: { cajas: true } });
+  if (!lote) return res.status(404).json({ error: "Lote no encontrado" });
+  if (!loteElegibleParaEditar(lote.cajas)) {
+    return res.status(400).json({
+      error: "Este lote ya tiene alguna salida registrada — no se puede anular como grupo. Corrige cada caja por separado con un ajuste manual.",
+    });
+  }
+
+  const cajas = await prisma.$transaction(async (tx) => {
+    const actualizadas = [];
+    for (const caja of lote.cajas) {
+      const cajaActualizada = await tx.cajaCamara.update({
+        where: { id: caja.id },
+        data: { saldoKg: 0, estado: "anulada", version: { increment: 1 } },
+        include: cajaConIncludes,
+      });
+      await tx.movimientoCamara.create({
+        data: {
+          cajaId: caja.id,
+          tipo: "anulacion",
+          pesoKg: caja.pesoInicialKg,
+          origen: "camara",
+          destino: "anulada",
+          motivo,
+          usuarioId,
+          claveIdempotencia: randomUUID(),
+        },
+      });
+      actualizadas.push(cajaActualizada);
+    }
+    return actualizadas;
+  });
+
+  res.json({ cajas });
+});
+
+// --- Existencias (stock actual por familia/producto) y reporte de salidas ---
+
+camaraRouter.get("/existencias", async (_req, res) => {
+  const cajas = await prisma.cajaCamara.findMany({
+    where: { estado: { in: [...ESTADOS_ACTIVOS] } },
+    include: { producto: true },
+  });
+  const totalCajas = cajas.length;
+  const totalKilos = cajas.reduce((s, c) => s + c.saldoKg, 0);
+  const totalValor = cajas.reduce((s, c) => s + c.saldoKg * c.costoNetoKg, 0);
+
+  const grupos = new Map<string, { familia: string; producto: string; cajas: number }>();
+  for (const c of cajas) {
+    const clave = `${c.familiaNombre}|${c.producto.descripcion}`;
+    const actual = grupos.get(clave) ?? { familia: c.familiaNombre, producto: c.producto.descripcion, cajas: 0 };
+    actual.cajas++;
+    grupos.set(clave, actual);
+  }
+  const porProducto = Array.from(grupos.values()).sort(
+    (a, b) => a.familia.localeCompare(b.familia, "es") || a.producto.localeCompare(b.producto, "es")
+  );
+
+  res.json({ totalCajas, totalKilos, totalValor, porProducto });
+});
+
+// Destinos fijos de salida — "otro" se agregó a pedido del usuario (además
+// de los que ya existían) para no dejar sin registrar una salida que no
+// calza con ninguno de los otros.
+const DESTINOS_CAMARA_REPORTE = ["sala_venta", "produccion", "merma", "donacion", "mayorista", "otro"] as const;
+const ETIQUETA_DESTINO: Record<string, string> = {
+  sala_venta: "Sala de venta",
+  produccion: "Producción o elaboración",
+  merma: "Merma",
+  donacion: "Donación",
+  mayorista: "Venta mayorista",
+  otro: "Otro",
+};
+
+camaraRouter.get("/reporte-salidas", async (req, res) => {
+  const { desde, hasta } = rangoFechasDesdeTexto(req.query.desde, req.query.hasta);
+  const movimientos = await prisma.movimientoCamara.findMany({
+    where: { destino: { in: [...DESTINOS_CAMARA_REPORTE] }, creadoEn: { gte: desde, lte: hasta } },
+    include: { caja: { include: { producto: true } } },
+    orderBy: { creadoEn: "desc" },
+  });
+
+  const totalKilos = movimientos.reduce((s, m) => s + m.pesoKg, 0);
+  const cajasDistintas = new Set(movimientos.map((m) => m.cajaId)).size;
+  const totalValor = movimientos.reduce((s, m) => s + m.pesoKg * m.caja.costoNetoKg, 0);
+
+  const porDestino = DESTINOS_CAMARA_REPORTE.map((destino) => {
+    const delDestino = movimientos.filter((m) => m.destino === destino);
+    return {
+      destino,
+      etiqueta: ETIQUETA_DESTINO[destino],
+      cajasDistintas: new Set(delDestino.map((m) => m.cajaId)).size,
+      kilos: delDestino.reduce((s, m) => s + m.pesoKg, 0),
+      valor: delDestino.reduce((s, m) => s + m.pesoKg * m.caja.costoNetoKg, 0),
+    };
+  });
+
+  const ultimosMovimientos = movimientos.slice(0, 50).map((m) => ({
+    id: m.id,
+    fecha: m.creadoEn,
+    numero: String(m.cajaId).padStart(6, "0"),
+    producto: m.caja.producto.descripcion,
+    destino: m.destino,
+    etiquetaDestino: ETIQUETA_DESTINO[m.destino ?? ""] ?? m.destino ?? "—",
+    kilos: m.pesoKg,
+  }));
+
+  res.json({ desde, hasta, totalKilos, cajasDistintas, totalValor, porDestino, ultimosMovimientos });
+});
+
 // La caja más antigua (misma familia de producto) que todavía tiene saldo
 // en cámara — para avisar (sin bloquear) si se está por sacar una caja más
 // nueva mientras hay una más vieja disponible.
@@ -219,7 +539,7 @@ camaraRouter.get("/cajas/:id/fifo", async (req, res) => {
 
 const salidaSchema = z
   .object({
-    destino: z.enum(["sala_venta", "produccion", "merma", "donacion", "mayorista"]),
+    destino: z.enum(["sala_venta", "produccion", "merma", "donacion", "mayorista", "otro"]),
     pesoKg: z.number().positive().optional(),
     motivo: z.string().trim().optional(),
     usuarioId: z.number().int().positive(),

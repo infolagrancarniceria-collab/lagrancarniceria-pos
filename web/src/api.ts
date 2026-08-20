@@ -36,11 +36,20 @@ export interface Producto {
   umbralStockBajo: number | null;
 }
 
+export type FamiliaCamara = "Vacuno" | "Cerdo" | "Pollo" | "Otros";
+export const FAMILIAS_CAMARA: FamiliaCamara[] = ["Vacuno", "Cerdo", "Pollo", "Otros"];
+
+// Solo aplica (y es obligatorio) para familia "Vacuno".
+export type ProcedenciaCamara = "Nacional" | "Brasil" | "Paraguay";
+export const PROCEDENCIAS_VACUNO: ProcedenciaCamara[] = ["Nacional", "Brasil", "Paraguay"];
+
 export interface CajaCamara {
   id: number;
   productoId: number;
   producto: Producto;
+  loteId: number | null;
   familiaNombre: string;
+  procedencia: string | null;
   fechaIngreso: string;
   pesoInicialKg: number;
   saldoKg: number;
@@ -54,7 +63,70 @@ export interface CajaCamara {
   actualizadoEn: string;
 }
 
-export type DestinoSalidaCamara = "sala_venta" | "produccion" | "merma" | "donacion" | "mayorista";
+// Agrupa las cajas que se ingresaron juntas en una misma entrada — permite
+// corregir, reimprimir o anular todas sus cajas de una vez.
+export interface CorreccionLoteCamara {
+  id: number;
+  familiaAnterior: string;
+  procedenciaAnterior: string | null;
+  productoAnterior: string;
+  pesoTotalAnteriorKg: number;
+  costoAnteriorKg: number;
+  familiaNueva: string;
+  procedenciaNueva: string | null;
+  productoNuevo: string;
+  pesoTotalNuevoKg: number;
+  costoNuevoKg: number;
+  usuario: Usuario;
+  creadoEn: string;
+}
+
+export interface LoteCamara {
+  id: number;
+  productoId: number;
+  producto: Producto;
+  familiaNombre: string;
+  procedencia: string | null;
+  cantidadCajas: number;
+  pesoTotalKg: number;
+  costoNetoKg: number;
+  totalNeto: number;
+  fechaIngreso: string;
+  creadoPorId: number;
+  creadoPor: Usuario;
+  reconstruido: boolean;
+  numerosCajas: string;
+  bloqueado: boolean;
+  cajas?: CajaCamara[];
+  correcciones?: CorreccionLoteCamara[];
+}
+
+export interface ExistenciasCamara {
+  totalCajas: number;
+  totalKilos: number;
+  totalValor: number;
+  porProducto: { familia: string; producto: string; cajas: number }[];
+}
+
+export interface ReporteSalidasCamara {
+  desde: string;
+  hasta: string;
+  totalKilos: number;
+  cajasDistintas: number;
+  totalValor: number;
+  porDestino: { destino: string; etiqueta: string; cajasDistintas: number; kilos: number; valor: number }[];
+  ultimosMovimientos: {
+    id: number;
+    fecha: string;
+    numero: string;
+    producto: string;
+    destino: string | null;
+    etiquetaDestino: string;
+    kilos: number;
+  }[];
+}
+
+export type DestinoSalidaCamara = "sala_venta" | "produccion" | "merma" | "donacion" | "mayorista" | "otro";
 
 export interface MovimientoCamara {
   id: number;
@@ -773,6 +845,8 @@ export const api = {
   camara: {
     entradaLote: (data: {
       productoId: number;
+      familia: FamiliaCamara;
+      procedencia?: ProcedenciaCamara;
       cantidadCajas: number;
       pesoTotalKg?: number;
       pesoIndividualKg?: number;
@@ -820,6 +894,35 @@ export const api = {
     },
     anularEntrada: (cajaId: number, usuarioId: number, motivo: string) =>
       post<ResultadoAjusteCamara>(`/api/camara/cajas/${cajaId}/anular-entrada`, { usuarioId, motivo }),
+    lotes: (params: { desde?: string; hasta?: string } = {}) => {
+      const qs = new URLSearchParams();
+      if (params.desde) qs.set("desde", params.desde);
+      if (params.hasta) qs.set("hasta", params.hasta);
+      const query = qs.toString();
+      return get<LoteCamara[]>(`/api/camara/lotes${query ? `?${query}` : ""}`);
+    },
+    obtenerLote: (id: number) => get<LoteCamara>(`/api/camara/lotes/${id}`),
+    corregirLote: (
+      id: number,
+      data: {
+        productoId: number;
+        familia: FamiliaCamara;
+        procedencia?: ProcedenciaCamara;
+        pesoTotalKg: number;
+        costoNetoKg: number;
+        usuarioId: number;
+      }
+    ) => put<{ lote: LoteCamara; cajas: CajaCamara[] }>(`/api/camara/lotes/${id}`, data),
+    anularLote: (id: number, usuarioId: number, motivo: string) =>
+      post<{ cajas: CajaCamara[] }>(`/api/camara/lotes/${id}/anular`, { usuarioId, motivo }),
+    existencias: () => get<ExistenciasCamara>("/api/camara/existencias"),
+    reporteSalidas: (params: { desde?: string; hasta?: string } = {}) => {
+      const qs = new URLSearchParams();
+      if (params.desde) qs.set("desde", params.desde);
+      if (params.hasta) qs.set("hasta", params.hasta);
+      const query = qs.toString();
+      return get<ReporteSalidasCamara>(`/api/camara/reporte-salidas${query ? `?${query}` : ""}`);
+    },
     // Resolver un ajuste pendiente ("confirmar-falta"/"encontrada") también
     // pasa por ejecutarOEncolar en vez de un método acá, mismo motivo que
     // la salida.
