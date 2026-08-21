@@ -1,12 +1,19 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, formatoCLP, type Categoria, type FilaImportacionProductos, type Producto } from "../api";
+import {
+  api,
+  calcularMargen,
+  formatoCLP,
+  type Categoria,
+  type FilaImportacionProductos,
+  type ProductoConUltimoCosto,
+} from "../api";
 import SelectorCategoria from "../components/SelectorCategoria";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 import { mostrarToast } from "../lib/toast";
 
 export default function Productos() {
-  const [productos, setProductos] = useState<Producto[]>([]);
+  const [productos, setProductos] = useState<ProductoConUltimoCosto[]>([]);
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [buscar, setBuscar] = useState("");
   const [categoriaId, setCategoriaId] = useState<number | "">("");
@@ -27,7 +34,7 @@ export default function Productos() {
   function recargarProductos() {
     setCargando(true);
     api.productos
-      .listar({ buscar: buscar || undefined, categoriaId: categoriaId || undefined })
+      .listarConCosto({ buscar: buscar || undefined, categoriaId: categoriaId || undefined })
       .then(setProductos)
       .catch((e) => setError(e.message))
       .finally(() => setCargando(false));
@@ -123,7 +130,7 @@ export default function Productos() {
     setCargando(true);
     const timeout = setTimeout(() => {
       api.productos
-        .listar({ buscar: buscar || undefined, categoriaId: categoriaId || undefined })
+        .listarConCosto({ buscar: buscar || undefined, categoriaId: categoriaId || undefined })
         .then(setProductos)
         .catch((e) => setError(e.message))
         .finally(() => setCargando(false));
@@ -294,29 +301,36 @@ export default function Productos() {
             <th>Descripción</th>
             <th>Categoría</th>
             <th>Flag balanza</th>
-            <th>Precio</th>
+            <th>Costo (último)</th>
+            <th>Precio de venta</th>
+            <th>Margen (%)</th>
           </tr>
         </thead>
         <tbody>
-          {productos.map((p) => (
-            <tr key={p.id}>
-              {modoCategorizar && (
+          {productos.map((p) => {
+            const margen = calcularMargen(p.precio, p.ultimoCosto);
+            return (
+              <tr key={p.id}>
+                {modoCategorizar && (
+                  <td>
+                    <input type="checkbox" checked={seleccionados.has(p.id)} onChange={() => alternarSeleccion(p.id)} />
+                  </td>
+                )}
                 <td>
-                  <input type="checkbox" checked={seleccionados.has(p.id)} onChange={() => alternarSeleccion(p.id)} />
+                  <Link to={`/productos/${p.id}`}>{p.plu}</Link>
                 </td>
-              )}
-              <td>
-                <Link to={`/productos/${p.id}`}>{p.plu}</Link>
-              </td>
-              <td>{p.descripcion}</td>
-              <td>{p.categoria.nombre}</td>
-              <td>{p.flagBalanza}</td>
-              <td>{formatoCLP(p.precio)}</td>
-            </tr>
-          ))}
+                <td>{p.descripcion}</td>
+                <td>{p.categoria.nombre}</td>
+                <td>{p.flagBalanza}</td>
+                <td>{p.ultimoCosto != null ? formatoCLP(p.ultimoCosto) : "—"}</td>
+                <td>{formatoCLP(p.precio)}</td>
+                <td>{margen != null ? `${margen.toFixed(2)}%` : "—"}</td>
+              </tr>
+            );
+          })}
           {productos.length === 0 && !cargando && (
             <tr>
-              <td colSpan={modoCategorizar ? 6 : 5}>No hay productos que coincidan con la búsqueda.</td>
+              <td colSpan={modoCategorizar ? 8 : 7}>No hay productos que coincidan con la búsqueda.</td>
             </tr>
           )}
         </tbody>

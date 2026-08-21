@@ -281,6 +281,12 @@ export interface ProductoConStock extends Producto {
 export interface ProductoConCosto extends Producto {
   ultimoCosto: number | null;
   ultimoCostoFecha: string | null;
+  penultimoCosto: number | null;
+  penultimoCostoFecha: string | null;
+}
+
+export interface ProductoConUltimoCosto extends Producto {
+  ultimoCosto: number | null;
 }
 
 // Margen (%) al estilo del sistema anterior (Gexus): markup sobre el costo,
@@ -643,6 +649,13 @@ export const api = {
     },
     obtener: (id: number) => get<ProductoConCosto>(`/api/productos/${id}`),
     proximoPlu: () => get<{ plu: string }>("/api/productos/proximo-plu"),
+    listarConCosto: (params: { buscar?: string; categoriaId?: number } = {}) => {
+      const qs = new URLSearchParams();
+      if (params.buscar) qs.set("buscar", params.buscar);
+      if (params.categoriaId) qs.set("categoriaId", String(params.categoriaId));
+      qs.set("incluirCosto", "true");
+      return get<ProductoConUltimoCosto[]>(`/api/productos?${qs.toString()}`);
+    },
     margenes: (params: { categoriaId?: number } = {}) => {
       const qs = new URLSearchParams();
       if (params.categoriaId) qs.set("categoriaId", String(params.categoriaId));

@@ -2340,3 +2340,77 @@ productos de prueba (CHURRASCO DE VACUNO, costo $9.200/precio $14.500 →
 pantalla los ordena correctamente de mayor a menor margen, y el filtro de
 margen mínimo en 30% deja solo el primero — los números calzan exactos con
 el cálculo manual.
+
+## Registrar entrada vs. Cargar factura, y precio de compra/venta al registrar una entrada
+El usuario preguntó si "Registrar entrada" (Inventario → "+ Registrar
+entrada") y "Cargar factura" (Inventario → "+ Cargar factura") eran lo
+mismo. **No lo son — la diferencia es cuántos productos registra a la
+vez:**
+- **Registrar entrada** (`RegistrarEntrada.tsx`): un producto por vez.
+  Sirve tanto para una compra normal como para un **ajuste** (ej. un
+  conteo físico que encontró más stock del registrado) — algo que
+  "Cargar factura" no maneja, porque esa pantalla es exclusivamente para
+  compras con factura real.
+- **Cargar factura** (`CargarFactura.tsx`): varias líneas de una vez,
+  todas con el mismo proveedor y N° de factura — para cargar una factura
+  completa sin repetir el proceso producto por producto. El costo unitario
+  es obligatorio en las 4 líneas (a diferencia de "Registrar entrada",
+  donde es opcional), porque ahí sí es explícitamente una compra con
+  factura.
+
+Las dos terminan generando el mismo tipo de registro por debajo (un
+`MovimientoInventario` con motivo "compra" por producto) — se ven juntas
+en "Historial" y en el reporte "Facturas" agrupa ambas por igual. Cuál usar
+depende de la situación: un producto suelto → "Registrar entrada"; una
+factura real con varias líneas → "Cargar factura".
+
+**Precio de compra actual/anterior + cambio rápido de precio de venta, en
+"Registrar entrada"**: a pedido del usuario, para poder revisar y ajustar
+el precio de venta justo en el momento de registrar mercadería nueva, sin
+tener que ir aparte a la ficha del producto. Al elegir un producto en esa
+pantalla, ahora aparece una tarjeta con:
+- **Precio de compra actual** (la última compra registrada de ese
+  producto) y, si hay una anterior, **el anterior** — para comparar de un
+  vistazo si el proveedor subió o bajó el costo.
+- **Precio de venta actual**, con el margen (%) ya calculado (misma
+  fórmula de siempre, `calcularMargen`).
+- Un campo + botón **"Cambiar precio de venta"** que aplica el cambio ahí
+  mismo (mismo endpoint que usaría una persona desde Productos → editar
+  producto, con la misma confirmación y el mismo registro en el historial
+  de precios — no es un camino de escritura aparte).
+
+Técnicamente: `GET /api/productos/:id` ahora también trae `penultimoCosto`/
+`penultimoCostoFecha` (antes solo el último) — mismo patrón que ya usaba
+para el último costo, ahora con `findMany({ take: 2 })` en vez de
+`findFirst`.
+
+Probado de punta a punta con Playwright contra el servidor real: al elegir
+CHURRASCO DE VACUNO se ve el costo $9.200 y precio $14.500 (margen 32,44%,
+sin "anterior" porque solo había una compra); cambiar el precio a $15.500
+lo actualiza al toque (margen recalculado a 41,58%); registrar una entrada
+nueva a $9.800 y volver a elegir el mismo producto muestra correctamente
+"actual: $9.800 · anterior: $9.200" — datos de prueba limpiados después
+(movimiento, historial de precio y precio de venta revertidos).
+
+## Costo, precio de venta y margen en la tabla de Productos
+A pedido del usuario, para revisar esa información de un vistazo sin abrir
+cada producto. La tabla de la pantalla Productos ahora tiene 2 columnas
+nuevas: **Costo (último)** y **Margen (%)** (la columna "Precio" se
+renombró a "Precio de venta" para que quede claro junto a las otras dos).
+
+- `GET /api/productos` acepta un parámetro opcional `incluirCosto=true`
+  que agrega el último costo de compra de cada producto (mismo patrón de
+  una sola consulta a `MovimientoInventario` ya usado en "Mejor margen",
+  en vez de una consulta por producto) — **opcional a propósito**, para no
+  cargarle esta consulta extra a los otros 5 lugares que reusan este mismo
+  endpoint solo como buscador (Caja, Cámara, Registrar entrada/salida),
+  donde ese dato no hace falta. Nuevo método `api.productos.listarConCosto()`
+  en el frontend, usado solo por la pantalla Productos.
+- El margen (%) se calcula en el frontend con `calcularMargen` (la misma
+  función de siempre) — un producto sin ninguna compra registrada muestra
+  "—" en vez de un número inventado, igual que en el resto del sistema.
+
+Probado con Playwright contra el servidor real: buscando "CHURRASCO DE
+VACUNO" en Productos, la fila muestra Costo $9.200, Precio de venta
+$14.500 y Margen 32,44% — igual que en "Mejor margen" y en la ficha del
+producto, confirmando que las tres pantallas usan la misma cuenta.

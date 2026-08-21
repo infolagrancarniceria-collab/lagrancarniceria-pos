@@ -15,6 +15,12 @@ productosRouter.get("/", async (req, res) => {
   const buscar = typeof req.query.buscar === "string" ? req.query.buscar.trim() : "";
   const categoriaId = req.query.categoriaId ? Number(req.query.categoriaId) : undefined;
   const stockNegativo = req.query.stockNegativo === "true";
+  // Opcional: agrega el último costo de compra de cada producto (para la
+  // pantalla Productos, que quiere mostrar costo/precio/margen de un
+  // vistazo) — no se calcula por defecto para no cargarle esta consulta
+  // extra a los otros lugares que reusan este mismo endpoint solo como
+  // buscador (Caja, Cámara, Registrar entrada/salida).
+  const incluirCosto = req.query.incluirCosto === "true";
 
   let categoriaIds: number[] | undefined;
   if (categoriaId) {
@@ -39,7 +45,24 @@ productosRouter.get("/", async (req, res) => {
     include: { categoria: true },
     orderBy: stockNegativo ? { stockActual: "asc" } : { descripcion: "asc" },
   });
-  res.json(productos);
+
+  if (!incluirCosto) {
+    return res.json(productos);
+  }
+
+  const compras = await prisma.movimientoInventario.findMany({
+    where: { tipo: "entrada", motivo: "compra", costoUnitario: { not: null } },
+    orderBy: { fecha: "desc" },
+    select: { productoId: true, costoUnitario: true },
+  });
+  const ultimoCostoPorProducto = new Map<number, number>();
+  for (const c of compras) {
+    if (!ultimoCostoPorProducto.has(c.productoId)) {
+      ultimoCostoPorProducto.set(c.productoId, c.costoUnitario!);
+    }
+  }
+
+  res.json(productos.map((p) => ({ ...p, ultimoCosto: ultimoCostoPorProducto.get(p.id) ?? null })));
 });
 
 // Sugerencia de PLU al crear un producto nuevo — el siguiente número libre
@@ -105,18 +128,22 @@ productosRouter.get("/:id", async (req, res) => {
   });
   if (!producto) return res.status(404).json({ error: "Producto no encontrado" });
 
-  // Para mostrar el margen (%) al cambiar el precio: el costo más reciente
-  // registrado en una entrada por compra de este producto (no hay un campo
-  // "costo" fijo en la ficha — el costo real viene del inventario).
-  const ultimaCompra = await prisma.movimientoInventario.findFirst({
+  // Para mostrar el margen (%) al cambiar el precio, y para el aviso de
+  // "precio de compra actual / anterior" al registrar una entrada nueva: las
+  // 2 compras más recientes de este producto (no hay un campo "costo" fijo
+  // en la ficha — el costo real viene del inventario).
+  const ultimasCompras = await prisma.movimientoInventario.findMany({
     where: { productoId: producto.id, tipo: "entrada", motivo: "compra", costoUnitario: { not: null } },
     orderBy: { fecha: "desc" },
+    take: 2,
   });
 
   res.json({
     ...producto,
-    ultimoCosto: ultimaCompra?.costoUnitario ?? null,
-    ultimoCostoFecha: ultimaCompra?.fecha ?? null,
+    ultimoCosto: ultimasCompras[0]?.costoUnitario ?? null,
+    ultimoCostoFecha: ultimasCompras[0]?.fecha ?? null,
+    penultimoCosto: ultimasCompras[1]?.costoUnitario ?? null,
+    penultimoCostoFecha: ultimasCompras[1]?.fecha ?? null,
   });
 });
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, type Producto, type Proveedor } from "../api";
+import { api, calcularMargen, formatoCLP, type Producto, type ProductoConCosto, type Proveedor } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 import { mostrarToast } from "../lib/toast";
@@ -12,6 +12,9 @@ export default function RegistrarEntrada() {
   const [productos, setProductos] = useState<Producto[]>([]);
   const [buscarProducto, setBuscarProducto] = useState("");
   const [productoSeleccionado, setProductoSeleccionado] = useState<Producto | null>(null);
+  const [infoProducto, setInfoProducto] = useState<ProductoConCosto | null>(null);
+  const [precioNuevo, setPrecioNuevo] = useState("");
+  const [cambiandoPrecio, setCambiandoPrecio] = useState(false);
 
   const [proveedores, setProveedores] = useState<Proveedor[]>([]);
   const [buscarProveedor, setBuscarProveedor] = useState("");
@@ -28,6 +31,50 @@ export default function RegistrarEntrada() {
   useEffect(() => {
     api.proveedores.listar().then(setProveedores).catch((e) => setError(e.message));
   }, []);
+
+  // Al elegir un producto, trae su precio de compra actual y anterior (para
+  // comparar si el proveedor subió o bajó el costo) y su precio de venta
+  // vigente, con la opción de cambiarlo ahí mismo antes de registrar la
+  // entrada nueva — a pedido del usuario, para no tener que ir a Productos
+  // aparte a revisar/ajustar el precio cada vez que llega mercadería.
+  useEffect(() => {
+    setInfoProducto(null);
+    setPrecioNuevo("");
+    if (!productoSeleccionado) return;
+    api.productos
+      .obtener(productoSeleccionado.id)
+      .then(setInfoProducto)
+      .catch((e) => setError(e.message));
+  }, [productoSeleccionado]);
+
+  async function cambiarPrecioVenta() {
+    if (!infoProducto || !usuario) return;
+    const nuevo = Number(precioNuevo);
+    if (!nuevo || nuevo <= 0) {
+      setError("Ingresa un precio de venta nuevo válido");
+      return;
+    }
+    const confirmado = window.confirm(
+      `¿Cambiar el precio de venta de "${infoProducto.descripcion}" de ${formatoCLP(infoProducto.precio)} a ${formatoCLP(nuevo)}?`
+    );
+    if (!confirmado) return;
+    setCambiandoPrecio(true);
+    setError(null);
+    try {
+      const actualizado = await api.precios.cambiarIndividual({
+        productoId: infoProducto.id,
+        precioNuevo: nuevo,
+        usuarioId: usuario.id,
+      });
+      setInfoProducto({ ...infoProducto, precio: actualizado.precio });
+      setPrecioNuevo("");
+      mostrarToast("Precio actualizado", `${infoProducto.descripcion}: ${formatoCLP(actualizado.precio)}.`);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setCambiandoPrecio(false);
+    }
+  }
 
   useEffect(() => {
     if (!buscarProducto.trim()) {
@@ -123,6 +170,38 @@ export default function RegistrarEntrada() {
           </div>
           {productoSeleccionado && <p className="exito">Producto elegido: {productoSeleccionado.descripcion}</p>}
         </label>
+
+        {infoProducto && (
+          <div className="tarjeta tarjeta-mini">
+            <p>
+              <strong>Precio de compra actual:</strong>{" "}
+              {infoProducto.ultimoCosto != null ? formatoCLP(infoProducto.ultimoCosto) : "sin compras registradas"}
+              {infoProducto.penultimoCosto != null && (
+                <> · anterior: {formatoCLP(infoProducto.penultimoCosto)}</>
+              )}
+            </p>
+            <p>
+              <strong>Precio de venta actual:</strong> {formatoCLP(infoProducto.precio)}
+              {infoProducto.ultimoCosto != null && (
+                <> · margen: {calcularMargen(infoProducto.precio, infoProducto.ultimoCosto)?.toFixed(2)}%</>
+              )}
+            </p>
+            <div className="fila-inline">
+              <input
+                type="number"
+                min="1"
+                className="input-chico"
+                placeholder="Nuevo precio de venta"
+                value={precioNuevo}
+                onChange={(e) => setPrecioNuevo(e.target.value)}
+              />
+              <button type="button" onClick={cambiarPrecioVenta} disabled={cambiandoPrecio || !precioNuevo}>
+                {cambiandoPrecio ? "Cambiando..." : "Cambiar precio de venta"}
+              </button>
+            </div>
+          </div>
+        )}
+
         <label>
           Cantidad
           <input type="number" min="0.001" step="0.001" value={cantidad} onChange={(e) => setCantidad(e.target.value)} required />
