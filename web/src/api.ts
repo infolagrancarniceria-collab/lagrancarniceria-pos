@@ -654,20 +654,25 @@ export const api = {
       post<Categoria>("/api/categorias", data),
   },
   productos: {
-    listar: (params: { buscar?: string; categoriaId?: number; stockNegativo?: boolean } = {}) => {
+    listar: (
+      params: { buscar?: string; categoriaId?: number; stockNegativo?: boolean; incluirInactivos?: boolean } = {}
+    ) => {
       const qs = new URLSearchParams();
       if (params.buscar) qs.set("buscar", params.buscar);
       if (params.categoriaId) qs.set("categoriaId", String(params.categoriaId));
       if (params.stockNegativo) qs.set("stockNegativo", "true");
+      if (params.incluirInactivos) qs.set("incluirInactivos", "true");
       const query = qs.toString();
       return get<Producto[]>(`/api/productos${query ? `?${query}` : ""}`);
     },
     obtener: (id: number) => get<ProductoConCosto>(`/api/productos/${id}`),
     proximoPlu: () => get<{ plu: string }>("/api/productos/proximo-plu"),
-    listarConCosto: (params: { buscar?: string; categoriaId?: number } = {}) => {
+    reactivar: (id: number) => post<Producto>(`/api/productos/${id}/reactivar`, {}),
+    listarConCosto: (params: { buscar?: string; categoriaId?: number; incluirInactivos?: boolean } = {}) => {
       const qs = new URLSearchParams();
       if (params.buscar) qs.set("buscar", params.buscar);
       if (params.categoriaId) qs.set("categoriaId", String(params.categoriaId));
+      if (params.incluirInactivos) qs.set("incluirInactivos", "true");
       qs.set("incluirCosto", "true");
       return get<ProductoConUltimoCosto[]>(`/api/productos?${qs.toString()}`);
     },

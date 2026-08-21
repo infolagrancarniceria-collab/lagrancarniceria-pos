@@ -21,6 +21,13 @@ productosRouter.get("/", async (req, res) => {
   // extra a los otros lugares que reusan este mismo endpoint solo como
   // buscador (Caja, Cámara, Registrar entrada/salida).
   const incluirCosto = req.query.incluirCosto === "true";
+  // A pedido del usuario: el PLU es único incluso para productos ya
+  // eliminados (soft-delete, activo: false) — si alguien intenta crear un
+  // producto nuevo con un PLU que ya usó uno eliminado, el buscador normal
+  // (que solo trae activos) no lo mostraba en ningún lado, así que no había
+  // forma de encontrar ni reactivar ese producto. `incluirInactivos=true`
+  // (checkbox "Mostrar eliminados" en Productos) también trae los inactivos.
+  const incluirInactivos = req.query.incluirInactivos === "true";
 
   let categoriaIds: number[] | undefined;
   if (categoriaId) {
@@ -29,7 +36,7 @@ productosRouter.get("/", async (req, res) => {
 
   const productos = await prisma.producto.findMany({
     where: {
-      activo: true,
+      ...(incluirInactivos ? {} : { activo: true }),
       ...(categoriaIds ? { categoriaId: { in: categoriaIds } } : {}),
       ...(stockNegativo ? { stockActual: { lt: 0 } } : {}),
       ...(buscar
@@ -191,7 +198,13 @@ productosRouter.post("/", async (req, res) => {
   if (!categoria) return res.status(400).json({ error: "La categoría indicada no existe" });
 
   const pluExistente = await prisma.producto.findUnique({ where: { plu: data.plu } });
-  if (pluExistente) return res.status(409).json({ error: "Ya existe un producto con ese PLU" });
+  if (pluExistente) {
+    return res.status(409).json({
+      error: pluExistente.activo
+        ? "Ya existe un producto con ese PLU"
+        : `Ese PLU ya lo usó "${pluExistente.descripcion}", un producto eliminado — actívalo "Mostrar eliminados" en Productos para reactivarlo en vez de crear uno nuevo`,
+    });
+  }
 
   if (data.codigoBarras) {
     const eanExistente = await prisma.producto.findUnique({ where: { codigoBarras: data.codigoBarras } });
@@ -250,6 +263,23 @@ productosRouter.delete("/:id", async (req, res) => {
 
   await prisma.producto.update({ where: { id }, data: { activo: false } });
   res.status(204).send();
+});
+
+// Vuelve a activar un producto eliminado — para cuando alguien quiere
+// reusar su PLU en vez de crear uno nuevo (ver el mensaje de error en
+// POST /, que apunta acá).
+productosRouter.post("/:id/reactivar", async (req, res) => {
+  const id = Number(req.params.id);
+  const existente = await prisma.producto.findUnique({ where: { id } });
+  if (!existente) return res.status(404).json({ error: "Producto no encontrado" });
+  if (existente.activo) return res.status(400).json({ error: "Este producto ya está activo" });
+
+  const producto = await prisma.producto.update({
+    where: { id },
+    data: { activo: true },
+    include: { categoria: true },
+  });
+  res.json(producto);
 });
 
 // --- Categorizar varios productos a la vez (ej. ordenar los que quedaron

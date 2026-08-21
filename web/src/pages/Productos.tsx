@@ -17,6 +17,7 @@ export default function Productos() {
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [buscar, setBuscar] = useState("");
   const [categoriaId, setCategoriaId] = useState<number | "">("");
+  const [mostrarEliminados, setMostrarEliminados] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(false);
 
@@ -34,10 +35,22 @@ export default function Productos() {
   function recargarProductos() {
     setCargando(true);
     api.productos
-      .listarConCosto({ buscar: buscar || undefined, categoriaId: categoriaId || undefined })
+      .listarConCosto({ buscar: buscar || undefined, categoriaId: categoriaId || undefined, incluirInactivos: mostrarEliminados })
       .then(setProductos)
       .catch((e) => setError(e.message))
       .finally(() => setCargando(false));
+  }
+
+  async function reactivar(p: ProductoConUltimoCosto) {
+    const confirmado = window.confirm(`¿Reactivar "${p.descripcion}" (PLU ${p.plu})?`);
+    if (!confirmado) return;
+    try {
+      await api.productos.reactivar(p.id);
+      recargarProductos();
+      mostrarToast("Producto reactivado", `${p.descripcion} volvió a estar disponible.`);
+    } catch (e) {
+      setError((e as Error).message);
+    }
   }
 
   async function previsualizarImportar(e: React.FormEvent) {
@@ -130,13 +143,13 @@ export default function Productos() {
     setCargando(true);
     const timeout = setTimeout(() => {
       api.productos
-        .listarConCosto({ buscar: buscar || undefined, categoriaId: categoriaId || undefined })
+        .listarConCosto({ buscar: buscar || undefined, categoriaId: categoriaId || undefined, incluirInactivos: mostrarEliminados })
         .then(setProductos)
         .catch((e) => setError(e.message))
         .finally(() => setCargando(false));
     }, 250);
     return () => clearTimeout(timeout);
-  }, [buscar, categoriaId]);
+  }, [buscar, categoriaId, mostrarEliminados]);
 
   return (
     <div>
@@ -280,6 +293,14 @@ export default function Productos() {
           onChange={setCategoriaId}
           etiquetaTodas="Todas las categorías"
         />
+        <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <input
+            type="checkbox"
+            checked={mostrarEliminados}
+            onChange={(e) => setMostrarEliminados(e.target.checked)}
+          />
+          Mostrar eliminados
+        </label>
       </div>
 
       {error && <p className="error">{error}</p>}
@@ -304,6 +325,7 @@ export default function Productos() {
             <th>Costo (último)</th>
             <th>Precio de venta</th>
             <th>Margen (%)</th>
+            {mostrarEliminados && <th>Estado</th>}
           </tr>
         </thead>
         <tbody>
@@ -325,12 +347,28 @@ export default function Productos() {
                 <td>{p.ultimoCosto != null ? formatoCLP(p.ultimoCosto) : "—"}</td>
                 <td>{formatoCLP(p.precio)}</td>
                 <td>{margen != null ? `${margen.toFixed(2)}%` : "—"}</td>
+                {mostrarEliminados && (
+                  <td>
+                    {p.activo ? (
+                      "—"
+                    ) : (
+                      <>
+                        <span className="error">Eliminado</span>{" "}
+                        <button type="button" onClick={() => reactivar(p)}>
+                          Reactivar
+                        </button>
+                      </>
+                    )}
+                  </td>
+                )}
               </tr>
             );
           })}
           {productos.length === 0 && !cargando && (
             <tr>
-              <td colSpan={modoCategorizar ? 8 : 7}>No hay productos que coincidan con la búsqueda.</td>
+              <td colSpan={(modoCategorizar ? 8 : 7) + (mostrarEliminados ? 1 : 0)}>
+                No hay productos que coincidan con la búsqueda.
+              </td>
             </tr>
           )}
         </tbody>

@@ -2496,3 +2496,33 @@ queda creada con `fondoFijoSugerido: 20000`, `motivoAjusteFondo` y
 `usuarioAutorizoFondoId` guardados correctamente — visibles en el
 Historial de cajas. Confirmado también que la barra lateral en modo caja
 exclusiva mide exactamente 63.75px (3.75rem) de ancho.
+
+## Bug: no se podía reusar el PLU de un producto eliminado, ni encontrarlo
+El usuario reportó: quiso crear un producto con PLU 690, el sistema dijo
+"ya existe" pero al buscarlo no aparecía en ningún lado. Causa: el PLU es
+único a nivel de toda la base de datos, **incluyendo productos ya
+eliminados** (a propósito, ver "Eliminar productos rápidamente" más
+arriba — el borrado es lógico, `activo: false`, nunca se borra la fila
+real) — pero el buscador normal de Productos solo trae productos activos,
+así que un PLU "atrapado" por un producto eliminado no tenía ninguna
+forma de encontrarse ni liberarse. Confirmado reproduciendo el caso exacto
+del usuario en este entorno: quedaba un producto real "NULO" con PLU 690,
+del lote de 199 productos importados desde la captura de red de la
+balanza (ver "Migración de datos del sistema viejo" más arriba).
+
+**Arreglado con dos cambios:**
+- **Casilla "Mostrar eliminados"** en Productos: trae también los
+  productos inactivos (`GET /api/productos?incluirInactivos=true`), con
+  una columna "Estado" nueva que muestra "Eliminado" + botón "Reactivar"
+  (`POST /api/productos/:id/reactivar`) para los que lo son.
+- **Mensaje de error más claro** al crear un producto con un PLU ya
+  usado: si el producto existente está eliminado, en vez de solo "Ya
+  existe un producto con ese PLU" ahora dice qué producto era y cómo
+  reactivarlo en vez de crear uno nuevo.
+
+Probado de punta a punta reproduciendo el caso real: crear un producto
+con PLU 690 se rechaza con el mensaje nuevo (menciona a "NULO"), activar
+"Mostrar eliminados" lo muestra con su columna Estado, "Reactivar" lo
+vuelve a poner `activo: true` correctamente (confirmado con la API) — el
+producto real de prueba se dejó otra vez como estaba (eliminado) al
+terminar, sin alterar el catálogo de prueba existente.
