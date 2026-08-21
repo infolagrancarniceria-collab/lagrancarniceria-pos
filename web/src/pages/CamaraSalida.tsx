@@ -23,6 +23,7 @@ export default function CamaraSalida() {
   const [fifo, setFifo] = useState<AvisoFifoCamara | null>(null);
   const [buscando, setBuscando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [codigoManual, setCodigoManual] = useState("");
 
   const [destino, setDestino] = useState<DestinoSalidaCamara>("sala_venta");
   const [pesoTexto, setPesoTexto] = useState("");
@@ -50,6 +51,7 @@ export default function CamaraSalida() {
     setResultado(null);
     setGuardadoOffline(false);
     setError(null);
+    setCodigoManual("");
     limpiarFormulario();
   }
 
@@ -165,6 +167,29 @@ export default function CamaraSalida() {
           <p className="ayuda">
             {buscando ? "Buscando caja..." : "Escanea el código de barras de la etiqueta de la caja que sale de cámara."}
           </p>
+          <form
+            className="fila-inline"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!codigoManual.trim()) return;
+              buscarCaja(codigoManual.trim());
+              setCodigoManual("");
+            }}
+          >
+            <label>
+              O ingresa el número de caja a mano
+              <input
+                type="text"
+                inputMode="numeric"
+                placeholder="Ej.: 000028"
+                value={codigoManual}
+                onChange={(e) => setCodigoManual(e.target.value)}
+              />
+            </label>
+            <button type="submit" className="boton" disabled={buscando || !codigoManual.trim()}>
+              Buscar
+            </button>
+          </form>
         </section>
       )}
 

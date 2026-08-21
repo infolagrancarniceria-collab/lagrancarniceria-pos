@@ -871,7 +871,11 @@ escribe a mano** (el operador lo pesa aparte).
   (`useEscanerCodigoBarras`) — como el número de la etiqueta ES el id de la
   caja (con ceros a la izquierda, ej. `000028` → caja 28), no hace falta
   decodificar nada especial, solo `parseInt` y pedir esa caja
-  (`GET /api/camara/cajas/:id`).
+  (`GET /api/camara/cajas/:id`). **Agregado después, a pedido del
+  usuario:** un campo de texto + botón "Buscar" para escribir el número de
+  caja a mano (misma pantalla, debajo del aviso de escaneo) — para cuando
+  la etiqueta está dañada o ilegible y no se puede escanear. Llama a la
+  misma función `buscarCaja` que ya usa el escaneo, sin duplicar lógica.
 - **Destinos**: Sala de venta, Producción, Merma, Donación, Venta por
   mayor. Solo **Sala de venta** hace que el producto quede disponible para
   vender en Caja — genera un `MovimientoInventario` (motivo
