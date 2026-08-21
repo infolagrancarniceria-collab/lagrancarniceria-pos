@@ -264,6 +264,16 @@ export default function Asistente() {
     try {
       await ejecutarPropuesta(propuesta.accion, usuario.id);
       setMensajes((m) => [...m, { autor: "asistente", texto: `Listo — ${propuesta.descripcion}` }]);
+      // Deja registro en el historial que se le manda a la IA de que esta
+      // propuesta ya se aplicó — sin esto, el próximo mensaje se manda con
+      // un turno pendiente sin resolver y la IA pierde la memoria de qué
+      // pasó (ver resolverPropuesta en asistenteIA.ts).
+      const { historial } = await api.asistente.resolverPropuesta(
+        historialApi,
+        propuesta.toolUseId,
+        `La persona confirmó y se aplicó el cambio: ${propuesta.descripcion}`
+      );
+      setHistorialApi(historial);
       setPropuesta(null);
     } catch (e) {
       setError((e as Error).message);
@@ -272,9 +282,19 @@ export default function Asistente() {
     }
   }
 
-  function cancelar() {
+  async function cancelar() {
     if (!propuesta) return;
     setMensajes((m) => [...m, { autor: "asistente", texto: "Cambio cancelado — no se aplicó nada." }]);
+    try {
+      const { historial } = await api.asistente.resolverPropuesta(
+        historialApi,
+        propuesta.toolUseId,
+        "La persona canceló esta propuesta, no se aplicó ningún cambio."
+      );
+      setHistorialApi(historial);
+    } catch (e) {
+      setError((e as Error).message);
+    }
     setPropuesta(null);
   }
 

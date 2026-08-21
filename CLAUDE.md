@@ -2199,3 +2199,102 @@ Probado con Playwright contra el servidor real: el nombre del negocio ya
 no tiene emoji, la barra lateral se mantiene fija al alto de la pantalla
 al scrollear una tabla larga, y un toast aparece correctamente al
 registrar un gasto de prueba (limpiado después de la prueba).
+
+## Cargar facturas a mano (nueva pantalla), y reporte de facturas cargadas
+El usuario probó cargar 3 facturas reales pegándole el texto al asistente de
+IA y reportó que no funcionaba bien — además pidió, aparte de ese problema
+(ver más abajo, "Asistente: se quedaba pegado..."), una forma más clara de
+ver las facturas ya registradas (Excel o reporte imprimible) y una pestaña
+exclusiva para cargar facturas.
+
+- **Nueva pantalla "Cargar factura"** (`web/src/pages/CargarFactura.tsx`,
+  enlazada desde Inventario, ruta `/inventario/factura`): formulario manual
+  con proveedor (buscador con lista clickeable), N° de factura, fecha, y
+  varias líneas (cada una con su propio buscador de producto, cantidad y
+  costo unitario) — pensada como alternativa confiable al asistente de IA
+  para cuando este no identifica bien los productos de una factura pegada
+  como texto. Nuevo endpoint `POST /api/inventario/entrada-factura`: crea
+  una entrada de inventario (motivo "compra") por línea, todas con el mismo
+  proveedor y N° de factura, en una sola transacción — a diferencia del
+  endpoint de entrada de una sola línea ya existente, acá el costo unitario
+  es obligatorio en todas las líneas (es explícitamente una compra con
+  factura, no cualquier entrada).
+- **Nueva pantalla "Facturas"** (`web/src/pages/Facturas.tsx`, ruta
+  `/inventario/facturas`): reporte agrupado por factura (proveedor + N° de
+  factura), con filtro por rango de fechas, una fila por factura (fecha,
+  proveedor, N° factura, cantidad de líneas, total neto) con "Ver detalle"
+  para desplegar sus líneas (PLU, producto, cantidad, costo unitario,
+  subtotal), botón **"Exportar a Excel (CSV)"** (genera un CSV con BOM
+  UTF-8 en el navegador, sin depender de ninguna librería — Excel lo abre
+  directo con los acentos bien) y botón **"Imprimir"** (`window.print()`,
+  reutilizando el mismo patrón `.no-imprimir`/`@media print` ya usado para
+  el vale y la etiqueta — se agregó una clase nueva `.solo-imprimir` para
+  el título del reporte, que solo aparece en la versión impresa). No se
+  creó una tabla `Factura` nueva en la base de datos — el endpoint
+  `GET /api/inventario/facturas` agrupa en el servidor los
+  `MovimientoInventario` ya existentes por `(proveedorId, numeroFactura)`,
+  reutilizando el campo `numeroFactura` que ya existía — evita una segunda
+  fuente de verdad y una migración nueva para algo que ya se podía derivar
+  de los datos existentes.
+- La pantalla "Historial" de Inventario (`MovimientosInventario.tsx`), que
+  ya tenía un filtro por N° de factura, sigue funcionando igual — muestra
+  las mismas líneas una por una, sin cambios; "Facturas" es un reporte
+  agrupado aparte, no un reemplazo.
+
+Probado de punta a punta con Playwright contra el servidor real: cargar una
+factura de prueba con 2 líneas de proveedor/productos reales, verificar que
+aparece agrupada correctamente en "Facturas" con el total exacto, que
+"Ver detalle" muestra las líneas con el subtotal correcto, que el CSV
+exportado trae el BOM UTF-8 y los datos correctos, que la vista de
+impresión oculta la barra lateral y los filtros mostrando solo el reporte,
+y que "Historial" sigue mostrando las mismas 2 líneas al filtrar por el N°
+de factura de prueba — datos de prueba limpiados después (movimientos
+eliminados y stock revertido).
+
+## Asistente: se quedaba pegado repitiendo la primera propuesta (bug corregido)
+El usuario reportó, probando cargar una factura real con el asistente:
+"Creo solo al proveedor, pero no logra ingresar la factura correctamente.
+Identifica los id, se los confirmo pero desde ahí no logra hacer nada.
+Solo me confirma que se cargó el proveedor."
+
+**Causa raíz:** la API de Anthropic exige que, si un turno del asistente
+incluye una herramienta usada (`tool_use`), el turno siguiente tiene que
+traer de vuelta su resultado (`tool_result`) antes de poder seguir la
+conversación. Cuando la IA proponía un cambio (ej. "crear proveedor"), el
+sistema mostraba la propuesta en pantalla pero **armaba el historial a
+mandar de vuelta descartando todo lo que la IA había investigado en ese
+turno** (búsquedas de productos, etc.) y **sin dejar ningún registro** de
+que esa propuesta se había mostrado ni de si la persona la confirmó o
+canceló. Como al confirmar/cancelar el frontend tampoco le avisaba nada a
+la IA (solo mostraba un mensaje en pantalla), el siguiente mensaje real
+empezaba prácticamente de cero, sin memoria de que el proveedor ya se
+había creado — por eso la IA repetía el mismo primer paso ("crear
+proveedor") una y otra vez, sin avanzar nunca a las líneas de la factura.
+
+**Arreglado en dos partes** (`server/lib/asistenteIA.ts`,
+`server/routes/asistente.ts`, `web/src/api.ts`, `web/src/pages/
+Asistente.tsx`):
+- El historial ahora se preserva completo (incluyendo las búsquedas
+  previas de ese turno), y a la propuesta se le agrega un `tool_result`
+  provisorio ("Propuesta mostrada a la persona — todavía no confirma ni
+  cancela.") para que el historial quede siempre válido de mandar de
+  vuelta a la API mientras la persona decide.
+- Nuevo endpoint `POST /api/asistente/resolver` (función
+  `resolverPropuesta`): apenas la persona confirma o cancela en pantalla,
+  el frontend llama a este endpoint para **reemplazar** ese resultado
+  provisorio por el resultado real ("La persona confirmó y se aplicó el
+  cambio: ..." o "La persona canceló esta propuesta, no se aplicó ningún
+  cambio.") — así el próximo mensaje que se le manda a la IA sí tiene
+  memoria de qué pasó con la propuesta anterior, y puede seguir avanzando
+  (ej. pasar a proponer las líneas de la factura después de confirmado el
+  proveedor).
+
+Probado: la lógica de `resolverPropuesta` con un historial sintético
+(confirma que reemplaza exactamente el `tool_result` pendiente sin tocar
+el resto de los mensajes, y que no rompe nada si el id no existe) y
+`npm run typecheck` completo (servidor + web) limpio. **No se pudo probar
+contra el modelo real de Anthropic en este entorno** (sin clave de API
+configurada, misma limitación ya documentada para pruebas anteriores del
+asistente) — pendiente que el usuario confirme con su propia clave que,
+tras esta corrección, el asistente ya avanza más allá de crear el
+proveedor al cargar una factura real.

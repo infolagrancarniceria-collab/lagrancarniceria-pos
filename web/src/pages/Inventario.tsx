@@ -35,6 +35,12 @@ export default function Inventario() {
           <Link to="/inventario/salida" className="boton">
             Registrar salida / merma
           </Link>
+          <Link to="/inventario/factura" className="boton">
+            + Cargar factura
+          </Link>
+          <Link to="/inventario/facturas" className="boton">
+            Facturas
+          </Link>
           <Link to="/inventario/movimientos" className="boton">
             Historial
           </Link>

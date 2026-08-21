@@ -339,6 +339,12 @@ select {
   color: var(--color-texto-suave);
   font-size: 0.95rem;
 }
+/* Contenido que solo debe aparecer al imprimir (ej. un título de reporte
+   que en pantalla ya se ve en el encabezado, pero ese encabezado se oculta
+   con .no-imprimir al mandar a imprimir). */
+.solo-imprimir {
+  display: none;
+}
 
 .ayuda-linea {
   color: var(--color-texto-suave);
@@ -878,6 +884,9 @@ select {
   .zona-toasts,
   .no-imprimir {
     display: none !important;
+  }
+  .solo-imprimir {
+    display: block !important;
   }
   .vale {
     border: none;

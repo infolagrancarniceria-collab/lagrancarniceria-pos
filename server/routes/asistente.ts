@@ -2,7 +2,7 @@ import { Router } from "express";
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { prisma } from "../db";
-import { procesarMensaje, type MensajeHistorial } from "../lib/asistenteIA";
+import { procesarMensaje, resolverPropuesta, type MensajeHistorial } from "../lib/asistenteIA";
 
 export const asistenteRouter = Router();
 
@@ -39,4 +39,24 @@ asistenteRouter.post("/mensaje", async (req, res) => {
     console.error(err);
     res.status(500).json({ error: "Error interno del servidor" });
   }
+});
+
+// Se llama justo después de que la persona confirma o cancela una
+// propuesta en pantalla — completa el turno pendiente del historial con el
+// resultado real, para que la próxima vez que se llame a la IA tenga
+// memoria de qué pasó (ver resolverPropuesta en asistenteIA.ts).
+const resolverSchema = z.object({
+  historial: z.array(z.any()),
+  toolUseId: z.string().trim().min(1),
+  resultado: z.string().trim().min(1),
+});
+
+asistenteRouter.post("/resolver", (req, res) => {
+  const parsed = resolverSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0].message });
+  }
+  const { historial, toolUseId, resultado } = parsed.data;
+  const historialActualizado = resolverPropuesta(historial as MensajeHistorial[], toolUseId, resultado);
+  res.json({ historial: historialActualizado });
 });

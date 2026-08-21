@@ -697,7 +697,33 @@ export interface MensajeHistorial {
 
 export type RespuestaAsistente =
   | { tipo: "respuesta"; texto: string; historial: MensajeHistorial[] }
-  | { tipo: "propuesta"; descripcion: string; accion: { tipo: string; datos: Record<string, unknown> }; historial: MensajeHistorial[] };
+  | {
+      tipo: "propuesta";
+      descripcion: string;
+      accion: { tipo: string; datos: Record<string, unknown> };
+      toolUseId: string;
+      historial: MensajeHistorial[];
+    };
+
+// Una vez que la persona confirma o cancela una propuesta en pantalla, hay
+// que completar el turno pendiente en el historial (el tool_use de la
+// propuesta quedó con un resultado provisorio "todavía no confirma" — ver
+// procesarMensaje) con el resultado real, para que la próxima vez que se
+// llame a la IA tenga memoria de qué pasó — antes de este arreglo, esa
+// memoria se perdía por completo y la IA quedaba repitiendo el mismo paso
+// (ej. solo lograba crear un proveedor una y otra vez sin nunca avanzar al
+// resto de una factura).
+export function resolverPropuesta(historial: MensajeHistorial[], toolUseId: string, resultado: string): MensajeHistorial[] {
+  return historial.map((mensaje) => {
+    if (mensaje.role !== "user" || typeof mensaje.content === "string") return mensaje;
+    return {
+      ...mensaje,
+      content: mensaje.content.map((bloque) =>
+        bloque.type === "tool_result" && bloque.tool_use_id === toolUseId ? { ...bloque, content: resultado } : bloque
+      ),
+    };
+  });
+}
 
 const SYSTEM_PROMPT = `Eres el asistente del sistema de punto de venta de "La Gran Carnicería". Respondes en español de Chile, simple y directo.
 
@@ -753,11 +779,38 @@ export async function procesarMensaje(
     const bloquePropuesta = bloquesHerramienta.find((b) => HERRAMIENTAS_PROPONER.has(b.name));
     if (bloquePropuesta) {
       const { resumen, ...datos } = bloquePropuesta.input as Record<string, unknown> & { resumen: string };
+
+      // Deja el historial en un estado completo y válido para la próxima
+      // llamada: se guarda el turno del asistente (con el tool_use de la
+      // propuesta y cualquier otra herramienta que haya llamado en la misma
+      // vuelta) junto con sus resultados — las de lectura, ejecutadas de
+      // verdad; la de la propuesta, con un resultado provisorio que se
+      // reemplaza por el real cuando la persona confirma o cancela (ver
+      // resolverPropuesta). Antes de este arreglo, acá se descartaba todo
+      // el trabajo de búsqueda hecho en esta misma vuelta y la IA perdía
+      // la memoria de qué ya había investigado o propuesto.
+      messages.push({ role: "assistant", content: respuesta.content });
+      const resultadosVuelta: Anthropic.ToolResultBlockParam[] = [];
+      for (const bloque of bloquesHerramienta) {
+        if (bloque.id === bloquePropuesta.id) {
+          resultadosVuelta.push({
+            type: "tool_result",
+            tool_use_id: bloque.id,
+            content: "Propuesta mostrada a la persona — todavía no confirma ni cancela.",
+          });
+        } else {
+          const resultado = await ejecutarHerramientaLectura(bloque.name, bloque.input as Record<string, unknown>);
+          resultadosVuelta.push({ type: "tool_result", tool_use_id: bloque.id, content: JSON.stringify(resultado) });
+        }
+      }
+      messages.push({ role: "user", content: resultadosVuelta });
+
       return {
         tipo: "propuesta",
         descripcion: resumen,
         accion: { tipo: bloquePropuesta.name, datos },
-        historial: [...historialPrevio, { role: "user", content: mensajeUsuario }],
+        toolUseId: bloquePropuesta.id,
+        historial: messages as MensajeHistorial[],
       };
     }
 

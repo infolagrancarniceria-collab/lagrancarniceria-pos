@@ -350,6 +350,24 @@ export interface MovimientoInventario {
   fecha: string;
 }
 
+export interface LineaFactura {
+  producto: string;
+  plu: string;
+  cantidad: number;
+  costoUnitario: number | null;
+  subtotal: number;
+}
+
+export interface FacturaAgrupada {
+  proveedorId: number;
+  proveedor: string;
+  numeroFactura: string;
+  fecha: string;
+  usuario: string;
+  totalNeto: number;
+  lineas: LineaFactura[];
+}
+
 export interface ReporteInventario {
   desde: string;
   hasta: string;
@@ -488,6 +506,7 @@ export interface PropuestaAsistente {
   tipo: "propuesta";
   descripcion: string;
   accion: { tipo: string; datos: Record<string, unknown> };
+  toolUseId: string;
   historial: unknown[];
 }
 
@@ -729,6 +748,20 @@ export const api = {
       const query = qs.toString();
       return get<MovimientoInventario[]>(`/api/inventario/movimientos${query ? `?${query}` : ""}`);
     },
+    entradaFactura: (data: {
+      proveedorId: number;
+      numeroFactura: string;
+      fecha?: string;
+      usuarioId: number;
+      lineas: { productoId: number; cantidad: number; costoUnitario: number }[];
+    }) => post<{ movimientos: MovimientoInventario[] }>("/api/inventario/entrada-factura", data),
+    facturas: (params: { desde?: string; hasta?: string } = {}) => {
+      const qs = new URLSearchParams();
+      if (params.desde) qs.set("desde", params.desde);
+      if (params.hasta) qs.set("hasta", params.hasta);
+      const query = qs.toString();
+      return get<FacturaAgrupada[]>(`/api/inventario/facturas${query ? `?${query}` : ""}`);
+    },
   },
   reportes: {
     inventario: (desde?: string, hasta?: string) => {
@@ -831,6 +864,8 @@ export const api = {
   asistente: {
     enviarMensaje: (mensaje: string, historial: unknown[]) =>
       post<RespuestaAsistente>("/api/asistente/mensaje", { mensaje, historial }, 60000),
+    resolverPropuesta: (historial: unknown[], toolUseId: string, resultado: string) =>
+      post<{ historial: unknown[] }>("/api/asistente/resolver", { historial, toolUseId, resultado }),
   },
   balanza: {
     configuracion: () => get<ConfiguracionBalanza>("/api/balanza/configuracion"),
