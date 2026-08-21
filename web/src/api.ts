@@ -643,6 +643,12 @@ export const api = {
     },
     obtener: (id: number) => get<ProductoConCosto>(`/api/productos/${id}`),
     proximoPlu: () => get<{ plu: string }>("/api/productos/proximo-plu"),
+    margenes: (params: { categoriaId?: number } = {}) => {
+      const qs = new URLSearchParams();
+      if (params.categoriaId) qs.set("categoriaId", String(params.categoriaId));
+      const query = qs.toString();
+      return get<ProductoConCosto[]>(`/api/productos/margenes${query ? `?${query}` : ""}`);
+    },
     crear: (data: Omit<Producto, "id" | "categoria" | "activo" | "stockActual">) =>
       post<Producto>("/api/productos", data),
     actualizar: (

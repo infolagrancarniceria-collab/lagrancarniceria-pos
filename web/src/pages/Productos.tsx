@@ -149,6 +149,9 @@ export default function Productos() {
           >
             {modoCategorizar ? "Cerrar selección" : "Seleccionar varios"}
           </button>
+          <Link to="/productos/margenes" className="boton">
+            Mejor margen
+          </Link>
           <Link to="/productos/nuevo" className="boton boton-primario">
             + Nuevo producto
           </Link>

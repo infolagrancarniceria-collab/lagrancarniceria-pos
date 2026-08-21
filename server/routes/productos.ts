@@ -54,6 +54,50 @@ productosRouter.get("/proximo-plu", async (_req, res) => {
   res.json({ plu: String(maxNumerico + 1) });
 });
 
+// Para la pantalla "Mejor margen" (filtrar rápido qué productos convienen
+// más para armar combos): trae, para cada producto activo con al menos una
+// compra registrada, su último costo — el margen (%) en sí se calcula en el
+// frontend con calcularMargen() (misma fórmula ya usada en la ficha de
+// producto), para no duplicar la cuenta en dos lugares. Productos sin
+// ninguna compra registrada (sin costo conocido) quedan afuera, para no
+// mostrar un margen inventado.
+productosRouter.get("/margenes", async (req, res) => {
+  const categoriaId = req.query.categoriaId ? Number(req.query.categoriaId) : undefined;
+  let categoriaIds: number[] | undefined;
+  if (categoriaId) {
+    categoriaIds = await obtenerIdsCategoriaYDescendientes(categoriaId);
+  }
+
+  const productos = await prisma.producto.findMany({
+    where: { activo: true, ...(categoriaIds ? { categoriaId: { in: categoriaIds } } : {}) },
+    include: { categoria: true },
+  });
+
+  // Última compra de cada producto en una sola consulta (en vez de una por
+  // producto): como ya viene ordenada por fecha descendente, la primera
+  // aparición de cada productoId es su compra más reciente.
+  const compras = await prisma.movimientoInventario.findMany({
+    where: { tipo: "entrada", motivo: "compra", costoUnitario: { not: null } },
+    orderBy: { fecha: "desc" },
+    select: { productoId: true, costoUnitario: true, fecha: true },
+  });
+  const ultimaCompraPorProducto = new Map<number, { costoUnitario: number; fecha: Date }>();
+  for (const c of compras) {
+    if (!ultimaCompraPorProducto.has(c.productoId)) {
+      ultimaCompraPorProducto.set(c.productoId, { costoUnitario: c.costoUnitario!, fecha: c.fecha });
+    }
+  }
+
+  const resultado = productos
+    .map((p) => {
+      const ultima = ultimaCompraPorProducto.get(p.id);
+      return { ...p, ultimoCosto: ultima?.costoUnitario ?? null, ultimoCostoFecha: ultima?.fecha ?? null };
+    })
+    .filter((p) => p.ultimoCosto != null);
+
+  res.json(resultado);
+});
+
 productosRouter.get("/:id", async (req, res) => {
   const producto = await prisma.producto.findUnique({
     where: { id: Number(req.params.id) },

@@ -7,6 +7,7 @@ import Login from "./pages/Login";
 import Productos from "./pages/Productos";
 import ProductoForm from "./pages/ProductoForm";
 import CambioMasivo from "./pages/CambioMasivo";
+import MejorMargen from "./pages/MejorMargen";
 import Historial from "./pages/Historial";
 import Categorias from "./pages/Categorias";
 import Inventario from "./pages/Inventario";
@@ -58,6 +59,7 @@ export default function App() {
             <Route path="/productos/nuevo" element={<ProductoForm />} />
             <Route path="/productos/:id" element={<ProductoForm />} />
             <Route path="/cambio-masivo" element={<CambioMasivo />} />
+            <Route path="/productos/margenes" element={<MejorMargen />} />
             <Route path="/historial" element={<Historial />} />
             <Route path="/categorias" element={<Categorias />} />
             <Route path="/inventario" element={<Inventario />} />

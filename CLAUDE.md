@@ -1335,10 +1335,11 @@ el margen de Gexus es un *markup sobre el costo*, calculado con el precio
 de venta *sin IVA* (el precio que se carga en el sistema incluye IVA).
 Verificado con el caso real de la captura (costo $11.190, precio venta
 $18.980) — la fórmula da 42,53%, el mismo número exacto que mostraba
-Gexus. **Pendiente de confirmar con el usuario** si esta fórmula (markup
-sobre costo, con IVA 19% descontado del precio de venta) es efectivamente
-la que quiere usar en general, ya que se dedujo de un solo ejemplo — fácil
-de ajustar si no es exactamente así.
+Gexus. **Confirmado con el usuario** (ver "Pantalla 'Mejor margen'" más
+abajo): es la fórmula que efectivamente usa para fijar precios — explicó
+que parte del costo, le aplica el % de ganancia que quiere, y recién ahí
+agrega el IVA (ej. costo $1.000 → +40% → $1.400 → + IVA), que despejado
+algebraicamente da exactamente esta misma cuenta.
 
 ## Eliminar productos rápidamente (limpieza de datos)
 A pedido del usuario, para limpiar productos basura que quedaron del CSV
@@ -2298,3 +2299,44 @@ configurada, misma limitación ya documentada para pruebas anteriores del
 asistente) — pendiente que el usuario confirme con su propia clave que,
 tras esta corrección, el asistente ya avanza más allá de crear el
 proveedor al cargar una factura real.
+
+## Pantalla "Mejor margen" (para armar combos)
+A pedido del usuario, para poder filtrar rápido qué productos convienen más
+combinar en una promoción. Antes de programar se confirmó la fórmula de
+margen a usar — el usuario explicó cómo fija sus precios en la práctica:
+"si compro un producto a 1.000 y lo quiero vender a un 40% más, desde 1.400
+ahí aplico el IVA" (costo → + margen deseado → + IVA = precio de venta).
+Haciendo el despeje algebraico inverso de esa misma cuenta se llega
+exactamente a la fórmula que el sistema ya usaba en la ficha de producto
+(`calcularMargen` en `web/src/api.ts`) — **confirma que esa fórmula ya
+implementada es la correcta**, dejando resuelta la duda que quedaba
+pendiente desde que se dedujo por primera vez (ver "Margen (%) al cambiar
+el precio de un producto" más arriba).
+
+- **Nueva pantalla** (`web/src/pages/MejorMargen.tsx`, ruta
+  `/productos/margenes`, enlazada con un botón "Mejor margen" en
+  Productos): tabla de productos ordenados de mayor a menor margen (%),
+  con el mismo selector de categoría en cascada ya usado en el resto del
+  sistema y un campo de **margen mínimo (%)** — a pedido del usuario, que
+  describió querer ver "desde el 40% para arriba" — para filtrar solo lo
+  que está por encima de ese umbral.
+- **Solo productos con costo conocido**: los que no tienen ninguna compra
+  registrada en Inventario quedan fuera de la lista (no se muestra un
+  margen inventado), igual que ya pasaba en la ficha de producto individual
+  cuando no hay costo.
+- Nuevo endpoint `GET /api/productos/margenes` (`server/routes/
+  productos.ts`, registrado antes de `/:id` para no chocar con esa ruta —
+  mismo patrón ya usado para `/proximo-plu`): trae los productos activos
+  (filtrables por categoría, reutilizando `obtenerIdsCategoriaYDescendientes`)
+  junto con el costo de su compra más reciente, calculado con una sola
+  consulta a `MovimientoInventario` (en vez de una consulta por producto) —
+  el margen (%) en sí se calcula en el frontend con `calcularMargen`, la
+  misma función ya usada en la ficha de producto, para no duplicar la
+  fórmula en dos lugares.
+
+Probado de punta a punta con Playwright contra el servidor real: con dos
+productos de prueba (CHURRASCO DE VACUNO, costo $9.200/precio $14.500 →
+32,44%; ARROLLADO DE HUASO, costo $6.500/precio $9.500 → 22,82%), la
+pantalla los ordena correctamente de mayor a menor margen, y el filtro de
+margen mínimo en 30% deja solo el primero — los números calzan exactos con
+el cálculo manual.
