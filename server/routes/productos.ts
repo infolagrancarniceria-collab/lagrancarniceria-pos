@@ -42,6 +42,18 @@ productosRouter.get("/", async (req, res) => {
   res.json(productos);
 });
 
+// Sugerencia de PLU al crear un producto nuevo — el siguiente número libre
+// (mayor PLU puramente numérico + 1, considerando también productos
+// inactivos porque el PLU es único a nivel de toda la base de datos, no
+// solo entre los activos). Solo una sugerencia: el campo sigue siendo
+// editable en el formulario, para productos que necesiten calzar con un
+// código específico ya conocido (ej. una lista de precios en papel).
+productosRouter.get("/proximo-plu", async (_req, res) => {
+  const productos = await prisma.producto.findMany({ select: { plu: true } });
+  const maxNumerico = productos.reduce((max, p) => (/^\d+$/.test(p.plu) ? Math.max(max, Number(p.plu)) : max), 0);
+  res.json({ plu: String(maxNumerico + 1) });
+});
+
 productosRouter.get("/:id", async (req, res) => {
   const producto = await prisma.producto.findUnique({
     where: { id: Number(req.params.id) },

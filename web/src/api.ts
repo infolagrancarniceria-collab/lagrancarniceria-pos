@@ -623,6 +623,7 @@ export const api = {
       return get<Producto[]>(`/api/productos${query ? `?${query}` : ""}`);
     },
     obtener: (id: number) => get<ProductoConCosto>(`/api/productos/${id}`),
+    proximoPlu: () => get<{ plu: string }>("/api/productos/proximo-plu"),
     crear: (data: Omit<Producto, "id" | "categoria" | "activo" | "stockActual">) =>
       post<Producto>("/api/productos", data),
     actualizar: (

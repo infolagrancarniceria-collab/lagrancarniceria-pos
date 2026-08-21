@@ -59,6 +59,18 @@ export default function ProductoForm() {
     api.categorias.listar().then(setCategorias).catch((e) => setError(e.message));
   }, []);
 
+  // Sugerencia de PLU al crear un producto nuevo (el siguiente número
+  // libre) — el campo se queda editable por si este producto necesita
+  // calzar con un código específico ya conocido.
+  useEffect(() => {
+    if (!esNuevo) return;
+    api.productos
+      .proximoPlu()
+      .then(({ plu }) => setForm((f) => ({ ...f, plu })))
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [esNuevo]);
+
   useEffect(() => {
     if (!id) return;
     api.productos
@@ -234,6 +246,7 @@ export default function ProductoForm() {
         <label>
           PLU / Código
           <input value={form.plu} onChange={(e) => actualizarCampo("plu", e.target.value)} required />
+          {esNuevo && <span className="ayuda">Sugerido automáticamente — puedes cambiarlo si este producto necesita un código específico.</span>}
         </label>
         <label>
           Descripción

@@ -2096,3 +2096,16 @@ de las últimas compras y marca correctamente `bajoStock`; una caja
 retrasada 8 días a propósito (vía script de prueba, no queda en la base de
 datos real) aparece en `cajasEstancadas` y deja de aparecer al revertir la
 fecha.
+
+## PLU sugerido automáticamente al crear un producto
+A pedido del usuario. Antes había que escribir el PLU a mano cada vez, sin
+ninguna ayuda. Ahora, al abrir "Nuevo producto", el campo PLU se rellena
+solo con el siguiente número libre (`GET /api/productos/proximo-plu`: el
+mayor PLU puramente numérico de todo el catálogo —incluyendo productos
+inactivos, porque el PLU es único a nivel de toda la base de datos— más
+1). **Sigue siendo editable**: el usuario eligió esta opción sobre dejarlo
+fijo, para poder escribir un código específico si el producto necesita
+calzar con uno ya conocido (ej. una lista de precios en papel). Solo aplica
+al formulario manual de creación — la importación CSV y las herramientas
+del asistente de IA (`proponer_crear_producto`) siguen exigiendo un PLU
+explícito, sin inventar ninguno.
