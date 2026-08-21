@@ -264,6 +264,13 @@ select {
 .fila-error {
   background: #fbeae8;
 }
+.aviso-estancadas {
+  border-left: 4px solid var(--color-error);
+}
+.aviso-estancadas h3 {
+  color: var(--color-error);
+  margin-top: 0;
+}
 
 .chat-mensajes {
   display: flex;

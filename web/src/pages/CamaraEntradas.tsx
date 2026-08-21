@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, formatoCLP, type CajaCamara } from "../api";
-import { useUsuario } from "../context/UsuarioContext";
+import ModalConfirmarClave from "../components/ModalConfirmarClave";
+
+const MOTIVOS_ANULAR_CAJA = ["Caja de prueba", "Entrada duplicada", "Datos incorrectos"];
 
 function fechaHace(dias: number): string {
   const d = new Date();
@@ -29,8 +31,6 @@ const ETIQUETAS_ESTADO: Record<string, string> = {
 // se le sacó algo, hay que corregirlo aparte (el servidor igual lo
 // rechaza, esto solo evita el intento).
 export default function CamaraEntradas() {
-  const { usuario } = useUsuario();
-
   const [desde, setDesde] = useState(fechaHace(30));
   const [hasta, setHasta] = useState(hoy());
   const [cajas, setCajas] = useState<CajaCamara[]>([]);
@@ -38,8 +38,6 @@ export default function CamaraEntradas() {
   const [cargando, setCargando] = useState(false);
 
   const [anulandoId, setAnulandoId] = useState<number | null>(null);
-  const [motivo, setMotivo] = useState("");
-  const [guardandoAnulacion, setGuardandoAnulacion] = useState(false);
 
   async function buscar(e?: React.FormEvent) {
     e?.preventDefault();
@@ -64,24 +62,12 @@ export default function CamaraEntradas() {
     return caja.estado === "en_camara" && Math.abs(caja.saldoKg - caja.pesoInicialKg) < 0.0005;
   }
 
-  async function confirmarAnulacion(cajaId: number) {
-    if (!usuario) return;
-    if (!motivo.trim()) {
-      setError("Indica el motivo de la anulación");
-      return;
-    }
+  async function confirmarAnulacion(usuarioAutorizaId: number, clave: string, motivo?: string) {
+    if (anulandoId == null) return;
     setError(null);
-    setGuardandoAnulacion(true);
-    try {
-      await api.camara.anularEntrada(cajaId, usuario.id, motivo.trim());
-      setAnulandoId(null);
-      setMotivo("");
-      await buscar();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setGuardandoAnulacion(false);
-    }
+    await api.camara.anularEntrada(anulandoId, usuarioAutorizaId, clave, motivo ?? "");
+    setAnulandoId(null);
+    await buscar();
   }
 
   return (
@@ -142,53 +128,26 @@ export default function CamaraEntradas() {
               <td>{ETIQUETAS_ESTADO[c.estado] ?? c.estado}</td>
               <td>{c.creadoPor.nombre}</td>
               <td>
-                {puedeAnular(c) &&
-                  (anulandoId === c.id ? (
-                    <span className="fila-inline">
-                      <input
-                        type="text"
-                        placeholder="Motivo de la anulación"
-                        value={motivo}
-                        onChange={(e) => setMotivo(e.target.value)}
-                        style={{ width: "12rem" }}
-                      />
-                      <button
-                        type="button"
-                        className="boton boton-peligro"
-                        disabled={guardandoAnulacion}
-                        onClick={() => confirmarAnulacion(c.id)}
-                      >
-                        Confirmar
-                      </button>
-                      <button
-                        type="button"
-                        className="boton"
-                        disabled={guardandoAnulacion}
-                        onClick={() => {
-                          setAnulandoId(null);
-                          setMotivo("");
-                        }}
-                      >
-                        Cancelar
-                      </button>
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      className="boton"
-                      onClick={() => {
-                        setAnulandoId(c.id);
-                        setMotivo("");
-                      }}
-                    >
-                      Anular entrada
-                    </button>
-                  ))}
+                {puedeAnular(c) && (
+                  <button type="button" className="boton" onClick={() => setAnulandoId(c.id)}>
+                    Anular entrada
+                  </button>
+                )}
               </td>
             </tr>
           ))}
         </tbody>
       </table>
+
+      {anulandoId != null && (
+        <ModalConfirmarClave
+          titulo="Anular entrada"
+          descripcion="La caja queda fuera de existencias. Elige el motivo, quién autoriza y la clave de supervisor."
+          motivoOpciones={MOTIVOS_ANULAR_CAJA}
+          onConfirmar={confirmarAnulacion}
+          onCancelar={() => setAnulandoId(null)}
+        />
+      )}
     </div>
   );
 }

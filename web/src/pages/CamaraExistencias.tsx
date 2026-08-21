@@ -14,7 +14,10 @@ import {
 } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
 import { EtiquetaCamara } from "../components/EtiquetaCamara";
+import ModalConfirmarClave from "../components/ModalConfirmarClave";
 import { imprimirEtiquetaCamara, imprimirEtiquetasLoteCamara } from "../lib/imprimir";
+
+const MOTIVOS_ANULAR_LOTE = ["Lote de prueba", "Entrada duplicada", "Datos incorrectos"];
 
 interface FormularioCorreccion {
   familia: FamiliaCamara;
@@ -56,8 +59,6 @@ export default function CamaraExistencias() {
   const [guardandoCorreccion, setGuardandoCorreccion] = useState(false);
 
   const [anulandoId, setAnulandoId] = useState<number | null>(null);
-  const [motivoAnulacion, setMotivoAnulacion] = useState("");
-  const [guardandoAnulacion, setGuardandoAnulacion] = useState(false);
 
   const [reimprimiendo, setReimprimiendo] = useState<CajaCamara[] | null>(null);
   const [imprimiendoId, setImprimiendoId] = useState<number | null>(null);
@@ -178,24 +179,12 @@ export default function CamaraExistencias() {
     }, 0);
   }
 
-  async function confirmarAnulacion(loteId: number) {
-    if (!usuario) return;
-    if (!motivoAnulacion.trim()) {
-      setError("Indica el motivo de la anulación");
-      return;
-    }
+  async function confirmarAnulacion(usuarioAutorizaId: number, clave: string, motivo?: string) {
+    if (anulandoId == null) return;
     setError(null);
-    setGuardandoAnulacion(true);
-    try {
-      await api.camara.anularLote(loteId, usuario.id, motivoAnulacion.trim());
-      setAnulandoId(null);
-      setMotivoAnulacion("");
-      await cargar();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setGuardandoAnulacion(false);
-    }
+    await api.camara.anularLote(anulandoId, usuarioAutorizaId, clave, motivo ?? "");
+    setAnulandoId(null);
+    await cargar();
   }
 
   if (reimprimiendo) {
@@ -275,12 +264,13 @@ export default function CamaraExistencias() {
             <th>Familia</th>
             <th>Producto</th>
             <th>Cantidad de cajas</th>
+            <th>Costo/kg últimas 2 compras</th>
           </tr>
         </thead>
         <tbody>
           {existencias?.porProducto.length === 0 && (
             <tr>
-              <td colSpan={3}>No hay cajas disponibles en cámara.</td>
+              <td colSpan={4}>No hay cajas disponibles en cámara.</td>
             </tr>
           )}
           {familias.map((familia) => {
@@ -289,25 +279,72 @@ export default function CamaraExistencias() {
             return (
               <Fragment key={familia}>
                 {filas.map((g) => (
-                  <tr key={`${g.familia}-${g.producto}`}>
+                  <tr key={`${g.familia}-${g.producto}`} className={g.bajoStock ? "fila-error" : ""}>
                     <td>
                       <b>{g.familia}</b>
                     </td>
                     <td>{g.producto}</td>
                     <td>
                       <b>{g.cajas}</b>
+                      {g.bajoStock && " (stock bajo)"}
+                    </td>
+                    <td>
+                      {g.ultimosCostos.length === 0 ? (
+                        "—"
+                      ) : (
+                        <>
+                          {formatoCLP(g.ultimosCostos[0])}
+                          {g.ultimosCostos.length > 1 && (
+                            <span className="ayuda"> (antes {formatoCLP(g.ultimosCostos[1])})</span>
+                          )}
+                        </>
+                      )}
                     </td>
                   </tr>
                 ))}
                 <tr className="fila-total">
                   <td colSpan={2}>Total {familia}</td>
                   <td>{subtotal}</td>
+                  <td></td>
                 </tr>
               </Fragment>
             );
           })}
         </tbody>
       </table>
+
+      {existencias && existencias.cajasEstancadas.length > 0 && (
+        <section className="tarjeta aviso-estancadas">
+          <h3>⚠ Cajas sin movimiento hace más de una semana</h3>
+          <p className="ayuda">
+            Nunca tuvieron ninguna salida (ni parcial) desde que ingresaron — revísalas para no dejarlas olvidadas.
+          </p>
+          <table className="tabla">
+            <thead>
+              <tr>
+                <th>Caja</th>
+                <th>Producto</th>
+                <th>Familia</th>
+                <th>Ingreso</th>
+                <th>Días en cámara</th>
+              </tr>
+            </thead>
+            <tbody>
+              {existencias.cajasEstancadas.map((c) => (
+                <tr key={c.cajaId}>
+                  <td>{c.numero}</td>
+                  <td>{c.producto}</td>
+                  <td>{c.familia}</td>
+                  <td>{new Date(c.fechaIngreso).toLocaleDateString("es-CL")}</td>
+                  <td>
+                    <b>{c.diasEnCamara}</b>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
 
       <details className="detalle-lotes">
         <summary>Ver lotes ingresados para cuadratura y correcciones</summary>
@@ -371,43 +408,12 @@ export default function CamaraExistencias() {
                       title={lote.bloqueado ? "Ya tiene salidas" : undefined}
                       onClick={() => {
                         setAnulandoId(lote.id);
-                        setMotivoAnulacion("");
                         setError(null);
                       }}
                     >
                       Anular
                     </button>
                   </div>
-                  {anulandoId === lote.id && (
-                    <div className="fila-inline" style={{ marginTop: "0.5rem" }}>
-                      <input
-                        type="text"
-                        placeholder="Motivo de la anulación"
-                        value={motivoAnulacion}
-                        onChange={(e) => setMotivoAnulacion(e.target.value)}
-                        style={{ width: "12rem" }}
-                      />
-                      <button
-                        type="button"
-                        className="boton boton-peligro"
-                        disabled={guardandoAnulacion}
-                        onClick={() => confirmarAnulacion(lote.id)}
-                      >
-                        Confirmar
-                      </button>
-                      <button
-                        type="button"
-                        className="boton"
-                        disabled={guardandoAnulacion}
-                        onClick={() => {
-                          setAnulandoId(null);
-                          setMotivoAnulacion("");
-                        }}
-                      >
-                        Cancelar
-                      </button>
-                    </div>
-                  )}
                 </td>
               </tr>
             ))}
@@ -539,6 +545,16 @@ export default function CamaraExistencias() {
           </div>
         )}
       </details>
+
+      {anulandoId != null && (
+        <ModalConfirmarClave
+          titulo="Anular lote"
+          descripcion="Se anulan todas las cajas del lote de una vez. Elige el motivo, quién autoriza y la clave de supervisor."
+          motivoOpciones={MOTIVOS_ANULAR_LOTE}
+          onConfirmar={confirmarAnulacion}
+          onCancelar={() => setAnulandoId(null)}
+        />
+      )}
     </div>
   );
 }

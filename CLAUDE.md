@@ -2034,3 +2034,61 @@ prueba), reparte el peso de cada lote exacto (ej. 209,48 kg entre 10 cajas
 crea ningún lote para el grupo que se dejó sin producto elegido a
 propósito, y crea el resto (32 cajas, 7 lotes) con `pesoEstimado: true` y
 `procedencia: null`.
+
+## Cámara: costo de últimas compras, clave para anular, avisos de stock bajo y cajas estancadas; Caja: Enter salta a Pagos
+Cinco ajustes a pedido del usuario, con preguntas antes de tocar código
+dado que varias tenían más de una forma razonable de resolverse.
+
+- **Costo de las últimas 2 compras, en Existencias**: la tabla "Cajas
+  disponibles por producto" ahora tiene una columna con el costo neto por
+  kilo del lote más reciente de ese producto y, si hay una compra anterior,
+  el costo de esa entre paréntesis ("antes $X") — para comparar de un
+  vistazo si el precio subió o bajó, sin entrar al detalle de cada lote.
+  Sale de `LoteCamara.costoNetoKg`, tomando los 2 lotes más recientes por
+  producto (`GET /api/camara/existencias`, campo `ultimosCostos`).
+- **Clave de supervisor al anular en Cámara**: "Anular entrada" (una caja,
+  en Revisar entradas) y "Anular lote" (Existencias) antes solo pedían un
+  motivo de texto libre. Ahora usan el mismo `ModalConfirmarClave` que ya
+  usa Caja para anular un producto o una venta — piden motivo (de una
+  lista rápida + "Otro"), quién autoriza (de una lista de nombres) y la
+  clave de supervisor, con el mismo límite de intentos (5 fallidos
+  bloquean 1 minuto por IP) ya usado en el resto del sistema
+  (`verificarClaveSupervisor`, nuevo helper en `server/routes/camara.ts`
+  que reutiliza `verificarClaveConLimite`).
+- **Aviso de stock bajo en Cámara: umbral fijo de 2 cajas**: a diferencia
+  del umbral de Inventario general (configurable por producto), acá es un
+  número fijo para todos los productos, a pedido del usuario — más simple.
+  Un producto con menos de 2 cajas disponibles se marca en la tabla de
+  Existencias con la misma clase `fila-error` que ya usaba Inventario para
+  su propio aviso de stock bajo (reutilizada, no una nueva).
+- **Aviso de cajas estancadas (+7 días sin ninguna salida)**: nueva sección
+  en Existencias, "⚠ Cajas sin movimiento hace más de una semana" — lista
+  las cajas que llevan 7+ días en cámara y **nunca** tuvieron ninguna
+  salida (ni parcial) desde que ingresaron, para no dejarlas olvidadas. Si
+  una caja ya tuvo una salida parcial hace tiempo pero sigue con saldo, no
+  se marca (a pedido del usuario, para no generar ruido con cajas que sí se
+  están usando de a poco). Campo `cajasEstancadas` en el mismo endpoint de
+  Existencias.
+- **Caja: Enter salta directo a Pagos**: a pedido del usuario, para no
+  tener que usar la flecha ↓ varias veces después de terminar de escanear
+  los productos de una venta. Un Enter "suelto" (sin ningún campo o botón
+  con el foco) mueve el foco al primer botón de medio de pago (Efectivo).
+  Se ignora si hay un campo/botón enfocado (para no pisar su
+  comportamiento normal) y, clave para no chocar con el lector de código
+  de barras: el hook `useEscanerCodigoBarras` ya intercepta y detiene el
+  Enter que termina un escaneo real (con `stopPropagation()`, antes de que
+  llegue a este atajo), así que este atajo nunca se dispara por error en
+  medio de un escaneo — solo reacciona a un Enter de teclado genuino.
+  Verificado con Playwright contra el servidor real: Enter sin foco mueve
+  el foco al botón Efectivo; Enter con un campo de texto enfocado no hace
+  nada raro (el campo se queda igual); y un escaneo real simulado (tipeo
+  rápido de un código de barras + Enter) sigue agregando el producto al
+  carrito con normalidad, sin saltar a Pagos por error.
+
+Probado de punta a punta contra el servidor real: anular una caja/lote sin
+clave o con clave incorrecta se rechaza (400/403); con la clave correcta
+se anula igual que antes; el endpoint de Existencias devuelve los costos
+de las últimas compras y marca correctamente `bajoStock`; una caja
+retrasada 8 días a propósito (vía script de prueba, no queda en la base de
+datos real) aparece en `cajasEstancadas` y deja de aparecer al revertir la
+fecha.

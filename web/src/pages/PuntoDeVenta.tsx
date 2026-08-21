@@ -82,8 +82,11 @@ export default function PuntoDeVenta() {
 
   // Atajos de teclado para no ocupar espacio en pantalla ni depender del
   // mouse: F2 abre el buscador de productos, F3 el despacho a domicilio, F4
-  // el descuento, F5 el comentario. Las flechas ↑/↓ saltan directo entre las
-  // secciones completas (Buscar, Despacho, Descuento, Comentario, Pagos) —
+  // el descuento, F5 el comentario. Enter (sin ningún campo/botón con el
+  // foco) salta directo a Pagos — pensado para después de terminar de
+  // escanear los productos de la venta con el lector físico. Las flechas
+  // ↑/↓ saltan directo entre las secciones completas (Buscar, Despacho,
+  // Descuento, Comentario, Pagos), de a una por vez —
   // pero se ignoran si el foco está en un campo de texto/select/número, para
   // no pisar el comportamiento nativo (flechas del spinner, cambiar de
   // opción). Las flechas ←/→ eligen el medio de pago (Efectivo/Tarjeta/
@@ -130,6 +133,22 @@ export default function PuntoDeVenta() {
       if (e.key === "F5") {
         e.preventDefault();
         setMostrarFormComentario(true);
+        return;
+      }
+      if (e.key === "Enter") {
+        // Salto directo a Pagos con un solo Enter (en vez de varias flechas
+        // ↓), pensado para después de terminar de escanear los productos de
+        // una venta con el lector físico. Se ignora si hay un campo o botón
+        // con el foco — ese Enter ya tiene su propio significado ahí (mandar
+        // un formulario, hacer clic en el botón) y no debe pisarse. También
+        // se ignora sin intervención propia durante un escaneo real: el
+        // lector (useEscanerCodigoBarras) intercepta y detiene ese Enter
+        // antes de que llegue acá (ver ese hook), así que este atajo solo
+        // reacciona a un Enter suelto de teclado.
+        const activo = document.activeElement as HTMLElement | null;
+        if (activo && ["INPUT", "SELECT", "TEXTAREA", "BUTTON"].includes(activo.tagName)) return;
+        e.preventDefault();
+        enfocarPrimerCampo(seccionPagosRef.current);
         return;
       }
       if (e.key === "ArrowLeft" || e.key === "ArrowRight") {

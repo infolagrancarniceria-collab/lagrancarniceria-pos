@@ -3,6 +3,24 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../db";
 import { rangoFechasDesdeTexto } from "./reportes";
+import { verificarClaveConLimite } from "../lib/clave";
+
+// Verifica la clave de supervisor con el mismo límite de intentos que ya usa
+// Caja (5 fallidos seguidos por IP bloquean 1 minuto) — reutilizado acá para
+// anular una caja o un lote de cámara, que antes solo pedían un motivo.
+async function verificarClaveSupervisor(
+  req: { ip?: string },
+  clave: string
+): Promise<{ status: number; error: string } | null> {
+  const claveSupervisor = await prisma.claveSupervisor.findFirst();
+  if (!claveSupervisor) return { status: 403, error: "Clave de supervisor incorrecta" };
+  const resultado = verificarClaveConLimite(req.ip ?? "desconocido", clave, claveSupervisor.hashClave);
+  if (resultado.bloqueado) {
+    return { status: 429, error: `Demasiados intentos fallidos — espera ${resultado.segundosRestantes} segundos e intenta de nuevo` };
+  }
+  if (!resultado.valida) return { status: 403, error: "Clave de supervisor incorrecta" };
+  return null;
+}
 
 export const camaraRouter = Router();
 
@@ -179,15 +197,19 @@ camaraRouter.get("/cajas/:id", async (req, res) => {
 const anularEntradaSchema = z.object({
   usuarioId: z.number().int().positive(),
   motivo: z.string().trim().min(1, "Indica el motivo de la anulación"),
+  clave: z.string().trim().min(1, "Falta la clave de supervisor"),
 });
 
 camaraRouter.post("/cajas/:id/anular-entrada", async (req, res) => {
   const parsed = anularEntradaSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0].message });
-  const { usuarioId, motivo } = parsed.data;
+  const { usuarioId, motivo, clave } = parsed.data;
 
   const usuario = await validarUsuario(usuarioId);
   if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
+
+  const errorClave = await verificarClaveSupervisor(req, clave);
+  if (errorClave) return res.status(errorClave.status).json({ error: errorClave.error });
 
   const caja = await prisma.cajaCamara.findUnique({ where: { id: Number(req.params.id) } });
   if (!caja) return res.status(404).json({ error: "Caja no encontrada" });
@@ -393,6 +415,7 @@ camaraRouter.put("/lotes/:id", async (req, res) => {
 const anularLoteSchema = z.object({
   usuarioId: z.number().int().positive(),
   motivo: z.string().trim().min(1, "Indica el motivo de la anulación"),
+  clave: z.string().trim().min(1, "Falta la clave de supervisor"),
 });
 
 // Igual que /cajas/:id/anular-entrada, pero aplicado a todas las cajas del
@@ -400,10 +423,13 @@ const anularLoteSchema = z.object({
 camaraRouter.post("/lotes/:id/anular", async (req, res) => {
   const parsed = anularLoteSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0].message });
-  const { usuarioId, motivo } = parsed.data;
+  const { usuarioId, motivo, clave } = parsed.data;
 
   const usuario = await validarUsuario(usuarioId);
   if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
+
+  const errorClave = await verificarClaveSupervisor(req, clave);
+  if (errorClave) return res.status(errorClave.status).json({ error: errorClave.error });
 
   const loteId = Number(req.params.id);
   const lote = await prisma.loteCamara.findUnique({ where: { id: loteId }, include: { cajas: true } });
@@ -444,6 +470,14 @@ camaraRouter.post("/lotes/:id/anular", async (req, res) => {
 
 // --- Existencias (stock actual por familia/producto) y reporte de salidas ---
 
+// Umbral fijo (no configurable por producto, a pedido del usuario — más
+// simple que el umbral de stock bajo del inventario general, que sí es
+// configurable por producto).
+const UMBRAL_STOCK_BAJO_CAJAS = 2;
+// Una caja que nunca tuvo ninguna salida (ni parcial) y lleva más de este
+// tiempo en cámara se marca como "estancada" — para no dejarla olvidada.
+const UNA_SEMANA_MS = 7 * 24 * 60 * 60 * 1000;
+
 camaraRouter.get("/existencias", async (_req, res) => {
   const cajas = await prisma.cajaCamara.findMany({
     where: { estado: { in: [...ESTADOS_ACTIVOS] } },
@@ -453,18 +487,61 @@ camaraRouter.get("/existencias", async (_req, res) => {
   const totalKilos = cajas.reduce((s, c) => s + c.saldoKg, 0);
   const totalValor = cajas.reduce((s, c) => s + c.saldoKg * c.costoNetoKg, 0);
 
-  const grupos = new Map<string, { familia: string; producto: string; cajas: number }>();
+  const grupos = new Map<string, { familia: string; producto: string; productoId: number; cajas: number }>();
   for (const c of cajas) {
-    const clave = `${c.familiaNombre}|${c.producto.descripcion}`;
-    const actual = grupos.get(clave) ?? { familia: c.familiaNombre, producto: c.producto.descripcion, cajas: 0 };
+    const clave = `${c.familiaNombre}|${c.productoId}`;
+    const actual = grupos.get(clave) ?? { familia: c.familiaNombre, producto: c.producto.descripcion, productoId: c.productoId, cajas: 0 };
     actual.cajas++;
     grupos.set(clave, actual);
   }
-  const porProducto = Array.from(grupos.values()).sort(
-    (a, b) => a.familia.localeCompare(b.familia, "es") || a.producto.localeCompare(b.producto, "es")
-  );
 
-  res.json({ totalCajas, totalKilos, totalValor, porProducto });
+  // Últimos 2 costos por kilo (de los lotes más recientes) por producto —
+  // para poder comparar rápido si el precio subió o bajó en la última
+  // compra, sin entrar al detalle de cada lote.
+  const productoIds = [...new Set([...grupos.values()].map((g) => g.productoId))];
+  const ultimosCostosPorProducto = new Map<number, number[]>();
+  if (productoIds.length) {
+    const lotesRecientes = await prisma.loteCamara.findMany({
+      where: { productoId: { in: productoIds } },
+      orderBy: { fechaIngreso: "desc" },
+      select: { productoId: true, costoNetoKg: true },
+    });
+    for (const l of lotesRecientes) {
+      const actual = ultimosCostosPorProducto.get(l.productoId) ?? [];
+      if (actual.length < 2) {
+        actual.push(l.costoNetoKg);
+        ultimosCostosPorProducto.set(l.productoId, actual);
+      }
+    }
+  }
+
+  const porProducto = Array.from(grupos.values())
+    .map((g) => ({
+      ...g,
+      ultimosCostos: ultimosCostosPorProducto.get(g.productoId) ?? [],
+      bajoStock: g.cajas < UMBRAL_STOCK_BAJO_CAJAS,
+    }))
+    .sort((a, b) => a.familia.localeCompare(b.familia, "es") || a.producto.localeCompare(b.producto, "es"));
+
+  const limiteEstancada = new Date(Date.now() - UNA_SEMANA_MS);
+  const cajasEstancadas = cajas
+    .filter(
+      (c) =>
+        c.estado === "en_camara" &&
+        Math.abs(c.saldoKg - c.pesoInicialKg) <= EPSILON_KG &&
+        c.fechaIngreso <= limiteEstancada
+    )
+    .map((c) => ({
+      cajaId: c.id,
+      numero: String(c.id).padStart(6, "0"),
+      producto: c.producto.descripcion,
+      familia: c.familiaNombre,
+      fechaIngreso: c.fechaIngreso,
+      diasEnCamara: Math.floor((Date.now() - c.fechaIngreso.getTime()) / (24 * 60 * 60 * 1000)),
+    }))
+    .sort((a, b) => b.diasEnCamara - a.diasEnCamara);
+
+  res.json({ totalCajas, totalKilos, totalValor, porProducto, cajasEstancadas });
 });
 
 // Destinos fijos de salida — "otro" se agregó a pedido del usuario (además

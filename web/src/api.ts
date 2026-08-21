@@ -105,7 +105,22 @@ export interface ExistenciasCamara {
   totalCajas: number;
   totalKilos: number;
   totalValor: number;
-  porProducto: { familia: string; producto: string; cajas: number }[];
+  porProducto: {
+    familia: string;
+    producto: string;
+    productoId: number;
+    cajas: number;
+    ultimosCostos: number[];
+    bajoStock: boolean;
+  }[];
+  cajasEstancadas: {
+    cajaId: number;
+    numero: string;
+    producto: string;
+    familia: string;
+    fechaIngreso: string;
+    diasEnCamara: number;
+  }[];
 }
 
 export interface ReporteSalidasCamara {
@@ -892,8 +907,8 @@ export const api = {
       const query = qs.toString();
       return get<CajaCamara[]>(`/api/camara/cajas${query ? `?${query}` : ""}`);
     },
-    anularEntrada: (cajaId: number, usuarioId: number, motivo: string) =>
-      post<ResultadoAjusteCamara>(`/api/camara/cajas/${cajaId}/anular-entrada`, { usuarioId, motivo }),
+    anularEntrada: (cajaId: number, usuarioId: number, clave: string, motivo: string) =>
+      post<ResultadoAjusteCamara>(`/api/camara/cajas/${cajaId}/anular-entrada`, { usuarioId, clave, motivo }),
     lotes: (params: { desde?: string; hasta?: string } = {}) => {
       const qs = new URLSearchParams();
       if (params.desde) qs.set("desde", params.desde);
@@ -913,8 +928,8 @@ export const api = {
         usuarioId: number;
       }
     ) => put<{ lote: LoteCamara; cajas: CajaCamara[] }>(`/api/camara/lotes/${id}`, data),
-    anularLote: (id: number, usuarioId: number, motivo: string) =>
-      post<{ cajas: CajaCamara[] }>(`/api/camara/lotes/${id}/anular`, { usuarioId, motivo }),
+    anularLote: (id: number, usuarioId: number, clave: string, motivo: string) =>
+      post<{ cajas: CajaCamara[] }>(`/api/camara/lotes/${id}/anular`, { usuarioId, clave, motivo }),
     existencias: () => get<ExistenciasCamara>("/api/camara/existencias"),
     reporteSalidas: (params: { desde?: string; hasta?: string } = {}) => {
       const qs = new URLSearchParams();
