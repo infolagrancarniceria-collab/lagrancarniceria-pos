@@ -25,6 +25,7 @@ model Usuario {
 
   sesionesAbiertas           SesionCaja[] @relation("SesionesAbiertasPorUsuario")
   sesionesCerradas           SesionCaja[] @relation("SesionesCerradasPorUsuario")
+  sesionesFondoAutorizado    SesionCaja[] @relation("SesionesFondoAutorizadoPorUsuario")
   ventas                     Venta[]
   ventasAnuladas             Venta[]      @relation("VentasAnuladasPorUsuario")
   itemsAnulados              ItemVenta[]  @relation("ItemsAnuladosPorUsuario")
@@ -210,6 +211,16 @@ model SesionCaja {
   usuarioApertura   Usuario  @relation("SesionesAbiertasPorUsuario", fields: [usuarioAperturaId], references: [id])
   fondoFijoInicial  Float
   fechaApertura     DateTime @default(now())
+
+  // Sugerido = lo que quedó realmente contado al cerrar la sesión anterior
+  // (el fondo "esperado" para empezar el día). Si fondoFijoInicial termina
+  // siendo distinto de este valor, es un ajuste manual — motivoAjusteFondo
+  // y usuarioAutorizoFondoId quedan solo cuando eso pasa (clave de
+  // supervisor + motivo, mismo patrón que las anulaciones de Caja).
+  fondoFijoSugerido      Float?
+  motivoAjusteFondo      String?
+  usuarioAutorizoFondoId Int?
+  usuarioAutorizoFondo   Usuario? @relation("SesionesFondoAutorizadoPorUsuario", fields: [usuarioAutorizoFondoId], references: [id])
 
   estado String @default("abierta") // "abierta" | "cerrada"
 

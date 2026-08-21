@@ -69,7 +69,7 @@ cajaRouter.post("/clave-supervisor/verificar", async (req, res) => {
 
 cajaRouter.get("/sesiones", async (_req, res) => {
   const sesiones = await prisma.sesionCaja.findMany({
-    include: { usuarioApertura: true, usuarioCierre: true },
+    include: { usuarioApertura: true, usuarioCierre: true, usuarioAutorizoFondo: true },
     orderBy: { fechaApertura: "desc" },
     take: 100,
   });
@@ -84,17 +84,40 @@ cajaRouter.get("/sesiones/actual", async (_req, res) => {
   res.json(sesion);
 });
 
-const abrirSesionSchema = z.object({
-  fondoFijoInicial: z.number().min(0, "El fondo fijo no puede ser negativo"),
-  usuarioId: z.number().int().positive(),
+// Lo que debería haber en caja para empezar el día: el efectivo realmente
+// contado al cerrar la sesión anterior (fondo fijo + ventas + cobros de
+// crédito en efectivo, ya verificado contra lo contado a mano). Si nunca se
+// cerró ninguna caja todavía, no hay sugerencia.
+cajaRouter.get("/sesiones/fondo-sugerido", async (_req, res) => {
+  const ultimaCerrada = await prisma.sesionCaja.findFirst({
+    where: { estado: "cerrada" },
+    orderBy: { fechaCierre: "desc" },
+  });
+  res.json({ fondoSugerido: ultimaCerrada?.efectivoContado ?? null });
 });
+
+const abrirSesionSchema = z
+  .object({
+    fondoFijoInicial: z.number().min(0, "El fondo fijo no puede ser negativo"),
+    usuarioId: z.number().int().positive(),
+    // Solo hacen falta si fondoFijoInicial termina distinto de lo sugerido
+    // (ver /sesiones/fondo-sugerido) — es un ajuste manual del fondo, y
+    // queda igual de auditado que cualquier otra anulación de Caja.
+    clave: z.string().optional(),
+    motivoAjusteFondo: z.string().trim().optional(),
+    usuarioAutorizoId: z.number().int().positive().optional(),
+  })
+  .refine((data) => !data.usuarioAutorizoId || !!data.clave, {
+    message: "Falta la clave de supervisor para autorizar el ajuste",
+    path: ["clave"],
+  });
 
 cajaRouter.post("/sesiones", async (req, res) => {
   const parsed = abrirSesionSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.issues[0].message });
   }
-  const { fondoFijoInicial, usuarioId } = parsed.data;
+  const { fondoFijoInicial, usuarioId, clave, motivoAjusteFondo, usuarioAutorizoId } = parsed.data;
 
   const usuario = await validarUsuario(usuarioId);
   if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
@@ -102,8 +125,48 @@ cajaRouter.post("/sesiones", async (req, res) => {
   const yaAbierta = await prisma.sesionCaja.findFirst({ where: { estado: "abierta" } });
   if (yaAbierta) return res.status(409).json({ error: "Ya hay una caja abierta" });
 
+  const ultimaCerrada = await prisma.sesionCaja.findFirst({
+    where: { estado: "cerrada" },
+    orderBy: { fechaCierre: "desc" },
+  });
+  const fondoSugerido = ultimaCerrada?.efectivoContado ?? null;
+  const esAjuste = fondoSugerido != null && Math.abs(fondoFijoInicial - fondoSugerido) > 0.01;
+
+  let usuarioAutorizoFondoId: number | null = null;
+  if (esAjuste) {
+    if (!motivoAjusteFondo) {
+      return res.status(400).json({ error: "Indica el motivo del ajuste del fondo inicial" });
+    }
+    if (!usuarioAutorizoId || !clave) {
+      return res.status(400).json({ error: "El ajuste del fondo inicial necesita autorización de un supervisor" });
+    }
+    const autorizador = await validarUsuario(usuarioAutorizoId);
+    if (!autorizador) return res.status(400).json({ error: "Usuario que autoriza inválido" });
+
+    const claveSupervisor = await prisma.claveSupervisor.findFirst();
+    if (!claveSupervisor) {
+      return res.status(403).json({ error: "Clave de supervisor incorrecta" });
+    }
+    const resultadoClave = verificarClaveConLimite(req.ip ?? "desconocido", clave, claveSupervisor.hashClave);
+    if (resultadoClave.bloqueado) {
+      return res.status(429).json({
+        error: `Demasiados intentos fallidos — espera ${resultadoClave.segundosRestantes} segundos e intenta de nuevo`,
+      });
+    }
+    if (!resultadoClave.valida) {
+      return res.status(403).json({ error: "Clave de supervisor incorrecta" });
+    }
+    usuarioAutorizoFondoId = usuarioAutorizoId;
+  }
+
   const sesion = await prisma.sesionCaja.create({
-    data: { fondoFijoInicial, usuarioAperturaId: usuarioId },
+    data: {
+      fondoFijoInicial,
+      usuarioAperturaId: usuarioId,
+      fondoFijoSugerido: fondoSugerido,
+      motivoAjusteFondo: esAjuste ? motivoAjusteFondo : null,
+      usuarioAutorizoFondoId,
+    },
   });
   res.status(201).json(sesion);
 });
@@ -704,8 +767,16 @@ cajaRouter.post("/ventas/:id/confirmar", async (req, res) => {
     return res.status(400).json({ error: "La venta no tiene productos" });
   }
 
+  // Un pago en efectivo se cobra redondeado a la decena más cercana (Ley
+  // del Redondeo, ver redondearA10 en web/src/api.ts) — puede dejar hasta
+  // $5 de diferencia contra el total exacto, que no es un error sino el
+  // redondeo legal. Esa tolerancia solo se acepta si la venta tiene algún
+  // pago en efectivo; el resto de los medios de pago siguen exigiendo el
+  // monto exacto.
+  const hayPagoEfectivo = venta.pagos.some((p) => p.medio === "efectivo");
+  const tolerancia = hayPagoEfectivo ? 5.01 : 0.01;
   const totalPagado = venta.pagos.reduce((suma, p) => suma + p.monto, 0);
-  if (Math.abs(totalPagado - venta.total) > 0.01) {
+  if (Math.abs(totalPagado - venta.total) > tolerancia) {
     return res.status(400).json({
       error: `Los pagos ($${totalPagado}) no coinciden con el total de la venta ($${venta.total})`,
     });

@@ -1,5 +1,14 @@
 import { formatoCLP, type Venta } from "../api";
 
+// Un pago en efectivo se cobra redondeado a la decena más cercana (Ley del
+// Redondeo) — puede dejar unos pocos pesos de diferencia entre el Total
+// (exacto, según los productos) y la suma de los pagos. Se muestra aparte
+// en vez de dejarlo sin explicar, igual que hacen las boletas reales.
+function calcularRedondeo(venta: Venta): number {
+  const totalPagado = venta.pagos.reduce((s, p) => s + p.monto, 0);
+  return Math.round(totalPagado - venta.total);
+}
+
 const etiquetaMedio: Record<string, string> = {
   efectivo: "Efectivo",
   tarjeta: "Tarjeta",
@@ -124,6 +133,12 @@ export function ValeVenta({ venta, onImprimir, onAnular }: Props) {
             {p.medio === "credito" ? ` (${p.clienteNombre})` : ""}: {formatoCLP(p.monto)}
           </li>
         ))}
+        {calcularRedondeo(venta) !== 0 && (
+          <li>
+            Redondeo (Ley N° 21.131): {calcularRedondeo(venta) > 0 ? "+" : "-"}
+            {formatoCLP(Math.abs(calcularRedondeo(venta)))}
+          </li>
+        )}
       </ul>
     </div>
   );

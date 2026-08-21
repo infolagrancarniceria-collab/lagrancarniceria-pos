@@ -229,11 +229,51 @@ select {
   flex: 1;
 }
 .sidebar nav a {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
   color: #f3ddd3;
   text-decoration: none;
   padding: 0.5rem 0.65rem;
   border-radius: 8px;
   font-size: 0.92rem;
+}
+
+/* "Modo caja exclusiva" (ver web/src/lib/modoCaja.ts) en el PC del mesón:
+   a pedido del usuario, la barra lateral queda lo más angosta posible —
+   solo íconos (el nombre de cada sección queda como title, visible al
+   pasar el mouse), sin texto ocupando espacio de pantalla. */
+.sidebar-compacta {
+  width: 3.75rem;
+  padding: 1rem 0.4rem;
+}
+.sidebar-compacta .marca {
+  font-size: 0.85rem;
+  text-align: center;
+  padding-bottom: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+.sidebar-compacta nav a {
+  justify-content: center;
+  padding: 0.55rem 0.3rem;
+}
+.sidebar-compacta .nav-etiqueta {
+  display: none;
+}
+.sidebar-compacta .usuario-actual {
+  align-items: center;
+}
+.sidebar-compacta .usuario-actual button {
+  padding: 0.5rem;
+}
+/* El ícono del botón "Cambiar usuario" solo se necesita cuando su texto
+   está escondido (modo compacto) — en la barra normal el botón ya es
+   puro texto, como siempre fue. */
+.nav-emoji-boton {
+  display: none;
+}
+.sidebar-compacta .nav-emoji-boton {
+  display: inline;
 }
 .sidebar nav a:hover {
   background: rgba(255, 255, 255, 0.1);
@@ -451,16 +491,21 @@ select {
   gap: 0.5rem;
   margin: 0.25rem 0 0.5rem;
 }
+/* A pedido del usuario: el dorado sobre fondo crema costaba distinguirse
+   a simple vista — se cambió a relleno sólido (rojo vino, el color
+   primario de la marca) con letra blanca, más grande, para que el Total
+   salte a la vista de inmediato desde lejos del mesón. */
 .total-venta-destacado {
   font-family: var(--fuente-titulos);
-  font-size: 1.7rem;
+  font-size: 2.3rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  color: var(--color-oro);
-  background: var(--color-oro-fondo);
-  border: 1px solid var(--color-oro-borde);
-  padding: 0.35rem 1.1rem;
+  color: #fff6ee;
+  background: var(--color-primario);
+  border: 1px solid var(--color-vino);
+  padding: 0.4rem 1.3rem;
   border-radius: 10px;
+  box-shadow: 0 4px 14px -6px rgba(154, 40, 25, 0.55);
 }
 
 /* Aviso emergente del vuelto en efectivo — antes un window.alert() del

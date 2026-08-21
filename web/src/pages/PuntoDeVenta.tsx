@@ -1,6 +1,15 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, formatoCLP, type Comuna, type MedioPago, type Producto, type Venta } from "../api";
+import {
+  api,
+  formatoCLP,
+  redondearA10,
+  TOLERANCIA_REDONDEO_EFECTIVO,
+  type Comuna,
+  type MedioPago,
+  type Producto,
+  type Venta,
+} from "../api";
 import { useUsuario } from "../context/UsuarioContext";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 import { useEscanerCodigoBarras } from "../hooks/useEscanerCodigoBarras";
@@ -225,6 +234,14 @@ export default function PuntoDeVenta() {
   const totalPagado = venta?.pagos.reduce((s, p) => s + p.monto, 0) ?? 0;
   const totalVenta = venta?.total ?? 0;
   const faltaPagar = Math.round((totalVenta - totalPagado) * 100) / 100;
+  // Un pago en efectivo se cobra redondeado a la decena más cercana (ver
+  // redondearA10 en api.ts), así que puede dejar un resto de unos pocos
+  // pesos entre el total exacto y lo realmente cobrado — no es un pago
+  // incompleto, es el redondeo legal. Se tolera ese resto solo cuando la
+  // venta tiene al menos un pago en efectivo.
+  const hayPagoEfectivo = venta?.pagos.some((p) => p.medio === "efectivo") ?? false;
+  const faltaPagarCubierto =
+    faltaPagar === 0 || (hayPagoEfectivo && Math.abs(faltaPagar) <= TOLERANCIA_REDONDEO_EFECTIVO);
 
   // Solo puede haber un tipo de descuento activo por venta: a toda la venta
   // o por producto, no los dos a la vez (más claro para el registro).
@@ -311,10 +328,14 @@ export default function PuntoDeVenta() {
   // necesariamente el monto exacto de la venta. Solo se registra como pago
   // lo que realmente cubre lo que falta; el resto se muestra como vuelto,
   // sin guardarse en ningún lado (no es dinero que se queda en la caja).
+  // Por la Ley del Redondeo, en efectivo lo que se cobra se redondea a la
+  // decena más cercana (ver redondearA10 en api.ts) — el vuelto se calcula
+  // sobre ese monto ya redondeado, no sobre el total exacto.
   const faltaPagarPositivo = Math.max(faltaPagar, 0);
+  const montoACobrarEfectivo = redondearA10(faltaPagarPositivo);
   const montoIngresado = Number(montoPago) || 0;
   const vueltoPreview =
-    medioPago === "efectivo" && montoIngresado > faltaPagarPositivo ? montoIngresado - faltaPagarPositivo : 0;
+    medioPago === "efectivo" && montoIngresado > montoACobrarEfectivo ? montoIngresado - montoACobrarEfectivo : 0;
 
   async function agregarPago(e: React.FormEvent) {
     e.preventDefault();
@@ -329,7 +350,10 @@ export default function PuntoDeVenta() {
       setError("Falta el nombre del cliente para dejarlo a crédito");
       return;
     }
-    const montoACobrar = medioPago === "efectivo" ? Math.min(monto, faltaPagarPositivo) : monto;
+    // No más de lo que efectivamente se debe (ya redondeado) — si lo
+    // entregado es menor a eso (ej. un pago parcial), se registra tal cual
+    // lo que se entregó, sin redondear, y el resto sigue quedando pendiente.
+    const montoACobrar = medioPago === "efectivo" ? Math.min(monto, montoACobrarEfectivo) : monto;
     if (montoACobrar <= 0) {
       setError("Ya no falta nada por pagar");
       return;
@@ -627,6 +651,11 @@ export default function PuntoDeVenta() {
               </button>
             </div>
             <p className="ayuda ayuda-linea">Usa ← → sobre un medio de pago para cambiarlo.</p>
+            {medioPago === "efectivo" && montoACobrarEfectivo > 0 && montoACobrarEfectivo !== faltaPagarPositivo && (
+              <p className="ayuda ayuda-linea">
+                A cobrar en efectivo (redondeo): <strong>{formatoCLP(montoACobrarEfectivo)}</strong>
+              </p>
+            )}
             <form onSubmit={agregarPago} onKeyDown={manejarEnterComoTab} className="fila-inline">
               {medioPago === "credito" && (
                 <input
@@ -679,9 +708,18 @@ export default function PuntoDeVenta() {
               </tbody>
             </table>
             <p>
-              {faltaPagar > 0 && <span className="error">Falta pagar: {formatoCLP(faltaPagar)}</span>}
-              {faltaPagar < 0 && <span className="error">Los pagos superan el total en {formatoCLP(-faltaPagar)}</span>}
-              {faltaPagar === 0 && itemsActivos.length > 0 && <span className="exito">Los pagos cubren el total.</span>}
+              {!faltaPagarCubierto && faltaPagar > 0 && (
+                <span className="error">Falta pagar: {formatoCLP(faltaPagar)}</span>
+              )}
+              {!faltaPagarCubierto && faltaPagar < 0 && (
+                <span className="error">Los pagos superan el total en {formatoCLP(-faltaPagar)}</span>
+              )}
+              {faltaPagarCubierto && itemsActivos.length > 0 && (
+                <span className="exito">
+                  Los pagos cubren el total.
+                  {faltaPagar !== 0 && " (redondeo por pago en efectivo)"}
+                </span>
+              )}
             </p>
           </section>
 
@@ -689,7 +727,7 @@ export default function PuntoDeVenta() {
             <button
               type="button"
               className="boton boton-primario"
-              disabled={procesando || faltaPagar !== 0 || itemsActivos.length === 0}
+              disabled={procesando || !faltaPagarCubierto || itemsActivos.length === 0}
               onClick={confirmarVenta}
             >
               {procesando ? "Confirmando..." : "Confirmar venta"}

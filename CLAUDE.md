@@ -2414,3 +2414,85 @@ Probado con Playwright contra el servidor real: buscando "CHURRASCO DE
 VACUNO" en Productos, la fila muestra Costo $9.200, Precio de venta
 $14.500 y Margen 32,44% — igual que en "Mejor margen" y en la ficha del
 producto, confirmando que las tres pantallas usan la misma cuenta.
+
+## Redondeo en pagos en efectivo (Ley N° 21.131, "Ley del Redondeo")
+A pedido del usuario: "cuando paguen con efectivo, necesito que se
+redondee tanto el total como el vuelto" — desde que se retiraron de
+circulación las monedas de $1 y $5, la ley exige redondear a la decena más
+cercana lo que se cobra/entrega en efectivo (tarjeta y crédito se siguen
+cobrando siempre al peso exacto, no están afectados por esta ley).
+
+- **Nueva función `redondearA10`** (`web/src/api.ts`): `Math.round(monto /
+  10) * 10`. En Punto de Venta, al elegir Efectivo, el monto que
+  efectivamente se cobra (`montoACobrar`) se redondea con esta función —
+  un aviso nuevo ("A cobrar en efectivo (redondeo): $X") se lo deja claro
+  al cajero antes de cobrar, y el **vuelto también se calcula sobre ese
+  monto ya redondeado**, no sobre el total exacto.
+- **El total de la venta NO se toca** (sigue siendo la suma exacta de los
+  productos, la misma que usan reportes y márgenes) — solo se redondea lo
+  que efectivamente se cobra/entrega en efectivo. Esto puede dejar hasta
+  $5 de diferencia entre el total exacto y la suma de los pagos
+  registrados — no es un error, es el redondeo legal, así que se tolera
+  esa diferencia (constante `TOLERANCIA_REDONDEO_EFECTIVO = 5`) tanto en
+  el frontend (el botón "Confirmar venta" ya no exige el pago exacto al
+  peso si hay algún pago en efectivo) como en el backend
+  (`server/routes/caja.ts`, al confirmar la venta) — pero **solo si la
+  venta tiene algún pago en efectivo**; ventas 100% tarjeta/crédito siguen
+  exigiendo el monto exacto como siempre, para no debilitar esa validación
+  donde no corresponde.
+- **Vale (recibo)**: si la suma de los pagos no coincide exactamente con
+  el Total (por el redondeo), se agrega una línea nueva "Redondeo (Ley N°
+  21.131): +/-$X" — igual que muestran las boletas reales — en vez de
+  dejar una diferencia sin explicar.
+- **Cierre de caja (X/Z) no necesitó ningún cambio**: el "efectivo
+  esperado" ya se calculaba sumando `pago.monto` real (no `venta.total`),
+  así que automáticamente refleja el efectivo ya redondeado — cuadra
+  exacto contra lo que el cajero realmente cobra y cuenta físicamente.
+
+Probado de punta a punta contra el servidor real: un producto de prueba a
+$1.234 → se cobra $1.230 en efectivo (redondeo hacia abajo), entregando
+$2.000 el vuelto muestra $770 (sobre el monto redondeado, no sobre el
+total exacto), el botón "Confirmar venta" queda habilitado pese a los $4
+de diferencia, la venta confirma correctamente, y el vale impreso muestra
+"Total: $1.234 / Efectivo: $1.230 / Redondeo: -$4" — datos de prueba
+limpiados después.
+
+## Ajustes varios: barra lateral compacta en modo caja, Total más visible, fondo esperado al abrir caja
+Tres pedidos del usuario, revisando el sistema en uso real.
+
+- **Barra lateral lo más angosta posible en "modo caja exclusiva"**: la
+  clase nueva `.sidebar-compacta` (activa solo cuando el PC tiene ese modo
+  prendido, ver "Ajustes tras la primera semana de uso real") reduce el
+  ancho a 3.75rem y esconde el texto de cada ítem del menú (queda solo el
+  emoji, centrado, con el nombre completo como `title` — visible al pasar
+  el mouse) — el nombre del negocio se abrevia a "LGC" y "Cambiar usuario"
+  queda como un solo ícono (↩️). Fuera de ese modo, la barra se ve
+  exactamente igual que antes.
+- **Total en Punto de Venta, más grande y con más contraste**: el dorado
+  sobre fondo crema costaba distinguirse a simple vista desde el mesón —
+  se cambió a relleno sólido rojo vino (el color primario de la marca) con
+  letra blanca, de 1.7rem a 2.3rem.
+- **Fondo esperado al abrir caja, con confirmar o editar con
+  autorización**: al abrir una caja nueva, el campo "Fondo fijo inicial"
+  ahora viene precargado con el `efectivoContado` real de la última caja
+  cerrada (lo que debería haber físicamente para empezar el día), con un
+  aviso explicando de dónde sale ese número. Si se deja tal cual, se abre
+  directo. Si se edita a otro número, hace falta autorización — mismo
+  patrón que ya usa el resto de Caja (`ModalConfirmarClave`: motivo de una
+  lista rápida + "Otro", quién autoriza, clave de supervisor). Campos
+  nuevos en `SesionCaja` (`fondoFijoSugerido`, `motivoAjusteFondo`,
+  `usuarioAutorizoFondoId`) — quedan solo cuando el fondo inicial fue
+  efectivamente un ajuste, visibles en "Historial de cajas" (columna
+  "Ajuste de fondo"). Nuevo endpoint `GET /api/caja/sesiones/fondo-sugerido`
+  (el efectivo contado de la sesión cerrada más reciente); la validación
+  de la autorización se revalida completa en el servidor (no confía en que
+  el frontend haya mostrado o no el modal).
+
+Probado de punta a punta contra el servidor real: cerrar una caja con
+$12.345 contados y abrir la siguiente sin tocar el campo abre directo con
+ese mismo fondo; cerrar con $20.000 y editar el campo a $15.000 al abrir
+exige el modal, y con motivo + autorización + clave correcta la sesión
+queda creada con `fondoFijoSugerido: 20000`, `motivoAjusteFondo` y
+`usuarioAutorizoFondoId` guardados correctamente — visibles en el
+Historial de cajas. Confirmado también que la barra lateral en modo caja
+exclusiva mide exactamente 63.75px (3.75rem) de ancho.

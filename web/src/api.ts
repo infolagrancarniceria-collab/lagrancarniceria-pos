@@ -301,6 +301,17 @@ export function calcularMargen(precioVenta: number, costo: number | null): numbe
   return ((precioVentaNeto - costo) / costo) * 100;
 }
 
+// Redondeo de pagos en efectivo a la decena más cercana (Ley N° 21.131,
+// "Ley del Redondeo") — desde que se retiraron de circulación las monedas
+// de $1 y $5, el monto a cobrar/entregar en efectivo se redondea a
+// múltiplos de $10. Solo aplica a efectivo: tarjeta y crédito se cobran
+// siempre al peso exacto.
+export const TOLERANCIA_REDONDEO_EFECTIVO = 5;
+
+export function redondearA10(monto: number): number {
+  return Math.round(monto / 10) * 10;
+}
+
 export interface Comuna {
   id: number;
   nombre: string;
@@ -496,6 +507,10 @@ export interface SesionCaja {
   usuarioCierre?: Usuario | null;
   efectivoContado: number | null;
   fechaCierre: string | null;
+  fondoFijoSugerido: number | null;
+  motivoAjusteFondo: string | null;
+  usuarioAutorizoFondoId: number | null;
+  usuarioAutorizoFondo?: Usuario | null;
 }
 
 export interface ResumenSesion {
@@ -820,8 +835,14 @@ export const api = {
       post<{ valida: boolean }>("/api/caja/clave-supervisor/verificar", { clave }),
     sesionActual: () => get<SesionCaja | null>("/api/caja/sesiones/actual"),
     sesiones: () => get<SesionCaja[]>("/api/caja/sesiones"),
-    abrirSesion: (data: { fondoFijoInicial: number; usuarioId: number }) =>
-      post<SesionCaja>("/api/caja/sesiones", data),
+    fondoSugerido: () => get<{ fondoSugerido: number | null }>("/api/caja/sesiones/fondo-sugerido"),
+    abrirSesion: (data: {
+      fondoFijoInicial: number;
+      usuarioId: number;
+      clave?: string;
+      motivoAjusteFondo?: string;
+      usuarioAutorizoId?: number;
+    }) => post<SesionCaja>("/api/caja/sesiones", data),
     resumenSesion: (id: number) => get<ResumenSesion>(`/api/caja/sesiones/${id}/resumen`),
     cerrarSesion: (id: number, data: { efectivoContado: number; usuarioId: number }) =>
       post<ResumenSesion>(`/api/caja/sesiones/${id}/cerrar`, data),

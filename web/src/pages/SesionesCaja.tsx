@@ -22,6 +22,7 @@ export default function SesionesCaja() {
             <th>Abierta por</th>
             <th>Cerrada por</th>
             <th>Fondo fijo</th>
+            <th>Ajuste de fondo</th>
             <th>Efectivo contado</th>
             <th>Estado</th>
           </tr>
@@ -34,13 +35,23 @@ export default function SesionesCaja() {
               <td>{s.usuarioApertura?.nombre ?? "—"}</td>
               <td>{s.usuarioCierre?.nombre ?? "—"}</td>
               <td>{formatoCLP(s.fondoFijoInicial)}</td>
+              <td>
+                {s.motivoAjusteFondo ? (
+                  <span title={s.motivoAjusteFondo}>
+                    Esperado {formatoCLP(s.fondoFijoSugerido ?? 0)} · autorizó{" "}
+                    {s.usuarioAutorizoFondo?.nombre ?? "—"}
+                  </span>
+                ) : (
+                  "—"
+                )}
+              </td>
               <td>{s.efectivoContado != null ? formatoCLP(s.efectivoContado) : "—"}</td>
               <td>{s.estado === "abierta" ? "Abierta" : "Cerrada"}</td>
             </tr>
           ))}
           {sesiones.length === 0 && (
             <tr>
-              <td colSpan={7}>Todavía no hay sesiones de caja registradas.</td>
+              <td colSpan={8}>Todavía no hay sesiones de caja registradas.</td>
             </tr>
           )}
         </tbody>
