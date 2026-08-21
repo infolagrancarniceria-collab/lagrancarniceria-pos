@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, formatoCLP, type CajaCamara } from "../api";
 import ModalConfirmarClave from "../components/ModalConfirmarClave";
+import { mostrarToast } from "../lib/toast";
 
 const MOTIVOS_ANULAR_CAJA = ["Caja de prueba", "Entrada duplicada", "Datos incorrectos"];
 
@@ -66,6 +67,7 @@ export default function CamaraEntradas() {
     if (anulandoId == null) return;
     setError(null);
     await api.camara.anularEntrada(anulandoId, usuarioAutorizaId, clave, motivo ?? "");
+    mostrarToast("Entrada anulada", `Caja ${String(anulandoId).padStart(6, "0")}.`, "eliminado");
     setAnulandoId(null);
     await buscar();
   }

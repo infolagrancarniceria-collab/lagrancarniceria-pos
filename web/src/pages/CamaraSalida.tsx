@@ -6,6 +6,7 @@ import { useEscanerCodigoBarras } from "../hooks/useEscanerCodigoBarras";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 import { ejecutarOEncolar } from "../lib/colaOffline";
 import { EstadoOffline } from "../components/EstadoOffline";
+import { mostrarToast } from "../lib/toast";
 
 const DESTINOS: { valor: DestinoSalidaCamara; etiqueta: string }[] = [
   { valor: "sala_venta", etiqueta: "Sala de venta" },
@@ -138,6 +139,8 @@ export default function CamaraSalida() {
       );
       if (respuesta.enviada) {
         setResultado(respuesta.datos);
+        const etiquetaDestino = DESTINOS.find((d) => d.valor === destino)?.etiqueta ?? destino;
+        mostrarToast("Salida registrada", `Caja ${numeroCaja} → ${etiquetaDestino}.`, "eliminado");
       } else {
         setGuardadoOffline(true);
       }

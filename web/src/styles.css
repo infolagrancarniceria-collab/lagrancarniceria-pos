@@ -192,53 +192,67 @@ select {
   margin-top: 1rem;
 }
 
-/* Layout */
+/* Layout: barra lateral fija a la izquierda (a pedido del usuario, en vez
+   de la barra horizontal de arriba que había antes) + contenido a la
+   derecha, que scrolea aparte. */
 .layout {
   min-height: 100vh;
   display: flex;
-  flex-direction: column;
 }
-.topbar {
+.sidebar {
+  width: 15.5rem;
+  flex: none;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
   display: flex;
-  align-items: center;
-  gap: 2rem;
-  padding: 0.75rem 1.5rem;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 1.4rem 1.1rem;
   background: linear-gradient(190deg, var(--color-vino) 0%, var(--color-vino-2) 100%);
   color: #fbe9e1;
 }
 .marca {
   font-family: var(--fuente-titulos);
   font-weight: 700;
-  font-size: 1.25rem;
+  font-size: 1.2rem;
   color: #fdf3ec;
+  margin-bottom: 1.1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.16);
 }
-.topbar nav {
+.sidebar nav {
   display: flex;
-  gap: 0.35rem;
+  flex-direction: column;
+  gap: 0.2rem;
   flex: 1;
-  flex-wrap: wrap;
 }
-.topbar nav a {
+.sidebar nav a {
   color: #f3ddd3;
   text-decoration: none;
-  padding: 0.4rem 0.65rem;
+  padding: 0.5rem 0.65rem;
   border-radius: 8px;
   font-size: 0.92rem;
 }
-.topbar nav a:hover {
+.sidebar nav a:hover {
   background: rgba(255, 255, 255, 0.1);
   color: #fdf3ec;
 }
-.topbar nav a.active {
+.sidebar nav a.active {
   background: rgba(255, 255, 255, 0.16);
   color: #fdf3ec;
   font-weight: 600;
 }
 .usuario-actual {
   display: flex;
-  align-items: center;
-  gap: 0.75rem;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
   color: #fdf3ec;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.16);
 }
 .usuario-actual button {
   background: rgba(255, 255, 255, 0.1);
@@ -249,8 +263,10 @@ select {
   background: rgba(255, 255, 255, 0.2);
 }
 .contenido {
-  padding: 1.5rem;
-  max-width: 1100px;
+  flex: 1;
+  min-width: 0;
+  padding: 1.5rem 2rem;
+  max-width: 1200px;
   width: 100%;
   margin: 0 auto;
 }
@@ -858,7 +874,7 @@ select {
      aparte — ver imprimirEtiquetaCamara() en web/src/lib/imprimir.ts —
      porque no se pudo confirmar que las "páginas con nombre" de CSS se
      respeten de forma confiable en este motor de impresión. */
-  .topbar,
+  .sidebar,
   .zona-toasts,
   .no-imprimir {
     display: none !important;

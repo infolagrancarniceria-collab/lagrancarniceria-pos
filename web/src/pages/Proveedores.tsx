@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, type Proveedor } from "../api";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
+import { mostrarToast } from "../lib/toast";
 
 export default function Proveedores() {
   const [proveedores, setProveedores] = useState<Proveedor[]>([]);
@@ -21,6 +22,7 @@ export default function Proveedores() {
     setMensaje(null);
     try {
       await api.proveedores.crear({ nombre: nombre.trim(), contacto: contacto.trim() || null });
+      mostrarToast("Proveedor creado", `${nombre.trim()} se agregó a la lista.`);
       setNombre("");
       setContacto("");
       setMensaje("Proveedor creado");

@@ -3,6 +3,7 @@ import { api, formatoCLP, type Gasto, type ReporteGastos } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 import { TecladoNumerico } from "../components/TecladoNumerico";
+import { mostrarToast } from "../lib/toast";
 
 const CATEGORIAS_SUGERIDAS = ["Sueldos", "Luz", "Agua", "Arriendo", "Gas", "Insumos de aseo", "Otros"];
 
@@ -63,6 +64,7 @@ export default function Gastos() {
         usuarioId: usuario.id,
       });
       setMensaje("Gasto registrado");
+      mostrarToast("Gasto registrado", `${categoria.trim()}: ${formatoCLP(montoNum)}.`);
       setCategoria("");
       setDescripcion("");
       setMonto("");
@@ -79,6 +81,7 @@ export default function Gastos() {
     if (!confirmado) return;
     try {
       await api.gastos.eliminar(id);
+      mostrarToast("Gasto eliminado", undefined, "eliminado");
       cargar();
     } catch (e) {
       setError((e as Error).message);

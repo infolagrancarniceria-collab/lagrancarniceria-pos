@@ -14,6 +14,7 @@ import { useUsuario } from "../context/UsuarioContext";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 import { EtiquetaCamara } from "../components/EtiquetaCamara";
 import { imprimirEtiquetaCamara, imprimirEtiquetasLoteCamara } from "../lib/imprimir";
+import { mostrarToast } from "../lib/toast";
 
 interface RevisionLote {
   familia: FamiliaCamara;
@@ -131,6 +132,7 @@ export default function CamaraEntrada() {
         usuarioId: usuario.id,
       });
       setCajasCreadas(creadas);
+      mostrarToast("Lote ingresado", `${revision.cantidadCajas} caja(s) de ${revision.producto} en cámara.`);
       setRevision(null);
     } catch (e) {
       setError((e as Error).message);

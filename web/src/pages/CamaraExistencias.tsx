@@ -16,6 +16,7 @@ import { useUsuario } from "../context/UsuarioContext";
 import { EtiquetaCamara } from "../components/EtiquetaCamara";
 import ModalConfirmarClave from "../components/ModalConfirmarClave";
 import { imprimirEtiquetaCamara, imprimirEtiquetasLoteCamara } from "../lib/imprimir";
+import { mostrarToast } from "../lib/toast";
 
 const MOTIVOS_ANULAR_LOTE = ["Lote de prueba", "Entrada duplicada", "Datos incorrectos"];
 
@@ -132,6 +133,7 @@ export default function CamaraExistencias() {
         costoNetoKg,
         usuarioId: usuario.id,
       });
+      mostrarToast("Lote corregido", formCorreccion.productoSeleccionado.descripcion);
       setCorrigiendoId(null);
       setFormCorreccion(null);
       await cargar();
@@ -183,6 +185,7 @@ export default function CamaraExistencias() {
     if (anulandoId == null) return;
     setError(null);
     await api.camara.anularLote(anulandoId, usuarioAutorizaId, clave, motivo ?? "");
+    mostrarToast("Lote anulado", undefined, "eliminado");
     setAnulandoId(null);
     await cargar();
   }

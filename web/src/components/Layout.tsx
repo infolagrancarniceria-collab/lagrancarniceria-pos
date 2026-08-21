@@ -15,8 +15,8 @@ export default function Layout() {
 
   return (
     <div className="layout">
-      <header className="topbar">
-        <div className="marca">🥩 La Gran Carnicería</div>
+      <header className="sidebar">
+        <div className="marca">La Gran Carnicería</div>
         <nav>
           {modoCaja ? (
             <>

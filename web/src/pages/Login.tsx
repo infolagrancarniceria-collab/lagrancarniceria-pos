@@ -34,7 +34,7 @@ export default function Login() {
 
   return (
     <div className="pantalla-login">
-      <h1>🥩 La Gran Carnicería</h1>
+      <h1>La Gran Carnicería</h1>
       <p>¿Quién eres?</p>
       {error && <p className="error">{error}</p>}
       <div className="lista-usuarios">

@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { api, type Producto } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
+import { mostrarToast } from "../lib/toast";
 
 const etiquetasMotivo: Record<string, string> = {
   venta: "Venta",
@@ -50,6 +51,11 @@ export default function RegistrarSalida() {
         usuarioId: usuario.id,
       });
       setMensaje("Salida registrada — el stock quedó actualizado");
+      mostrarToast(
+        "Salida registrada",
+        `${productoSeleccionado?.descripcion ?? "Producto"}: -${cant} del stock (${etiquetasMotivo[motivo]}).`,
+        "eliminado"
+      );
       setCantidad("");
     } catch (e) {
       setError((e as Error).message);

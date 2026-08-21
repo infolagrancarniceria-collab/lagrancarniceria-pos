@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { api, type Producto, type Proveedor } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
+import { mostrarToast } from "../lib/toast";
 
 export default function RegistrarEntrada() {
   const { usuario } = useUsuario();
@@ -68,6 +69,7 @@ export default function RegistrarEntrada() {
         usuarioId: usuario.id,
       });
       setMensaje("Entrada registrada — el stock quedó actualizado");
+      mostrarToast("Entrada registrada", `${productoSeleccionado.descripcion}: +${cant} al stock.`);
       setProductoSeleccionado(null);
       setBuscarProducto("");
       setCantidad("");

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { api, type GrupoImportacionCamara, type Producto, type PrevisualizacionImportacionCamara, type ResultadoImportacionCamara } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
+import { mostrarToast } from "../lib/toast";
 
 function SelectorProducto({
   grupo,
@@ -124,6 +125,7 @@ export default function CamaraImportar() {
         mapeo: previsualizacion.grupos.map((g) => ({ clave: g.clave, productoId: mapeo[g.clave] ?? null })),
       });
       setResultado(r);
+      mostrarToast("Importación completa", `${r.importadas} caja(s) importada(s) del sistema anterior.`);
       setPrevisualizacion(null);
     } catch (e) {
       setError((e as Error).message);

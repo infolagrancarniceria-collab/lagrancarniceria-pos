@@ -2159,6 +2159,43 @@ filtran la tabla correctamente, el PLU sugerido aparece prellenado al
 crear, el toast "Producto creado" aparece tras guardar, y una venta en
 efectivo con vuelto muestra el modal nuevo con el monto correcto (probado
 con un caso real: total $1.500, entregó $10.000 → vuelto $8.500).
-**Pendiente:** extender el mismo sistema de toasts a otras pantallas
-(Inventario, Cámara, Gastos, etc.) si el usuario lo pide — por ahora solo
-se conectó donde se pidió explícitamente (Productos).
+
+## Identidad visual, segunda vuelta: barra lateral, sin emoji en el nombre, toasts en más pantallas
+Tres ajustes a pedido del usuario tras probar la primera vuelta:
+
+- **Sin emoji en "La Gran Carnicería"**: se sacó el 🥩 del nombre del
+  negocio (`Layout.tsx` y `Login.tsx`) — se mantiene "más limpio", los
+  emojis se quedan solo en los ítems de navegación.
+- **Barra lateral en vez de barra superior**: `Layout.tsx` pasó de
+  `<header className="topbar">` (horizontal, arriba) a
+  `<header className="sidebar">` (vertical, a la izquierda) — mismo
+  degradé vino, mismos emojis por sección, pero el layout completo
+  (`.layout`, antes `flex-direction: column`) ahora es `display: flex` en
+  fila, con `.sidebar` de ancho fijo (15.5rem) y `.contenido` ocupando el
+  resto. **Detalle importante corregido antes de terminar:** la primera
+  versión dejaba que `.sidebar` estirara su alto junto con el contenido
+  (comportamiento por defecto de flex, `align-items: stretch`) — en una
+  pantalla larga (ej. Productos con muchas filas) el nombre de usuario y
+  "Cambiar usuario" quedaban a miles de píxeles hacia abajo, invisibles
+  sin scrollear toda la página. Se corrigió con
+  `position: sticky; top: 0; height: 100vh; overflow-y: auto;` en
+  `.sidebar` — queda fija a la altura de la pantalla sin importar cuánto
+  mida el contenido, con su propio scroll interno si hiciera falta.
+  Verificado con Playwright: el alto de `.sidebar` da exactamente 900px en
+  un viewport de 900px de alto (antes daba más de 8000px en una pantalla
+  larga), y "Cambiar usuario" queda visible sin scrollear.
+- **Avisos flotantes (toasts) en más pantallas**: además de Productos, ahora
+  también en Inventario (`RegistrarEntrada.tsx`, `RegistrarSalida.tsx`,
+  `Proveedores.tsx`), Gastos (`Gastos.tsx`, registrar y eliminar) y Cámara
+  (`CamaraEntrada.tsx` al ingresar un lote, `CamaraSalida.tsx` al sacar una
+  caja, `CamaraEntradas.tsx` al anular una entrada, `CamaraExistencias.tsx`
+  al corregir o anular un lote, `CamaraImportar.tsx` al confirmar una
+  importación) — mismo `mostrarToast()` reutilizable de siempre, sin
+  ningún componente nuevo. Reportes, Categorías y Balanza se dejaron sin
+  tocar por ahora (no tienen acciones de crear/cargar/eliminar
+  comparables) — extensible después si hace falta.
+
+Probado con Playwright contra el servidor real: el nombre del negocio ya
+no tiene emoji, la barra lateral se mantiene fija al alto de la pantalla
+al scrollear una tabla larga, y un toast aparece correctamente al
+registrar un gasto de prueba (limpiado después de la prueba).
