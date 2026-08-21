@@ -2109,3 +2109,56 @@ calzar con uno ya conocido (ej. una lista de precios en papel). Solo aplica
 al formulario manual de creación — la importación CSV y las herramientas
 del asistente de IA (`proponer_crear_producto`) siguen exigiendo un PLU
 explícito, sin inventar ninguno.
+
+## Identidad visual: el sistema ya no se ve "plano"
+A pedido del usuario ("¿se puede hacer algo para que el sistema no se vea
+tan plano?"). Antes de tocar código se armó una muestra aparte (Artifact,
+fuera del repo) con Productos y Punto de Venta en un estilo nuevo, para que
+el usuario la aprobara — confirmó que le gustaba y pidió aplicarlo "al
+resto de las pestañas".
+
+- **Paleta e identidad**: colores nuevos en `web/src/styles.css`
+  (`:root`) — vino/rojo cálido de carnicería en vez del rojo plano de
+  antes, crema en vez de gris frío, y un color nuevo (`--color-oro`)
+  reservado **solo** para cifras de dinero destacadas (Total, Vuelto), para
+  que ese acento no se mezcle con nada más. Los títulos (`h1`/`h2`/`h3`) y
+  las cifras destacadas usan una serif con carácter (`--fuente-titulos`:
+  Georgia/Cambria) — **a propósito no se descargó ninguna fuente de
+  internet** (ej. Google Fonts), porque el sistema corre sin depender de
+  conexión (ver "Arquitectura y stack" más arriba); Georgia ya viene
+  instalada en Windows y Mac. Las tarjetas (`.tarjeta`, `.formulario`)
+  ganaron sombra suave y bordes más redondeados en vez de un borde plano de
+  1px.
+- **Barra de navegación**: pasó de blanca y plana a un degradé vino oscuro,
+  con emojis por sección (🥩 Productos, 📦 Inventario, 🧮 Caja, ❄️ Cámara,
+  🤖 Asistente, etc., en `web/src/components/Layout.tsx`).
+- **Avisos flotantes (toasts)**: nuevo sistema reutilizable
+  (`web/src/lib/toast.ts` + `web/src/components/ToastHost.tsx`, montado
+  una sola vez en `Layout.tsx` — cualquier pantalla puede llamar
+  `mostrarToast(texto, sub, tipo)` sin renderizar nada propio) — antes
+  crear/cargar/eliminar productos solo mostraba un texto chico fácil de no
+  notar. Conectado por ahora a Productos (crear uno, editar uno, importar
+  CSV, categorizar en lote, eliminar en lote) — reutilizable para otras
+  pantallas si hace falta más adelante.
+- **Categorías rápidas en Productos**: fila de chips con las categorías de
+  nivel 1 (incluyendo "Sin categorizar") arriba del filtro de siempre — un
+  atajo para no tener que abrir el selector en cascada cuando se quiere ver
+  una categoría completa de un vistazo. No reemplaza al selector existente
+  (que sigue sirviendo para categorías de nivel 2/3), y no oculta la lista
+  de productos por defecto — solo la filtra al hacer clic.
+- **Punto de venta**: el "Total" pasó de un badge rojo plano a una tarjeta
+  dorada con la cifra en la tipografía de títulos. El aviso de "Vuelto" — 
+  antes un `window.alert()` del navegador, sin estilo y sin poder
+  personalizarse — ahora es un modal propio (`.modal-vuelto` en
+  `styles.css`, estado `vueltoAMostrar` en `PuntoDeVenta.tsx`) con el mismo
+  lenguaje visual que el Total pero en verde, con la cifra grande y
+  "Entregó $X · venta $Y" debajo.
+
+Probado con Playwright contra el servidor real: los chips de categoría
+filtran la tabla correctamente, el PLU sugerido aparece prellenado al
+crear, el toast "Producto creado" aparece tras guardar, y una venta en
+efectivo con vuelto muestra el modal nuevo con el monto correcto (probado
+con un caso real: total $1.500, entregó $10.000 → vuelto $8.500).
+**Pendiente:** extender el mismo sistema de toasts a otras pantallas
+(Inventario, Cámara, Gastos, etc.) si el usuario lo pide — por ahora solo
+se conectó donde se pidió explícitamente (Productos).

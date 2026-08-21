@@ -19,6 +19,12 @@ export default function PuntoDeVenta() {
   // en styles.css), para que el cajero se quede en Punto de Venta listo para
   // la siguiente venta en vez de saltar a otra pantalla.
   const [ventaParaImprimir, setVentaParaImprimir] = useState<Venta | null>(null);
+  // Vuelto a mostrar en el aviso emergente (antes un window.alert() del
+  // navegador, sin estilo y bloqueante) — null cuando no hay ninguno que
+  // mostrar.
+  const [vueltoAMostrar, setVueltoAMostrar] = useState<{ vuelto: number; entregado: number; venta: number } | null>(
+    null
+  );
   const [productos, setProductos] = useState<Producto[]>([]);
   const [comunas, setComunas] = useState<Comuna[]>([]);
   const [mostrarSelectorComuna, setMostrarSelectorComuna] = useState(false);
@@ -339,7 +345,7 @@ export default function PuntoDeVenta() {
       setMontoPago("");
       setClienteNombre("");
       if (vueltoAEntregar > 0) {
-        window.alert(`Vuelto: ${formatoCLP(vueltoAEntregar)}`);
+        setVueltoAMostrar({ vuelto: vueltoAEntregar, entregado: monto, venta: montoACobrar });
       }
     } catch (e) {
       setError((e as Error).message);
@@ -963,6 +969,21 @@ export default function PuntoDeVenta() {
           onConfirmar={confirmarCancelarVenta}
           onCancelar={() => setCancelandoVenta(false)}
         />
+      )}
+
+      {vueltoAMostrar && (
+        <div className="modal-fondo">
+          <div className="modal-vuelto">
+            <div className="modal-vuelto-etiqueta">Vuelto</div>
+            <div className="modal-vuelto-cifra">{formatoCLP(vueltoAMostrar.vuelto)}</div>
+            <p>
+              Entregó {formatoCLP(vueltoAMostrar.entregado)} · venta {formatoCLP(vueltoAMostrar.venta)}
+            </p>
+            <button type="button" className="boton boton-primario" onClick={() => setVueltoAMostrar(null)} autoFocus>
+              Entendido
+            </button>
+          </div>
+        </div>
       )}
     </div>
     <div className="vale-oculto-hasta-imprimir">{ventaParaImprimir && <ValeVenta venta={ventaParaImprimir} />}</div>

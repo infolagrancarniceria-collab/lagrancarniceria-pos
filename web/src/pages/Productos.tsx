@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { api, formatoCLP, type Categoria, type FilaImportacionProductos, type Producto } from "../api";
 import SelectorCategoria from "../components/SelectorCategoria";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
+import { mostrarToast } from "../lib/toast";
 
 export default function Productos() {
   const [productos, setProductos] = useState<Producto[]>([]);
@@ -56,6 +57,7 @@ export default function Productos() {
       setPreviewImportar(null);
       setArchivoImportar(null);
       recargarProductos();
+      mostrarToast("Productos importados", `${resultado.creados} producto(s) creado(s) desde el archivo.`);
     } catch (e) {
       setErrorImportar((e as Error).message);
     }
@@ -90,6 +92,7 @@ export default function Productos() {
       setSeleccionados(new Set());
       setCategoriaDestino("");
       recargarProductos();
+      mostrarToast("Categoría asignada", `${resultado.actualizados} producto(s) quedaron en "${categoria?.nombre}".`);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -106,6 +109,7 @@ export default function Productos() {
       setMensajeCategorizar(`${resultado.eliminados} producto(s) eliminado(s)`);
       setSeleccionados(new Set());
       recargarProductos();
+      mostrarToast("Productos eliminados", `${resultado.eliminados} producto(s) quedaron ocultos del catálogo.`, "eliminado");
     } catch (e) {
       setError((e as Error).message);
     }
@@ -237,6 +241,21 @@ export default function Productos() {
           )}
         </section>
       )}
+
+      <div className="chips-categoria">
+        {categorias
+          .filter((c) => c.padreId === null)
+          .map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              className={`chip-categoria${categoriaId === c.id ? " activo" : ""}${c.nombre === "Sin categorizar" ? " chip-sin-categoria" : ""}`}
+              onClick={() => setCategoriaId((actual) => (actual === c.id ? "" : c.id))}
+            >
+              {c.nombre}
+            </button>
+          ))}
+      </div>
 
       <div className="filtros">
         <input

@@ -4,6 +4,7 @@ import { api, calcularMargen, formatoCLP, type Categoria, type FlagBalanza, type
 import SelectorCategoria from "../components/SelectorCategoria";
 import { useUsuario } from "../context/UsuarioContext";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
+import { mostrarToast } from "../lib/toast";
 
 interface FormState {
   plu: string;
@@ -139,10 +140,12 @@ export default function ProductoForm() {
           return;
         }
         const creado = await api.productos.crear({ ...datosComunes, precio });
+        mostrarToast("Producto creado", `${creado.descripcion} se agregó al catálogo.`);
         navigate(`/productos/${creado.id}`);
       } else {
         await api.productos.actualizar(Number(id), datosComunes);
         setMensaje("Datos del producto guardados");
+        mostrarToast("Cambios guardados", `${datosComunes.descripcion} se actualizó.`);
       }
     } catch (e) {
       setError((e as Error).message);
