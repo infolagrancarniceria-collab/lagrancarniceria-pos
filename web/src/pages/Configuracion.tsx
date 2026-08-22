@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 import { modoCajaActivo, setModoCajaActivo } from "../lib/modoCaja";
-import { obtenerImpresoraBoletas, setImpresoraBoletas } from "../lib/impresoras";
+import { obtenerImpresoraBoletas, setImpresoraBoletas, obtenerImpresoraEtiquetas, setImpresoraEtiquetas } from "../lib/impresoras";
 import type { ImpresoraDisponible } from "../electron";
 
 const PREDETERMINADA = "__predeterminada__";
@@ -17,6 +17,9 @@ export default function Configuracion() {
   const [modoCaja, setModoCaja] = useState(() => modoCajaActivo());
   const [impresoras, setImpresoras] = useState<ImpresoraDisponible[] | null>(null);
   const [impresoraBoletas, setImpresoraBoletasState] = useState(() => obtenerImpresoraBoletas() ?? PREDETERMINADA);
+  const [impresoraEtiquetas, setImpresoraEtiquetasState] = useState(
+    () => obtenerImpresoraEtiquetas() ?? PREDETERMINADA
+  );
 
   function cambiarModoCaja(activo: boolean) {
     setModoCajaActivo(activo);
@@ -108,20 +111,16 @@ export default function Configuracion() {
         <section className="tarjeta">
           <h2>Impresoras</h2>
           <p className="ayuda">
-            Elige qué impresora usar para las boletas en <strong>este PC</strong>. Si dejas "La predeterminada de
-            Windows", el sistema manda el trabajo a la que esté puesta como predeterminada — que no siempre es
-            la que se espera si hay más de una impresora conectada (o alguna virtual, como "Microsoft Print to
-            PDF"). Elegirla acá evita esa confusión.
+            Elige qué impresora usar para las boletas y para las etiquetas de cámara en <strong>este PC</strong>{" "}
+            (pueden ser la misma o distintas). Si dejas "La predeterminada de Windows", el sistema manda el
+            trabajo a la que esté puesta como predeterminada — que no siempre es la que se espera si hay más de
+            una impresora conectada (o alguna virtual, como "Microsoft Print to PDF"). Elegirla acá evita esa
+            confusión.
           </p>
           <p className="ayuda">
             Si la impresora elegida no soporta imprimir sin diálogo (pasa con algunas impresoras térmicas), el
-            sistema cae de vuelta solo al diálogo normal de Windows en vez de fallar — hay que confirmar ahí quién
-            imprime, pero la boleta sí sale.
-          </p>
-          <p className="ayuda">
-            (Las etiquetas de cámara no tienen esta opción — siempre muestran el diálogo normal de impresión de
-            Windows, donde se elige la impresora ahí mismo, porque la impresión sin diálogo no funcionó bien con
-            algunas impresoras térmicas de etiquetas.)
+            sistema cae de vuelta solo al diálogo normal de Windows en vez de fallar — hay que confirmar ahí
+            quién imprime, pero la boleta o la etiqueta sí sale igual.
           </p>
           {impresoras == null && <p className="ayuda">Buscando impresoras conectadas...</p>}
           {impresoras != null && impresoras.length === 0 && (
@@ -136,6 +135,24 @@ export default function Configuracion() {
                   onChange={(e) => {
                     setImpresoraBoletasState(e.target.value);
                     setImpresoraBoletas(e.target.value === PREDETERMINADA ? null : e.target.value);
+                  }}
+                >
+                  <option value={PREDETERMINADA}>La predeterminada de Windows</option>
+                  {impresoras.map((imp) => (
+                    <option key={imp.name} value={imp.name}>
+                      {imp.displayName || imp.name}
+                      {imp.isDefault ? " (predeterminada)" : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Etiquetas de cámara
+                <select
+                  value={impresoraEtiquetas}
+                  onChange={(e) => {
+                    setImpresoraEtiquetasState(e.target.value);
+                    setImpresoraEtiquetas(e.target.value === PREDETERMINADA ? null : e.target.value);
                   }}
                 >
                   <option value={PREDETERMINADA}>La predeterminada de Windows</option>

@@ -2606,3 +2606,38 @@ Probado con Playwright contra el servidor real: ABASTERO DE CERDO (precio
 $4.980, última compra en cámara $7.777/kg) muestra "Margen: -46,19%" —
 calza exacto con la fórmula (costo mayor al precio de venta, en este caso
 con datos de prueba antiguos).
+
+## Impresora de etiquetas de cámara, ahora configurable (cambio de impresora física)
+El usuario cambió la impresora térmica de etiquetas por una Xprinter
+XP-420B (la Gainscha anterior era la que nunca lograba imprimir sin
+diálogo — ver "Elegir qué impresora usa cada cosa" y "Segunda vuelta"
+más arriba) y pidió poder elegirla rápido en Configuración, más
+confirmar si se pueden reimprimir etiquetas de una factura ya cargada.
+
+- **Reimprimir ya existía y sigue funcionando igual**: Cámara →
+  Existencias → "Ver lotes ingresados" → botón "Reimprimir" en el lote
+  correspondiente — vuelve a mostrar las mismas etiquetas (mismos
+  números) sin crear ningún registro nuevo. No se vio afectado por la
+  reescritura de "Entrada de cámara" a factura completa (los lotes se
+  siguen creando igual, solo que ahora con proveedor/N° de factura).
+- **Selector de impresora para etiquetas, de vuelta en Configuración**:
+  se había sacado antes porque con la Gainscha la impresión sin diálogo
+  siempre salía en blanco — pero eso es específico de esa impresora, no
+  una limitación general del sistema. Ahora Configuración → Impresoras
+  tiene un segundo selector "Etiquetas de cámara" (mismo patrón que
+  "Boletas de venta"), y `imprimirEtiquetaCamara()` /
+  `imprimirEtiquetasLoteCamara()` (`web/src/lib/imprimir.ts`) intentan
+  primero imprimir sin diálogo con esa impresora — si falla (como pasaba
+  con la Gainscha), caen de vuelta solas al diálogo normal, igual que ya
+  hace la boleta. Con la Xprinter nueva puede que la impresión sin
+  diálogo sí funcione; si no, el respaldo automático sigue garantizando
+  que la etiqueta salga igual, solo con el clic extra de confirmar el
+  diálogo.
+
+Probado con Playwright (simulando estar en la app instalada, con 2
+impresoras detectadas): aparecen los dos selectores lado a lado en
+Configuración, y elegir la Xprinter para etiquetas queda guardado
+correctamente en `localStorage` (`impresoraEtiquetas`). **Pendiente:**
+confirmación del usuario probando con la Xprinter física si la impresión
+sin diálogo funciona esta vez o si sigue cayendo al diálogo normal (de
+cualquier forma, la etiqueta debería salir).

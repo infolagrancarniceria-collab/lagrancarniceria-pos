@@ -1,4 +1,4 @@
-import { obtenerImpresoraBoletas } from "./impresoras";
+import { obtenerImpresoraBoletas, obtenerImpresoraEtiquetas } from "./impresoras";
 
 // En la app instalada (Electron), imprime directo en la impresora elegida
 // (o la predeterminada de Windows si no se eligió ninguna en Configuración)
@@ -16,16 +16,22 @@ import { obtenerImpresoraBoletas } from "./impresoras";
 // sí funciona con cualquier impresora. Antes esto solo mostraba una alerta
 // sin imprimir nada — ahora imprime igual, solo que con el clic extra de
 // confirmar el diálogo.
-export async function imprimirSilencioso() {
+// Intenta imprimir la página actual sin diálogo con la impresora indicada
+// (o la predeterminada de Windows si no se eligió ninguna); si falla, cae
+// de vuelta al diálogo normal — nunca deja el botón "sin hacer nada".
+async function imprimirConRespaldo(deviceName: string | null) {
   if (!window.electronAPI) {
     window.print();
     return;
   }
-  const deviceName = obtenerImpresoraBoletas();
   const resultado = await window.electronAPI.imprimirSilencioso(deviceName ? { deviceName } : undefined);
   if (!resultado.exito) {
     window.print();
   }
+}
+
+export async function imprimirSilencioso() {
+  await imprimirConRespaldo(obtenerImpresoraBoletas());
 }
 
 // El sistema imprime dos cosas de tamaño de página distinto: el vale
@@ -54,18 +60,17 @@ function activarPaginaEtiqueta(activar: boolean) {
   document.head.appendChild(estilo);
 }
 
-// La etiqueta SIEMPRE usa el diálogo normal de impresión (window.print()),
-// incluso en la app instalada — a diferencia del vale. Se probó primero la
-// impresión silenciosa de Electron (igual que el vale), pero salía en
-// blanco con la impresora térmica de etiquetas (Gainscha) del usuario, ya
-// elegida por nombre en Configuración — mientras que imprimiendo con el
-// diálogo normal desde un navegador (Ctrl+P) sí funcionaba bien con la
-// misma impresora. Como imprimir una etiqueta es algo ocasional (no varias
-// veces por hora, como el vale), el clic extra del diálogo es un costo
-// aceptable a cambio de que realmente funcione.
-export function imprimirEtiquetaCamara() {
+// La etiqueta intenta primero imprimir sin diálogo (igual que el vale),
+// con la impresora elegida en Configuración → Impresoras específicamente
+// para etiquetas. Antes esto estaba bloqueado del todo porque con la
+// impresora térmica de ese momento (Gainscha) la impresión sin diálogo
+// salía en blanco — al cambiar de impresora (ej. Xprinter XP-420B) puede
+// que sí funcione, así que ahora se prueba igual y, si falla, cae de
+// vuelta sola al diálogo normal (mismo respaldo que ya usa el vale) en vez
+// de quedar bloqueada para siempre en el modo con diálogo.
+export async function imprimirEtiquetaCamara() {
   activarPaginaEtiqueta(true);
-  window.print();
+  await imprimirConRespaldo(obtenerImpresoraEtiquetas());
   // Tiempo suficiente para que el navegador ya haya capturado la página a
   // imprimir antes de sacar la hoja de estilo — mismo margen que ya usaba
   // el prototipo original entre marcar/desmarcar la etiqueta.
@@ -78,8 +83,8 @@ export function imprimirEtiquetaCamara() {
 // responsable de marcar cada <EtiquetaCamara> como "imprimiendo" antes de
 // invocarla (mismo mecanismo que ya usa imprimirEtiquetaCamara, solo que
 // para varias a la vez).
-export function imprimirEtiquetasLoteCamara() {
+export async function imprimirEtiquetasLoteCamara() {
   activarPaginaEtiqueta(true);
-  window.print();
+  await imprimirConRespaldo(obtenerImpresoraEtiquetas());
   setTimeout(() => activarPaginaEtiqueta(false), 500);
 }
