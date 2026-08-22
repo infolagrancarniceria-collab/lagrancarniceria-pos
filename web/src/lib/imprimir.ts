@@ -10,21 +10,27 @@ import { obtenerImpresoraBoletas, obtenerImpresoraEtiquetas } from "./impresoras
 //
 // Si la impresión silenciosa falla, se cae de vuelta al diálogo normal de
 // impresión en vez de dejar el botón "sin hacer nada" — ya se comprobó con
-// la etiqueta de cámara (ver imprimirEtiquetaCamara más abajo) que algunas
-// impresoras térmicas (ej. la Gainscha) no soportan imprimir sin diálogo
-// aunque el deviceName esté bien apuntado, mientras que el diálogo normal
-// sí funciona con cualquier impresora. Antes esto solo mostraba una alerta
-// sin imprimir nada — ahora imprime igual, solo que con el clic extra de
-// confirmar el diálogo.
-// Intenta imprimir la página actual sin diálogo con la impresora indicada
-// (o la predeterminada de Windows si no se eligió ninguna); si falla, cae
-// de vuelta al diálogo normal — nunca deja el botón "sin hacer nada".
-async function imprimirConRespaldo(deviceName: string | null) {
+// la etiqueta de cámara que algunas impresoras térmicas (ej. la Gainscha)
+// no soportan imprimir sin diálogo aunque el deviceName esté bien
+// apuntado, mientras que el diálogo normal sí funciona con cualquier
+// impresora. Antes esto solo mostraba una alerta sin imprimir nada — ahora
+// imprime igual, solo que con el clic extra de confirmar el diálogo.
+//
+// pageSize (en micrones — 1mm = 1000) solo lo manda la etiqueta de cámara:
+// sin indicarlo, la impresión sin diálogo usa el tamaño/márgenes por
+// defecto de la impresora en vez de los 100×50mm sin margen del CSS, lo
+// que en una impresora que sí soporta imprimir sin diálogo (ej. la
+// Xprinter XP-420B) dejaba el contenido corrido, invadiendo la etiqueta
+// siguiente. La boleta no manda pageSize, sigue igual que siempre.
+async function imprimirConRespaldo(deviceName: string | null, pageSize?: { width: number; height: number }) {
   if (!window.electronAPI) {
     window.print();
     return;
   }
-  const resultado = await window.electronAPI.imprimirSilencioso(deviceName ? { deviceName } : undefined);
+  const resultado = await window.electronAPI.imprimirSilencioso({
+    ...(deviceName ? { deviceName } : {}),
+    ...(pageSize ? { pageSize } : {}),
+  });
   if (!resultado.exito) {
     window.print();
   }
@@ -46,6 +52,11 @@ export async function imprimirSilencioso() {
 // saca apenas termina — dejando todo como estaba para la próxima vez que
 // se imprima un vale.
 const ID_ESTILO_PAGINA_ETIQUETA = "estilo-pagina-etiqueta-camara";
+
+// 100×50mm en micrones, para la impresión sin diálogo (ver
+// imprimirConRespaldo más arriba) — mismo tamaño que ya define el CSS de
+// abajo para el diálogo normal.
+const TAMANO_ETIQUETA_MICRONES = { width: 100000, height: 50000 };
 
 function activarPaginaEtiqueta(activar: boolean) {
   const existente = document.getElementById(ID_ESTILO_PAGINA_ETIQUETA);
@@ -70,7 +81,7 @@ function activarPaginaEtiqueta(activar: boolean) {
 // de quedar bloqueada para siempre en el modo con diálogo.
 export async function imprimirEtiquetaCamara() {
   activarPaginaEtiqueta(true);
-  await imprimirConRespaldo(obtenerImpresoraEtiquetas());
+  await imprimirConRespaldo(obtenerImpresoraEtiquetas(), TAMANO_ETIQUETA_MICRONES);
   // Tiempo suficiente para que el navegador ya haya capturado la página a
   // imprimir antes de sacar la hoja de estilo — mismo margen que ya usaba
   // el prototipo original entre marcar/desmarcar la etiqueta.
@@ -85,6 +96,6 @@ export async function imprimirEtiquetaCamara() {
 // para varias a la vez).
 export async function imprimirEtiquetasLoteCamara() {
   activarPaginaEtiqueta(true);
-  await imprimirConRespaldo(obtenerImpresoraEtiquetas());
+  await imprimirConRespaldo(obtenerImpresoraEtiquetas(), TAMANO_ETIQUETA_MICRONES);
   setTimeout(() => activarPaginaEtiqueta(false), 500);
 }

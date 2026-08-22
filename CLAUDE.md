@@ -2637,7 +2637,34 @@ confirmar si se pueden reimprimir etiquetas de una factura ya cargada.
 Probado con Playwright (simulando estar en la app instalada, con 2
 impresoras detectadas): aparecen los dos selectores lado a lado en
 Configuración, y elegir la Xprinter para etiquetas queda guardado
-correctamente en `localStorage` (`impresoraEtiquetas`). **Pendiente:**
-confirmación del usuario probando con la Xprinter física si la impresión
-sin diálogo funciona esta vez o si sigue cayendo al diálogo normal (de
-cualquier forma, la etiqueta debería salir).
+correctamente en `localStorage` (`impresoraEtiquetas`).
+
+### Con la Xprinter, imprimía sin diálogo pero descentrada (corregido)
+El usuario confirmó que con la Xprinter XP-420B la impresión sin diálogo
+sí funciona (a diferencia de la Gainscha) — pero la etiqueta salía
+descentrada, invadiendo parte de la etiqueta siguiente.
+
+**Causa:** `webContents.print()` de Electron, en modo silencioso, no
+respeta la regla CSS `@page { size: 100mm 50mm; margin: 0 }` — sin
+indicarle explícitamente el tamaño de página, usa el tamaño/márgenes por
+defecto configurados en el driver de la impresora. Con la Gainscha esto
+no se notaba porque esa impresora nunca llegaba a imprimir sin diálogo
+(caía siempre al respaldo); con la Xprinter, que sí soporta el modo
+silencioso, el descalce se hizo visible.
+
+**Arreglado**: `imprimirEtiquetaCamara()`/`imprimirEtiquetasLoteCamara()`
+(`web/src/lib/imprimir.ts`) ahora mandan un `pageSize` explícito de
+100×50mm (en micrones, la unidad que pide la API de Electron) al pedir la
+impresión sin diálogo, y `electron/main.js` lo reenvía a
+`webContents.print()` junto con `margins: { marginType: "none" }` —
+forzando el mismo tamaño exacto y sin margen que ya usa el diálogo normal.
+Es un parámetro nuevo y opcional en el canal `imprimir-silencioso`; la
+boleta no lo manda, así que sigue imprimiendo exactamente igual que antes
+(sin este cambio no se hubiera notado ahí porque su alto es "auto", no un
+tamaño fijo).
+
+Verificado con `node --check` que `electron/main.js` sigue siendo válido
+(es JavaScript plano, no pasa por el build de TypeScript) y con
+`npm run typecheck` limpio. **No se pudo probar contra una Xprinter física
+en este entorno** — pendiente que el usuario confirme que ahora la
+etiqueta sale centrada y ya no invade la siguiente.

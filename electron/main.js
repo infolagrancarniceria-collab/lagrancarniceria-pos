@@ -44,9 +44,24 @@ function crearVentana(url) {
 ipcMain.handle("imprimir-silencioso", (evento, opciones) => {
   const ventana = BrowserWindow.fromWebContents(evento.sender);
   const deviceName = opciones && opciones.deviceName ? opciones.deviceName : undefined;
+  // Solo lo manda la etiqueta de cámara (ver imprimirEtiquetaCamara en
+  // web/src/lib/imprimir.ts) — sin esto, la impresión sin diálogo usa el
+  // tamaño de página y los márgenes por defecto de la impresora en vez de
+  // los 100×50mm sin margen que ya define el CSS (@page), lo que en la
+  // práctica dejaba el contenido corrido/sin centrar e invadiendo la
+  // etiqueta siguiente en una impresora que sí soporta imprimir sin
+  // diálogo (confirmado por el usuario con una Xprinter XP-420B). La
+  // boleta no manda pageSize, así que sigue imprimiendo exactamente igual
+  // que antes.
+  const pageSize = opciones && opciones.pageSize ? opciones.pageSize : undefined;
   return new Promise((resolve) => {
     ventana.webContents.print(
-      { silent: true, printBackground: true, ...(deviceName ? { deviceName } : {}) },
+      {
+        silent: true,
+        printBackground: true,
+        ...(deviceName ? { deviceName } : {}),
+        ...(pageSize ? { pageSize, margins: { marginType: "none" } } : {}),
+      },
       (exito, razonError) => {
         resolve({ exito, razonError });
       }
