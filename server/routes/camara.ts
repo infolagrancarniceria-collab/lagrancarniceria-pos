@@ -64,12 +64,12 @@ export function repartirPesoKg(pesoTotalKg: number, cantidadCajas: number): numb
 const cajaConIncludes = {
   producto: true,
   creadoPor: true,
-  lote: true,
+  lote: { include: { proveedor: true } },
 } as const;
 
 // --- Entrada de cajas (lote) ---
 
-const entradaLoteSchema = z
+const lineaFacturaCamaraSchema = z
   .object({
     productoId: z.number().int().positive(),
     familia: familiaCamaraEnum,
@@ -78,21 +78,100 @@ const entradaLoteSchema = z
     pesoTotalKg: z.number().positive().optional(),
     pesoIndividualKg: z.number().positive().optional(),
     costoNetoKg: z.number().positive("El costo debe ser mayor a 0"),
-    usuarioId: z.number().int().positive(),
-    dispositivo: z.string().trim().optional(),
   })
   .refine((data) => (data.pesoTotalKg == null) !== (data.pesoIndividualKg == null), {
     message: "Indica el peso total del lote o el peso individual por caja, pero no ambos",
     path: ["pesoTotalKg"],
   });
 
+type LineaFacturaCamara = z.infer<typeof lineaFacturaCamaraSchema>;
+
+// Lógica central de "entrar un lote a cámara" (crea el LoteCamara, sus N
+// CajaCamara repartiendo el peso, y un MovimientoCamara de entrada por
+// caja) — compartida entre la entrada de un solo producto (POST /cajas) y
+// la entrada de una factura completa con varias líneas (POST
+// /cajas/factura), para no duplicar esta parte en los dos lugares.
+async function crearLoteYCajas(
+  tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0],
+  linea: LineaFacturaCamara,
+  opciones: {
+    usuarioId: number;
+    dispositivo?: string;
+    proveedorId?: number | null;
+    numeroFactura?: string | null;
+    fechaIngreso?: Date;
+  }
+) {
+  const { productoId, familia, procedencia, cantidadCajas, pesoTotalKg, pesoIndividualKg, costoNetoKg } = linea;
+  const { usuarioId, dispositivo, proveedorId, numeroFactura, fechaIngreso } = opciones;
+
+  const pesoEstimado = pesoTotalKg != null;
+  const pesoTotalReal = pesoTotalKg ?? pesoIndividualKg! * cantidadCajas;
+  const pesosPorCaja = pesoEstimado
+    ? repartirPesoKg(pesoTotalKg!, cantidadCajas)
+    : Array.from({ length: cantidadCajas }, () => pesoIndividualKg!);
+
+  const lote = await tx.loteCamara.create({
+    data: {
+      productoId,
+      familiaNombre: familia,
+      procedencia: procedencia ?? null,
+      cantidadCajas,
+      pesoTotalKg: pesoTotalReal,
+      costoNetoKg,
+      totalNeto: Math.round(pesoTotalReal * costoNetoKg),
+      creadoPorId: usuarioId,
+      proveedorId: proveedorId ?? null,
+      numeroFactura: numeroFactura ?? null,
+      ...(fechaIngreso ? { fechaIngreso } : {}),
+    },
+  });
+  const creadas = [];
+  for (const pesoKg of pesosPorCaja) {
+    const caja = await tx.cajaCamara.create({
+      data: {
+        productoId,
+        loteId: lote.id,
+        familiaNombre: familia,
+        procedencia: procedencia ?? null,
+        pesoInicialKg: pesoKg,
+        saldoKg: pesoKg,
+        costoNetoKg,
+        pesoEstimado,
+        creadoPorId: usuarioId,
+        ...(fechaIngreso ? { fechaIngreso } : {}),
+      },
+      include: cajaConIncludes,
+    });
+    await tx.movimientoCamara.create({
+      data: {
+        cajaId: caja.id,
+        tipo: "entrada",
+        pesoKg,
+        destino: "camara",
+        usuarioId,
+        dispositivo: dispositivo || null,
+        claveIdempotencia: randomUUID(),
+      },
+    });
+    creadas.push(caja);
+  }
+  return creadas;
+}
+
+const entradaLoteSchema = lineaFacturaCamaraSchema.and(
+  z.object({
+    usuarioId: z.number().int().positive(),
+    dispositivo: z.string().trim().optional(),
+  })
+);
+
 camaraRouter.post("/cajas", async (req, res) => {
   const parsed = entradaLoteSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.issues[0].message });
   }
-  const { productoId, familia, procedencia, cantidadCajas, pesoTotalKg, pesoIndividualKg, costoNetoKg, usuarioId, dispositivo } =
-    parsed.data;
+  const { productoId, familia, procedencia, usuarioId, dispositivo } = parsed.data;
 
   const errorProcedencia = validarProcedencia(familia, procedencia);
   if (errorProcedencia) return res.status(400).json({ error: errorProcedencia });
@@ -103,63 +182,68 @@ camaraRouter.post("/cajas", async (req, res) => {
   const producto = await prisma.producto.findUnique({ where: { id: productoId } });
   if (!producto) return res.status(404).json({ error: "Producto no encontrado" });
 
-  const pesoEstimado = pesoTotalKg != null;
-  const pesoTotalReal = pesoTotalKg ?? pesoIndividualKg! * cantidadCajas;
-  const pesosPorCaja = pesoEstimado
-    ? repartirPesoKg(pesoTotalKg!, cantidadCajas)
-    : Array.from({ length: cantidadCajas }, () => pesoIndividualKg!);
-
   // No se puede usar la forma "array" de $transaction acá porque cada
   // movimiento necesita el id de SU PROPIA caja, recién asignado por la
   // base de datos al crearla — se necesita la forma "interactiva" para
   // poder encadenar pasos que dependen del resultado del paso anterior,
   // todo o nada igual que el resto del sistema.
-  const cajas = await prisma.$transaction(async (tx) => {
-    const lote = await tx.loteCamara.create({
-      data: {
-        productoId,
-        familiaNombre: familia,
-        procedencia: procedencia ?? null,
-        cantidadCajas,
-        pesoTotalKg: pesoTotalReal,
-        costoNetoKg,
-        totalNeto: Math.round(pesoTotalReal * costoNetoKg),
-        creadoPorId: usuarioId,
-      },
-    });
-    const creadas = [];
-    for (const pesoKg of pesosPorCaja) {
-      const caja = await tx.cajaCamara.create({
-        data: {
-          productoId,
-          loteId: lote.id,
-          familiaNombre: familia,
-          procedencia: procedencia ?? null,
-          pesoInicialKg: pesoKg,
-          saldoKg: pesoKg,
-          costoNetoKg,
-          pesoEstimado,
-          creadoPorId: usuarioId,
-        },
-        include: cajaConIncludes,
-      });
-      await tx.movimientoCamara.create({
-        data: {
-          cajaId: caja.id,
-          tipo: "entrada",
-          pesoKg,
-          destino: "camara",
-          usuarioId,
-          dispositivo: dispositivo || null,
-          claveIdempotencia: randomUUID(),
-        },
-      });
-      creadas.push(caja);
-    }
-    return creadas;
-  });
+  const cajas = await prisma.$transaction(async (tx) =>
+    crearLoteYCajas(tx, parsed.data, { usuarioId, dispositivo })
+  );
 
   res.status(201).json(cajas);
+});
+
+// Entrada de una factura completa de cámara, con varias líneas (productos)
+// bajo un mismo proveedor y N° de factura — a pedido del usuario (su papá
+// quería ingresar la factura directo, con proveedor/fecha/N° de factura una
+// sola vez para todas las líneas, en vez de repetir "Entrada de cámara"
+// producto por producto). Reemplaza el flujo de la pantalla "Entrada de
+// cámara"; el endpoint de un solo producto (POST /cajas) se mantiene tal
+// cual porque lo sigue usando el asistente de IA (proponer_entrada_camara).
+const entradaFacturaCamaraSchema = z.object({
+  proveedorId: z.number().int().positive(),
+  numeroFactura: z.string().trim().min(1, "Falta el N° de factura"),
+  fecha: z.string().trim().optional(),
+  usuarioId: z.number().int().positive(),
+  lineas: z.array(lineaFacturaCamaraSchema).min(1, "Agrega al menos una línea"),
+});
+
+camaraRouter.post("/cajas/factura", async (req, res) => {
+  const parsed = entradaFacturaCamaraSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0].message });
+  }
+  const { proveedorId, numeroFactura, fecha, usuarioId, lineas } = parsed.data;
+
+  for (const linea of lineas) {
+    const errorProcedencia = validarProcedencia(linea.familia, linea.procedencia);
+    if (errorProcedencia) return res.status(400).json({ error: errorProcedencia });
+  }
+
+  const usuario = await validarUsuario(usuarioId);
+  if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
+
+  const proveedor = await prisma.proveedor.findUnique({ where: { id: proveedorId } });
+  if (!proveedor) return res.status(400).json({ error: "El proveedor indicado no existe" });
+
+  const productos = await prisma.producto.findMany({ where: { id: { in: lineas.map((l) => l.productoId) } } });
+  if (productos.length !== new Set(lineas.map((l) => l.productoId)).size) {
+    return res.status(404).json({ error: "Uno de los productos indicados no existe" });
+  }
+
+  const fechaIngreso = fecha ? new Date(fecha) : undefined;
+
+  const cajasPorLinea = await prisma.$transaction(async (tx) => {
+    const resultado = [];
+    for (const linea of lineas) {
+      const cajas = await crearLoteYCajas(tx, linea, { usuarioId, proveedorId, numeroFactura, fechaIngreso });
+      resultado.push(cajas);
+    }
+    return resultado;
+  });
+
+  res.status(201).json({ cajas: cajasPorLinea.flat() });
 });
 
 camaraRouter.get("/cajas", async (req, res) => {
@@ -282,7 +366,7 @@ camaraRouter.get("/lotes", async (req, res) => {
   const { desde, hasta } = rangoFechasDesdeTexto(req.query.desde, req.query.hasta);
   const lotes = await prisma.loteCamara.findMany({
     where: hayRangoFechas ? { fechaIngreso: { gte: desde, lte: hasta } } : {},
-    include: { producto: true, creadoPor: true, cajas: true },
+    include: { producto: true, creadoPor: true, cajas: true, proveedor: true },
     orderBy: { fechaIngreso: "desc" },
   });
   res.json(
@@ -300,6 +384,7 @@ camaraRouter.get("/lotes/:id", async (req, res) => {
     include: {
       producto: true,
       creadoPor: true,
+      proveedor: true,
       cajas: { orderBy: { id: "asc" } },
       correcciones: { include: { usuario: true }, orderBy: { creadoEn: "desc" } },
     },

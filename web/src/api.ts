@@ -23,6 +23,7 @@ export interface Producto {
   categoriaId: number;
   categoria: Categoria;
   precio: number;
+  precioMayor: number | null;
   flagBalanza: FlagBalanza;
   codigoBarras: string | null;
   contenido: string | null;
@@ -48,6 +49,7 @@ export interface CajaCamara {
   productoId: number;
   producto: Producto;
   loteId: number | null;
+  lote?: LoteCamara | null;
   familiaNombre: string;
   procedencia: string | null;
   fechaIngreso: string;
@@ -94,6 +96,9 @@ export interface LoteCamara {
   fechaIngreso: string;
   creadoPorId: number;
   creadoPor: Usuario;
+  proveedorId: number | null;
+  proveedor: Proveedor | null;
+  numeroFactura: string | null;
   reconstruido: boolean;
   numerosCajas: string;
   bloqueado: boolean;
@@ -283,6 +288,8 @@ export interface ProductoConCosto extends Producto {
   ultimoCostoFecha: string | null;
   penultimoCosto: number | null;
   penultimoCostoFecha: string | null;
+  ultimoCostoCamaraKg: number | null;
+  ultimoCostoCamaraFecha: string | null;
 }
 
 export interface ProductoConUltimoCosto extends Producto {
@@ -668,6 +675,8 @@ export const api = {
     obtener: (id: number) => get<ProductoConCosto>(`/api/productos/${id}`),
     proximoPlu: () => get<{ plu: string }>("/api/productos/proximo-plu"),
     reactivar: (id: number) => post<Producto>(`/api/productos/${id}/reactivar`, {}),
+    cambiarPrecioMayor: (id: number, precioMayor: number) =>
+      put<Producto>(`/api/productos/${id}/precio-mayor`, { precioMayor }),
     listarConCosto: (params: { buscar?: string; categoriaId?: number; incluirInactivos?: boolean } = {}) => {
       const qs = new URLSearchParams();
       if (params.buscar) qs.set("buscar", params.buscar);
@@ -949,6 +958,21 @@ export const api = {
       costoNetoKg: number;
       usuarioId: number;
     }) => post<CajaCamara[]>("/api/camara/cajas", data),
+    entradaFactura: (data: {
+      proveedorId: number;
+      numeroFactura: string;
+      fecha?: string;
+      usuarioId: number;
+      lineas: {
+        productoId: number;
+        familia: FamiliaCamara;
+        procedencia?: ProcedenciaCamara;
+        cantidadCajas: number;
+        pesoTotalKg?: number;
+        pesoIndividualKg?: number;
+        costoNetoKg: number;
+      }[];
+    }) => post<{ cajas: CajaCamara[] }>("/api/camara/cajas/factura", data),
     obtenerCaja: (id: number) => get<CajaCamara>(`/api/camara/cajas/${id}`),
     avisoFifo: (cajaId: number) => get<AvisoFifoCamara>(`/api/camara/cajas/${cajaId}/fifo`),
     // Desde la pantalla de Salida de cámara, la salida se manda con

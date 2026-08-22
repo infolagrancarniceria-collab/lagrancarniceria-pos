@@ -9,6 +9,8 @@ import {
   type FamiliaCamara,
   type ProcedenciaCamara,
   type Producto,
+  type ProductoConCosto,
+  type Proveedor,
 } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
@@ -16,124 +18,217 @@ import { EtiquetaCamara } from "../components/EtiquetaCamara";
 import { imprimirEtiquetaCamara, imprimirEtiquetasLoteCamara } from "../lib/imprimir";
 import { mostrarToast } from "../lib/toast";
 
-interface RevisionLote {
+interface LineaForm {
+  id: number;
   familia: FamiliaCamara;
-  procedencia?: ProcedenciaCamara;
-  productoId: number;
-  producto: string;
-  cantidadCajas: number;
-  pesoTotalKg: number;
-  costoNetoKg: number;
-  totalNeto: number;
-  pesoTotalKgReal?: number;
-  pesoIndividualKg?: number;
+  procedencia: ProcedenciaCamara | "";
+  producto: Producto | null;
+  buscarProducto: string;
+  resultados: Producto[];
+  info: ProductoConCosto | null;
+  precioNuevo: string;
+  precioMayorNuevo: string;
+  cantidadCajas: string;
+  modoPeso: "total" | "individual";
+  pesoValor: string;
+  costoNetoKg: string;
 }
 
+function hoy(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function lineaVacia(id: number): LineaForm {
+  return {
+    id,
+    familia: "Vacuno",
+    procedencia: "",
+    producto: null,
+    buscarProducto: "",
+    resultados: [],
+    info: null,
+    precioNuevo: "",
+    precioMayorNuevo: "",
+    cantidadCajas: "1",
+    modoPeso: "individual",
+    pesoValor: "",
+    costoNetoKg: "",
+  };
+}
+
+// Entrada de cámara directo desde la factura completa — a pedido del papá
+// del usuario, para no repetir proveedor/fecha/N° de factura por cada
+// producto: se cargan de una vez varias líneas (una por producto) bajo la
+// misma factura, y cada línea sigue generando sus cajas reales con
+// etiqueta, igual que antes. Reemplaza la pantalla de un solo producto —
+// el endpoint de una sola línea (POST /api/camara/cajas) se mantiene por
+// su cuenta para el asistente de IA.
 export default function CamaraEntrada() {
   const { usuario } = useUsuario();
 
-  const [familia, setFamilia] = useState<FamiliaCamara>("Vacuno");
-  const [procedencia, setProcedencia] = useState<ProcedenciaCamara | "">("");
-  const [productos, setProductos] = useState<Producto[]>([]);
-  const [buscarProducto, setBuscarProducto] = useState("");
-  const [productoSeleccionado, setProductoSeleccionado] = useState<Producto | null>(null);
+  const [proveedores, setProveedores] = useState<Proveedor[]>([]);
+  const [buscarProveedor, setBuscarProveedor] = useState("");
+  const [proveedorSeleccionado, setProveedorSeleccionado] = useState<Proveedor | null>(null);
+  const [numeroFactura, setNumeroFactura] = useState("");
+  const [fecha, setFecha] = useState(hoy());
 
-  const [cantidadCajas, setCantidadCajas] = useState("1");
-  const [modoPeso, setModoPeso] = useState<"total" | "individual">("individual");
-  const [pesoValor, setPesoValor] = useState("");
-  const [costoNetoKg, setCostoNetoKg] = useState("");
+  const [lineas, setLineas] = useState<LineaForm[]>([lineaVacia(1)]);
+  const [siguienteId, setSiguienteId] = useState(2);
 
   const [error, setError] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
-  const [revision, setRevision] = useState<RevisionLote | null>(null);
   const [cajasCreadas, setCajasCreadas] = useState<CajaCamara[] | null>(null);
   const [imprimiendoId, setImprimiendoId] = useState<number | null>(null);
   const [imprimiendoLote, setImprimiendoLote] = useState(false);
 
   useEffect(() => {
-    if (!buscarProducto.trim()) {
-      setProductos([]);
-      return;
-    }
-    const timeout = setTimeout(() => {
-      api.productos.listar({ buscar: buscarProducto }).then(setProductos).catch((e) => setError(e.message));
-    }, 250);
-    return () => clearTimeout(timeout);
-  }, [buscarProducto]);
+    api.proveedores.listar().then(setProveedores).catch((e) => setError(e.message));
+  }, []);
 
-  function nuevoLote() {
-    setCajasCreadas(null);
-    setRevision(null);
-    setProductoSeleccionado(null);
-    setBuscarProducto("");
-    setCantidadCajas("1");
-    setPesoValor("");
-    setCostoNetoKg("");
-    setProcedencia("");
+  const proveedoresFiltrados = buscarProveedor.trim()
+    ? proveedores.filter((p) => p.nombre.toLowerCase().includes(buscarProveedor.trim().toLowerCase()))
+    : proveedores;
+
+  function actualizarLinea(id: number, cambios: Partial<LineaForm>) {
+    setLineas((actual) => actual.map((l) => (l.id === id ? { ...l, ...cambios } : l)));
   }
 
-  // Antes de crear nada, se arma un resumen para que el operador lo revise
-  // — a pedido del usuario, para calzar con el flujo que ya conocía. Recién
-  // al confirmar ese resumen se crean las cajas.
-  function revisar(e: React.FormEvent) {
+  function buscarProductoLinea(id: number, texto: string) {
+    actualizarLinea(id, { buscarProducto: texto, producto: null, info: null });
+    if (!texto.trim()) {
+      actualizarLinea(id, { resultados: [] });
+      return;
+    }
+    api.productos
+      .listar({ buscar: texto })
+      .then((resultados) => actualizarLinea(id, { resultados }))
+      .catch((e) => setError(e.message));
+  }
+
+  function elegirProducto(id: number, producto: Producto) {
+    actualizarLinea(id, { producto, buscarProducto: "", resultados: [] });
+    api.productos
+      .obtener(producto.id)
+      .then((info) => actualizarLinea(id, { info }))
+      .catch((e) => setError(e.message));
+  }
+
+  async function cambiarPrecios(linea: LineaForm) {
+    if (!linea.info) return;
+    const nuevoVenta = linea.precioNuevo ? Number(linea.precioNuevo) : null;
+    const nuevoMayor = linea.precioMayorNuevo ? Number(linea.precioMayorNuevo) : null;
+    if (!nuevoVenta && !nuevoMayor) return;
+    try {
+      let info = linea.info;
+      if (nuevoVenta) {
+        const actualizado = await api.precios.cambiarIndividual({
+          productoId: info.id,
+          precioNuevo: nuevoVenta,
+          usuarioId: usuario!.id,
+        });
+        info = { ...info, precio: actualizado.precio };
+      }
+      if (nuevoMayor) {
+        const actualizado = await api.productos.cambiarPrecioMayor(info.id, nuevoMayor);
+        info = { ...info, precioMayor: actualizado.precioMayor };
+      }
+      actualizarLinea(linea.id, { info, precioNuevo: "", precioMayorNuevo: "" });
+      mostrarToast("Precio actualizado", info.descripcion);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  function agregarLinea() {
+    setLineas((actual) => [...actual, lineaVacia(siguienteId)]);
+    setSiguienteId((n) => n + 1);
+  }
+
+  function quitarLinea(id: number) {
+    setLineas((actual) => (actual.length > 1 ? actual.filter((l) => l.id !== id) : actual));
+  }
+
+  function subtotalLinea(l: LineaForm): number {
+    const cajas = Number(l.cantidadCajas) || 0;
+    const peso = Number(l.pesoValor) || 0;
+    const costo = Number(l.costoNetoKg) || 0;
+    const kilos = l.modoPeso === "total" ? peso : peso * cajas;
+    return Math.round(kilos * costo);
+  }
+
+  const totalFactura = lineas.reduce((s, l) => s + subtotalLinea(l), 0);
+
+  function nuevaFactura() {
+    setCajasCreadas(null);
+    setProveedorSeleccionado(null);
+    setBuscarProveedor("");
+    setNumeroFactura("");
+    setFecha(hoy());
+    setLineas([lineaVacia(1)]);
+    setSiguienteId(2);
+  }
+
+  async function guardar(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    if (!productoSeleccionado) {
-      setError("Elige un producto");
+    if (!usuario || !proveedorSeleccionado) {
+      setError("Falta elegir el proveedor");
       return;
     }
-    if (familia === "Vacuno" && !procedencia) {
-      setError("Elige la procedencia (Nacional, Brasil o Paraguay)");
+    if (!numeroFactura.trim()) {
+      setError("Falta el N° de factura");
       return;
     }
-    const cajas = Number(cantidadCajas);
-    if (!cajas || cajas <= 0 || !Number.isInteger(cajas)) {
-      setError("La cantidad de cajas debe ser un número entero mayor a 0");
-      return;
+    for (const l of lineas) {
+      if (!l.producto) {
+        setError("Falta elegir el producto de alguna línea");
+        return;
+      }
+      if (l.familia === "Vacuno" && !l.procedencia) {
+        setError(`Falta la procedencia de "${l.producto.descripcion}"`);
+        return;
+      }
+      const cajas = Number(l.cantidadCajas);
+      if (!cajas || cajas <= 0 || !Number.isInteger(cajas)) {
+        setError(`Cantidad de cajas inválida en "${l.producto.descripcion}"`);
+        return;
+      }
+      if (!Number(l.pesoValor) || Number(l.pesoValor) <= 0) {
+        setError(`Falta el peso de "${l.producto.descripcion}"`);
+        return;
+      }
+      if (!Number(l.costoNetoKg) || Number(l.costoNetoKg) <= 0) {
+        setError(`Falta el costo neto por kilo de "${l.producto.descripcion}"`);
+        return;
+      }
     }
-    const peso = Number(pesoValor);
-    if (!peso || peso <= 0) {
-      setError(modoPeso === "total" ? "Ingresa el peso total del lote" : "Ingresa el peso por caja");
-      return;
-    }
-    const costo = Number(costoNetoKg);
-    if (!costo || costo <= 0) {
-      setError("Ingresa el costo neto por kilo");
-      return;
-    }
-    const pesoTotalKg = modoPeso === "total" ? peso : peso * cajas;
-    setRevision({
-      familia,
-      ...(familia === "Vacuno" ? { procedencia: procedencia as ProcedenciaCamara } : {}),
-      productoId: productoSeleccionado.id,
-      producto: productoSeleccionado.descripcion,
-      cantidadCajas: cajas,
-      pesoTotalKg,
-      costoNetoKg: costo,
-      totalNeto: Math.round(pesoTotalKg * costo),
-      ...(modoPeso === "total" ? { pesoTotalKgReal: peso } : { pesoIndividualKg: peso }),
-    });
-  }
 
-  async function confirmarRegistro() {
-    if (!revision || !usuario) return;
+    const confirmado = window.confirm(
+      `¿Registrar esta factura? ${lineas.length} línea(s), total neto ${formatoCLP(totalFactura)}.`
+    );
+    if (!confirmado) return;
+
     setGuardando(true);
-    setError(null);
     try {
-      const creadas = await api.camara.entradaLote({
-        productoId: revision.productoId,
-        familia: revision.familia,
-        ...(revision.procedencia ? { procedencia: revision.procedencia } : {}),
-        cantidadCajas: revision.cantidadCajas,
-        ...(revision.pesoTotalKgReal != null
-          ? { pesoTotalKg: revision.pesoTotalKgReal }
-          : { pesoIndividualKg: revision.pesoIndividualKg! }),
-        costoNetoKg: revision.costoNetoKg,
+      const resultado = await api.camara.entradaFactura({
+        proveedorId: proveedorSeleccionado.id,
+        numeroFactura: numeroFactura.trim(),
+        fecha,
         usuarioId: usuario.id,
+        lineas: lineas.map((l) => ({
+          productoId: l.producto!.id,
+          familia: l.familia,
+          ...(l.familia === "Vacuno" ? { procedencia: l.procedencia as ProcedenciaCamara } : {}),
+          cantidadCajas: Number(l.cantidadCajas),
+          ...(l.modoPeso === "total" ? { pesoTotalKg: Number(l.pesoValor) } : { pesoIndividualKg: Number(l.pesoValor) }),
+          costoNetoKg: Number(l.costoNetoKg),
+        })),
       });
-      setCajasCreadas(creadas);
-      mostrarToast("Lote ingresado", `${revision.cantidadCajas} caja(s) de ${revision.producto} en cámara.`);
-      setRevision(null);
+      setCajasCreadas(resultado.cajas);
+      mostrarToast(
+        "Factura ingresada a cámara",
+        `${lineas.length} línea(s) de ${proveedorSeleccionado.nombre} — ${formatoCLP(totalFactura)}.`
+      );
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -169,23 +264,21 @@ export default function CamaraEntrada() {
       <div>
         <div className="no-imprimir">
           <div className="encabezado-pantalla">
-            <h1>Entrada de cámara — {cajasCreadas.length} caja(s) registrada(s)</h1>
+            <h1>Factura ingresada — {cajasCreadas.length} caja(s) registrada(s)</h1>
             <Link to="/camara" className="boton">
               Volver a Cámara
             </Link>
           </div>
           <p className="exito">
-            Listo — {cajasCreadas[0].producto.descripcion}, {cajasCreadas.length} caja(s) de{" "}
-            {cajasCreadas[0].pesoEstimado ? "peso estimado" : "peso real"}. Imprime cada etiqueta con el botón
-            correspondiente, o todo el lote de una vez.
+            Listo — imprime cada etiqueta con el botón correspondiente, o todas de una vez.
           </p>
           <div className="fila-inline">
-            <button type="button" className="boton boton-primario" onClick={nuevoLote}>
-              Registrar otro lote
+            <button type="button" className="boton boton-primario" onClick={nuevaFactura}>
+              Registrar otra factura
             </button>
             {cajasCreadas.length > 1 && (
               <button type="button" className="boton boton-peligro" onClick={imprimirTodasLasEtiquetas}>
-                ⚡ Imprimir lote completo ({cajasCreadas.length})
+                ⚡ Imprimir todas las etiquetas ({cajasCreadas.length})
               </button>
             )}
           </div>
@@ -214,191 +307,238 @@ export default function CamaraEntrada() {
     );
   }
 
-  if (revision) {
-    return (
-      <div>
-        <div className="encabezado-pantalla">
-          <h1>Revise el lote antes de ingresarlo</h1>
-          <Link to="/camara" className="boton">
-            Volver a Cámara
-          </Link>
-        </div>
-        {error && <p className="error">{error}</p>}
-        <p className="ayuda">Confirme que estos datos coinciden con el total indicado en las cajas o en el documento de compra.</p>
-        <div className="tarjeta">
-          <p>
-            <b>Familia:</b> {revision.familia}
-          </p>
-          {revision.procedencia && (
-            <p>
-              <b>Procedencia:</b> {revision.procedencia}
-            </p>
-          )}
-          <p>
-            <b>Producto:</b> {revision.producto}
-          </p>
-          <p>
-            <b>Cantidad:</b> {revision.cantidadCajas} caja(s)
-          </p>
-          <p>
-            <b>Peso total del lote:</b> {revision.pesoTotalKg.toFixed(3)} kg
-          </p>
-          <p>
-            <b>Valor neto por kilo:</b> {formatoCLP(revision.costoNetoKg)}
-          </p>
-          <p>
-            <b>TOTAL NETO DEL LOTE:</b> {formatoCLP(revision.totalNeto)}
-          </p>
-        </div>
-        <p className="ayuda">Mientras este resumen esté abierto, todavía no se ha registrado ninguna caja.</p>
-        <div className="acciones-formulario">
-          <button type="button" className="boton boton-primario" onClick={confirmarRegistro} disabled={guardando}>
-            {guardando ? "Registrando..." : "✓ Sí, registrar lote"}
-          </button>
-          <button type="button" className="boton" onClick={() => setRevision(null)} disabled={guardando}>
-            ← Corregir datos
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div>
       <div className="encabezado-pantalla">
-        <h1>Entrada de cámara</h1>
+        <h1>Entrada de cámara — factura</h1>
         <Link to="/camara" className="boton">
           Volver a Cámara
         </Link>
       </div>
       {error && <p className="error">{error}</p>}
 
-      <form onSubmit={revisar} onKeyDown={manejarEnterComoTab} className="formulario">
+      <form onSubmit={guardar} onKeyDown={manejarEnterComoTab} className="formulario">
         <label>
-          Familia
-          <select
-            value={familia}
-            onChange={(e) => {
-              const nueva = e.target.value as FamiliaCamara;
-              setFamilia(nueva);
-              if (nueva !== "Vacuno") setProcedencia("");
-            }}
-          >
-            {FAMILIAS_CAMARA.map((f) => (
-              <option key={f} value={f}>
-                {f}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        {familia === "Vacuno" && (
-          <label>
-            Procedencia
-            <select value={procedencia} onChange={(e) => setProcedencia(e.target.value as ProcedenciaCamara)}>
-              <option value="">Seleccione...</option>
-              {PROCEDENCIAS_VACUNO.map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-
-        <label>
-          Producto o corte
+          Proveedor
           <div className="buscador-producto">
             <input
               type="text"
-              placeholder="Buscar por PLU o nombre..."
-              value={buscarProducto}
+              placeholder="Buscar proveedor... (vacío = ver todos)"
+              value={buscarProveedor}
               onChange={(e) => {
-                setBuscarProducto(e.target.value);
-                setProductoSeleccionado(null);
+                setBuscarProveedor(e.target.value);
+                setProveedorSeleccionado(null);
               }}
             />
-            {buscarProducto.trim() && (
+            {!proveedorSeleccionado && (
               <div className="resultados-busqueda">
-                {productos.length === 0 && <div className="resultado-item ayuda">Sin resultados</div>}
-                {productos.map((p) => (
+                {proveedoresFiltrados.length === 0 && <div className="resultado-item ayuda">Sin resultados</div>}
+                {proveedoresFiltrados.map((p) => (
                   <button
                     key={p.id}
                     type="button"
                     className="resultado-item"
                     onClick={() => {
-                      setProductoSeleccionado(p);
-                      setBuscarProducto("");
-                      setProductos([]);
+                      setProveedorSeleccionado(p);
+                      setBuscarProveedor("");
                     }}
                   >
-                    {p.plu} — {p.descripcion} ({p.categoria.nombre})
+                    {p.nombre}
                   </button>
                 ))}
               </div>
             )}
           </div>
-          {productoSeleccionado && (
+          {proveedorSeleccionado && (
             <p className="exito">
-              Producto elegido: {productoSeleccionado.descripcion}{" "}
-              <button type="button" onClick={() => setProductoSeleccionado(null)}>
+              Proveedor elegido: {proveedorSeleccionado.nombre}{" "}
+              <button type="button" onClick={() => setProveedorSeleccionado(null)}>
                 Cambiar
               </button>
             </p>
           )}
         </label>
-
         <label>
-          Cantidad de cajas
-          <input
-            type="number"
-            min="1"
-            step="1"
-            value={cantidadCajas}
-            onChange={(e) => setCantidadCajas(e.target.value)}
-          />
-        </label>
-
-        <label>
-          ¿Cómo se sabe el peso?
-          <select value={modoPeso} onChange={(e) => setModoPeso(e.target.value as "total" | "individual")}>
-            <option value="individual">Se pesó cada caja (peso real)</option>
-            <option value="total">Solo se sabe el peso total del lote (se reparte estimado)</option>
-          </select>
+          Fecha de ingreso
+          <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} required />
         </label>
         <label>
-          {modoPeso === "total" ? "Peso total del lote (kg)" : "Peso por caja (kg)"}
-          <input
-            type="number"
-            min="0.001"
-            step="0.001"
-            value={pesoValor}
-            onChange={(e) => setPesoValor(e.target.value)}
-            placeholder={modoPeso === "total" ? "ej. 225" : "ej. 22.5"}
-          />
-          {modoPeso === "total" && (
-            <span className="ayuda">
-              Se reparte en partes iguales entre las {cantidadCajas || "N"} cajas (marcadas como peso estimado —
-              se puede corregir después con un ajuste).
-            </span>
-          )}
-        </label>
-
-        <label>
-          Costo neto por kilo
-          <input
-            type="number"
-            min="0.01"
-            step="0.01"
-            value={costoNetoKg}
-            onChange={(e) => setCostoNetoKg(e.target.value)}
-            placeholder="ej. 6500"
-          />
+          N° de factura
+          <input value={numeroFactura} onChange={(e) => setNumeroFactura(e.target.value)} required />
         </label>
 
         <div className="acciones-formulario">
-          <button type="submit" className="boton boton-primario">
-            Revisar datos del lote
+          <h2>Líneas de la factura</h2>
+          {lineas.map((l, i) => (
+            <div key={l.id} className="tarjeta tarjeta-mini">
+              <div className="fila-inline" style={{ justifyContent: "space-between" }}>
+                <strong>Línea {i + 1}</strong>
+                {lineas.length > 1 && (
+                  <button type="button" className="boton-quitar-item" onClick={() => quitarLinea(l.id)}>
+                    ✕
+                  </button>
+                )}
+              </div>
+
+              <label>
+                Familia
+                <select
+                  value={l.familia}
+                  onChange={(e) => {
+                    const nueva = e.target.value as FamiliaCamara;
+                    actualizarLinea(l.id, { familia: nueva, procedencia: nueva !== "Vacuno" ? "" : l.procedencia });
+                  }}
+                >
+                  {FAMILIAS_CAMARA.map((f) => (
+                    <option key={f} value={f}>
+                      {f}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {l.familia === "Vacuno" && (
+                <label>
+                  Procedencia
+                  <select
+                    value={l.procedencia}
+                    onChange={(e) => actualizarLinea(l.id, { procedencia: e.target.value as ProcedenciaCamara })}
+                  >
+                    <option value="">Seleccione...</option>
+                    {PROCEDENCIAS_VACUNO.map((p) => (
+                      <option key={p} value={p}>
+                        {p}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              <label>
+                Producto o corte
+                <div className="buscador-producto">
+                  <input
+                    type="text"
+                    placeholder="Buscar por PLU o nombre..."
+                    value={l.producto ? l.producto.descripcion : l.buscarProducto}
+                    onChange={(e) => buscarProductoLinea(l.id, e.target.value)}
+                  />
+                  {!l.producto && l.buscarProducto.trim() && (
+                    <div className="resultados-busqueda">
+                      {l.resultados.length === 0 && <div className="resultado-item ayuda">Sin resultados</div>}
+                      {l.resultados.map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          className="resultado-item"
+                          onClick={() => elegirProducto(l.id, p)}
+                        >
+                          {p.plu} — {p.descripcion} ({p.categoria.nombre})
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </label>
+
+              {l.info && (
+                <div className="tarjeta-mini">
+                  <p>
+                    <strong>PLU:</strong> {l.info.plu} ·{" "}
+                    <strong>Última compra en cámara:</strong>{" "}
+                    {l.info.ultimoCostoCamaraKg != null ? `${formatoCLP(l.info.ultimoCostoCamaraKg)}/kg` : "sin datos"}
+                  </p>
+                  <p>
+                    <strong>Precio venta:</strong> {formatoCLP(l.info.precio)} ·{" "}
+                    <strong>Precio venta mayor:</strong>{" "}
+                    {l.info.precioMayor != null ? formatoCLP(l.info.precioMayor) : "sin definir"}
+                  </p>
+                  <div className="fila-inline">
+                    <input
+                      type="number"
+                      min="1"
+                      className="input-chico"
+                      placeholder="Nuevo precio venta"
+                      value={l.precioNuevo}
+                      onChange={(e) => actualizarLinea(l.id, { precioNuevo: e.target.value })}
+                    />
+                    <input
+                      type="number"
+                      min="1"
+                      className="input-chico"
+                      placeholder="Nuevo precio venta mayor"
+                      value={l.precioMayorNuevo}
+                      onChange={(e) => actualizarLinea(l.id, { precioMayorNuevo: e.target.value })}
+                    />
+                    <button type="button" onClick={() => cambiarPrecios(l)}>
+                      Actualizar precio(s)
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <label>
+                Cantidad de cajas
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={l.cantidadCajas}
+                  onChange={(e) => actualizarLinea(l.id, { cantidadCajas: e.target.value })}
+                />
+              </label>
+
+              <label>
+                ¿Cómo se sabe el peso?
+                <select
+                  value={l.modoPeso}
+                  onChange={(e) => actualizarLinea(l.id, { modoPeso: e.target.value as "total" | "individual" })}
+                >
+                  <option value="individual">Se pesó cada caja (peso real)</option>
+                  <option value="total">Solo se sabe el peso total (se reparte estimado)</option>
+                </select>
+              </label>
+              <label>
+                {l.modoPeso === "total" ? "Kilos (total del lote)" : "Kilos por caja"}
+                <input
+                  type="number"
+                  min="0.001"
+                  step="0.001"
+                  value={l.pesoValor}
+                  onChange={(e) => actualizarLinea(l.id, { pesoValor: e.target.value })}
+                  placeholder={l.modoPeso === "total" ? "ej. 225" : "ej. 22.5"}
+                />
+              </label>
+
+              <label>
+                Valor neto por kilo
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={l.costoNetoKg}
+                  onChange={(e) => actualizarLinea(l.id, { costoNetoKg: e.target.value })}
+                  placeholder="ej. 6500"
+                />
+              </label>
+
+              <p>
+                <strong>Subtotal línea:</strong> {formatoCLP(subtotalLinea(l))}
+              </p>
+            </div>
+          ))}
+          <button type="button" className="boton" onClick={agregarLinea}>
+            + Agregar línea
+          </button>
+        </div>
+
+        <p>
+          <strong>Neto total de la factura: {formatoCLP(totalFactura)}</strong>
+        </p>
+
+        <div className="acciones-formulario">
+          <button type="submit" className="boton boton-primario" disabled={guardando}>
+            {guardando ? "Guardando..." : "Registrar factura"}
           </button>
         </div>
       </form>

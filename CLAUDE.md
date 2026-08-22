@@ -2526,3 +2526,62 @@ con PLU 690 se rechaza con el mensaje nuevo (menciona a "NULO"), activar
 vuelve a poner `activo: true` correctamente (confirmado con la API) — el
 producto real de prueba se dejó otra vez como estaba (eliminado) al
 terminar, sin alterar el catálogo de prueba existente.
+
+## Cámara: entrada directa de la factura completa, y precio de venta al por mayor
+A pedido del papá del usuario, que quería ingresar la factura completa a
+cámara de una vez (proveedor, fecha, N° de factura, una sola vez) en vez
+de repetir "Entrada de cámara" producto por producto. Antes de programar
+se confirmaron 4 puntos con el usuario: **reemplaza** la pantalla actual
+(no queda una aparte); cada línea **sigue generando cajas reales con
+etiqueta** para imprimir, igual que antes; "Valor venta mayor" es **un
+precio nuevo, ajustable**, por producto; y familia/procedencia se siguen
+pidiendo igual que hoy.
+
+- **Pantalla "Entrada de cámara" reescrita** (`CamaraEntrada.tsx`, misma
+  ruta `/camara/entrada`): primero proveedor + fecha de ingreso + N° de
+  factura (una sola vez), después varias **líneas** (una por producto,
+  con "+ Agregar línea"), cada una con familia/procedencia/producto/
+  cantidad de cajas/kilos/costo neto por kilo — mismos campos que antes,
+  repetidos por línea. Al confirmar, cada línea sigue generando su propio
+  lote + cajas + etiquetas exactamente igual que antes (nada cambió ahí);
+  la pantalla de resultado ahora imprime las etiquetas de **todas** las
+  líneas juntas, no solo una.
+- **Ficha de referencia por línea**: al elegir el producto, se muestra su
+  PLU, el costo de la última compra **en cámara** de ese mismo producto
+  (para comparar contra el costo que se está por ingresar), y el precio de
+  venta y venta al por mayor actuales — con un mini-formulario para
+  **actualizar cualquiera de los dos ahí mismo** sin salir de la pantalla
+  (mismo patrón que "Registrar entrada" en Inventario). El precio de venta
+  normal sigue pasando por el endpoint de siempre (queda en el historial
+  de precios); el precio al por mayor es nuevo, no tiene historial.
+- **"Valor venta mayor" — precio nuevo por producto** (`Producto.
+  precioMayor`, opcional): a diferencia del precio de venta normal, es
+  editable directo (sin pasar por el historial de cambios de precio) desde
+  la ficha de producto o desde esta pantalla — solo de referencia, no
+  reemplaza el precio que se negocia en cada "Venta por mayor" real de
+  Cámara.
+- **Factura queda ligada al lote**: `LoteCamara` ahora guarda
+  `proveedorId`/`numeroFactura` (y la fecha de ingreso ya no es siempre
+  "ahora" — se puede fijar la del documento real) — opcionales, porque los
+  lotes ya existentes no la tienen. El endpoint de un solo producto
+  (`POST /api/camara/cajas`) se mantiene igual, sin pedir factura, porque
+  lo sigue usando el asistente de IA (`proponer_entrada_camara`); el nuevo
+  (`POST /api/camara/cajas/factura`) crea todas las líneas de una factura
+  en una sola transacción (todo o nada), reutilizando la misma lógica de
+  repartir peso y crear cajas.
+
+Probado de punta a punta con Playwright contra el servidor real: cargar
+una factura con Distribuidora Los Andes, fecha 10-08-2026, una línea de
+CHURRASCO DE VACUNO (Vacuno/Nacional, 2 cajas de 15kg a $9.500/kg) — se
+crearon las 2 cajas con la fecha de la factura (no la de hoy), ligadas al
+proveedor y N° de factura correctos, con sus etiquetas mostrando los datos
+correctos; el precio de venta al por mayor cambiado desde la ficha de
+referencia quedó guardado en el producto — datos de prueba limpiados
+después.
+
+## Pestaña "Combos" en la barra lateral
+A pedido del usuario, para llegar más rápido a la pantalla de mejor margen
+(la que ya sirve para armar combos, ver "Pantalla 'Mejor margen'" más
+arriba) sin tener que entrar primero a Productos. Nuevo ítem "🧩 Combos" en
+la barra lateral, apuntando a la misma ruta `/productos/margenes` — no es
+una pantalla nueva, solo un acceso directo.

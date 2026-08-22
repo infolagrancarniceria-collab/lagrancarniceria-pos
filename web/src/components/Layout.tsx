@@ -40,6 +40,7 @@ export default function Layout() {
           ) : (
             <>
               <Item to="/productos" emoji="🥩" etiqueta="Productos" />
+              <Item to="/productos/margenes" emoji="🧩" etiqueta="Combos" />
               <Item to="/cambio-masivo" emoji="💲" etiqueta="Cambio masivo" />
               <Item to="/historial" emoji="🕘" etiqueta="Historial" />
               <Item to="/categorias" emoji="🗂️" etiqueta="Categorías" />

@@ -86,6 +86,13 @@ model Producto {
   // Precio por kg si flagBalanza es PESABLE/IMPORTE, precio por unidad si es NORMAL.
   precio Float
 
+  // Precio de venta al por mayor (opcional) — de referencia, editable
+  // directo (a diferencia de "precio", no pasa por el historial de
+  // cambios de precio). No reemplaza el precio que se negocia en cada
+  // "Venta por mayor" de Cámara — es solo un valor guardado para
+  // consultarlo rápido al armar una factura o cotizar.
+  precioMayor Float?
+
   flagBalanza String @default("NORMAL")
 
   // Solo aplica cuando flagBalanza = NORMAL: la balanza imprime su propio
@@ -141,6 +148,7 @@ model Proveedor {
   creadoEn DateTime @default(now())
 
   movimientos MovimientoInventario[]
+  lotesCamara LoteCamara[]
 }
 
 // "Entrada" siempre suma stock (compra a proveedor, o ajuste positivo por
@@ -368,6 +376,12 @@ model LoteCamara {
   pesoTotalKg   Float
   costoNetoKg   Float
   totalNeto     Float // round(pesoTotalKg * costoNetoKg)
+
+  // Factura de compra que originó este lote — opcionales porque los lotes
+  // ya existentes (y los reconstruidos, ver más abajo) no la tienen.
+  proveedorId   Int?
+  proveedor     Proveedor? @relation(fields: [proveedorId], references: [id])
+  numeroFactura String?
 
   fechaIngreso DateTime @default(now())
 

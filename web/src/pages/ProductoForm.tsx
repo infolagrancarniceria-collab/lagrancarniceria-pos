@@ -13,6 +13,7 @@ interface FormState {
   marca: string;
   categoriaId: number | "";
   precio: string;
+  precioMayor: string;
   flagBalanza: FlagBalanza;
   codigoBarras: string;
   contenido: string;
@@ -31,6 +32,7 @@ const formVacio: FormState = {
   marca: "",
   categoriaId: "",
   precio: "",
+  precioMayor: "",
   flagBalanza: "NORMAL",
   codigoBarras: "",
   contenido: "",
@@ -85,6 +87,7 @@ export default function ProductoForm() {
           marca: p.marca ?? "",
           categoriaId: p.categoriaId,
           precio: String(p.precio),
+          precioMayor: p.precioMayor != null ? String(p.precioMayor) : "",
           flagBalanza: p.flagBalanza,
           codigoBarras: p.codigoBarras ?? "",
           contenido: p.contenido ?? "",
@@ -128,6 +131,7 @@ export default function ProductoForm() {
       duracion: form.duracion.trim() || null,
       codigoProveedor: form.codigoProveedor.trim() || null,
       umbralStockBajo: form.umbralStockBajo ? Number(form.umbralStockBajo) : null,
+      precioMayor: form.precioMayor ? Number(form.precioMayor) : null,
     };
 
     setGuardando(true);
@@ -298,6 +302,19 @@ export default function ProductoForm() {
             />
           </label>
         )}
+        <label>
+          Precio de venta al por mayor (opcional)
+          <input
+            type="number"
+            min="1"
+            placeholder="ej. 12000"
+            value={form.precioMayor}
+            onChange={(e) => actualizarCampo("precioMayor", e.target.value)}
+          />
+          <span className="ayuda">
+            Solo de referencia — no reemplaza el precio que se negocia en cada venta por mayor.
+          </span>
+        </label>
         <label>
           Contenido
           <input value={form.contenido} onChange={(e) => actualizarCampo("contenido", e.target.value)} />

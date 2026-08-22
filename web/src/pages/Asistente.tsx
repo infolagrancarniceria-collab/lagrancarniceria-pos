@@ -138,6 +138,7 @@ async function ejecutarPropuesta(accion: PropuestaAsistente["accion"], usuarioId
         duracion: null,
         codigoProveedor: null,
         umbralStockBajo: null,
+        precioMayor: null,
       });
       return;
     case "proponer_desactivar_producto":

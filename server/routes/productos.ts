@@ -145,12 +145,23 @@ productosRouter.get("/:id", async (req, res) => {
     take: 2,
   });
 
+  // Igual, pero para el último costo neto/kg registrado en Cámara (lotes),
+  // que es un costo aparte del de compras de Inventario — se usa al armar
+  // una factura de cámara, para comparar contra la compra anterior de ese
+  // mismo producto en cámara específicamente.
+  const ultimoLoteCamara = await prisma.loteCamara.findFirst({
+    where: { productoId: producto.id },
+    orderBy: { fechaIngreso: "desc" },
+  });
+
   res.json({
     ...producto,
     ultimoCosto: ultimasCompras[0]?.costoUnitario ?? null,
     ultimoCostoFecha: ultimasCompras[0]?.fecha ?? null,
     penultimoCosto: ultimasCompras[1]?.costoUnitario ?? null,
     penultimoCostoFecha: ultimasCompras[1]?.fecha ?? null,
+    ultimoCostoCamaraKg: ultimoLoteCamara?.costoNetoKg ?? null,
+    ultimoCostoCamaraFecha: ultimoLoteCamara?.fechaIngreso ?? null,
   });
 });
 
@@ -172,6 +183,7 @@ const productoBaseSchema = z.object({
   duracion: z.string().trim().optional().nullable(),
   codigoProveedor: z.string().trim().optional().nullable(),
   umbralStockBajo: z.number().min(0).optional().nullable(),
+  precioMayor: z.number().positive().optional().nullable(),
 });
 
 function validarCodigoBarrasVsFlag(data: {
@@ -277,6 +289,29 @@ productosRouter.post("/:id/reactivar", async (req, res) => {
   const producto = await prisma.producto.update({
     where: { id },
     data: { activo: true },
+    include: { categoria: true },
+  });
+  res.json(producto);
+});
+
+// Cambio rápido del precio de venta al por mayor — a diferencia de "precio"
+// (venta normal), este campo no pasa por el historial de cambios: es solo
+// un valor de referencia editable directo, pensado para ajustarlo al vuelo
+// mientras se carga una factura de cámara.
+const precioMayorSchema = z.object({ precioMayor: z.number().positive("El precio debe ser mayor a 0") });
+
+productosRouter.put("/:id/precio-mayor", async (req, res) => {
+  const id = Number(req.params.id);
+  const parsed = precioMayorSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0].message });
+  }
+  const existente = await prisma.producto.findUnique({ where: { id } });
+  if (!existente) return res.status(404).json({ error: "Producto no encontrado" });
+
+  const producto = await prisma.producto.update({
+    where: { id },
+    data: { precioMayor: parsed.data.precioMayor },
     include: { categoria: true },
   });
   res.json(producto);
