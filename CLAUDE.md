@@ -2585,3 +2585,24 @@ A pedido del usuario, para llegar más rápido a la pantalla de mejor margen
 arriba) sin tener que entrar primero a Productos. Nuevo ítem "🧩 Combos" en
 la barra lateral, apuntando a la misma ruta `/productos/margenes` — no es
 una pantalla nueva, solo un acceso directo.
+
+## Cámara: aclarar los campos de precio nuevo, y mostrar el margen (%)
+El usuario preguntó qué eran los dos recuadros chicos junto al botón
+"Actualizar precio(s)" en la ficha de referencia de "Entrada de cámara"
+(factura) — eran los campos para escribir el precio de venta y el de
+venta al por mayor nuevos, pero sin ninguna etiqueta visible se
+entendía mal. Se les agregó el texto "Nuevo precio venta" / "Nuevo
+precio venta mayor" arriba de cada uno.
+
+También se agregó, justo al lado del precio de venta actual en esa misma
+ficha, el **margen (%)** — misma fórmula de siempre (`calcularMargen`),
+usando el costo de la última compra **en cámara** de ese producto (no el
+de Inventario) como base, ya que en esta pantalla es el costo relevante.
+Si el producto no tiene ninguna compra en cámara todavía, no se muestra
+ningún margen (en vez de uno inventado), igual que en el resto del
+sistema.
+
+Probado con Playwright contra el servidor real: ABASTERO DE CERDO (precio
+$4.980, última compra en cámara $7.777/kg) muestra "Margen: -46,19%" —
+calza exacto con la fórmula (costo mayor al precio de venta, en este caso
+con datos de prueba antiguos).

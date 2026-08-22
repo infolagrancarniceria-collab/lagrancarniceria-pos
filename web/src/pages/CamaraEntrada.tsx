@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   api,
+  calcularMargen,
   formatoCLP,
   FAMILIAS_CAMARA,
   PROCEDENCIAS_VACUNO,
@@ -452,24 +453,42 @@ export default function CamaraEntrada() {
                     <strong>Precio venta:</strong> {formatoCLP(l.info.precio)} ·{" "}
                     <strong>Precio venta mayor:</strong>{" "}
                     {l.info.precioMayor != null ? formatoCLP(l.info.precioMayor) : "sin definir"}
+                    {(() => {
+                      const margen = calcularMargen(l.info.precio, l.info.ultimoCostoCamaraKg);
+                      return margen != null ? (
+                        <>
+                          {" "}
+                          · <strong>Margen:</strong> {margen.toFixed(2)}%
+                        </>
+                      ) : null;
+                    })()}
                   </p>
+                  {/* Estos dos campos son para cambiar el precio de venta y el de
+                      venta al por mayor de este producto sin salir de la
+                      pantalla — se escribe el valor nuevo en el que corresponda
+                      (se pueden dejar los dos, uno solo, o ninguno) y se aplica
+                      con el botón "Actualizar precio(s)". */}
                   <div className="fila-inline">
-                    <input
-                      type="number"
-                      min="1"
-                      className="input-chico"
-                      placeholder="Nuevo precio venta"
-                      value={l.precioNuevo}
-                      onChange={(e) => actualizarLinea(l.id, { precioNuevo: e.target.value })}
-                    />
-                    <input
-                      type="number"
-                      min="1"
-                      className="input-chico"
-                      placeholder="Nuevo precio venta mayor"
-                      value={l.precioMayorNuevo}
-                      onChange={(e) => actualizarLinea(l.id, { precioMayorNuevo: e.target.value })}
-                    />
+                    <label className="ayuda">
+                      Nuevo precio venta
+                      <input
+                        type="number"
+                        min="1"
+                        className="input-chico"
+                        value={l.precioNuevo}
+                        onChange={(e) => actualizarLinea(l.id, { precioNuevo: e.target.value })}
+                      />
+                    </label>
+                    <label className="ayuda">
+                      Nuevo precio venta mayor
+                      <input
+                        type="number"
+                        min="1"
+                        className="input-chico"
+                        value={l.precioMayorNuevo}
+                        onChange={(e) => actualizarLinea(l.id, { precioMayorNuevo: e.target.value })}
+                      />
+                    </label>
                     <button type="button" onClick={() => cambiarPrecios(l)}>
                       Actualizar precio(s)
                     </button>
