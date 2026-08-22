@@ -28,6 +28,15 @@ export function rangoFechasDesdeTexto(desdeTexto?: unknown, hastaTexto?: unknown
   return { desde, hasta };
 }
 
+// Mismo arreglo que rangoFechasDesdeTexto, para los lugares que guardan UNA
+// sola fecha elegida a mano (ej. "fecha de la factura" en Cargar factura de
+// Inventario y en Entrada de cámara) — sin esto, `new Date("2026-08-22")` se
+// interpreta como medianoche UTC y puede terminar mostrando el día anterior
+// al convertirla a la hora local de Chile.
+export function parsearFechaSoloDia(valor: unknown): Date | null {
+  return parseFechaLocal(valor, [0, 0, 0, 0]);
+}
+
 function rangoFechas(query: Record<string, unknown>): { desde: Date; hasta: Date } {
   return rangoFechasDesdeTexto(query.desde, query.hasta);
 }

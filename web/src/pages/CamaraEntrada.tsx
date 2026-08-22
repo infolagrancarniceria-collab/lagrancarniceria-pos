@@ -82,9 +82,32 @@ export default function CamaraEntrada() {
   const [imprimiendoId, setImprimiendoId] = useState<number | null>(null);
   const [imprimiendoLote, setImprimiendoLote] = useState(false);
 
+  // Aviso de posible factura duplicada (mismo proveedor + N° de factura ya
+  // cargado antes) — se revisa al elegir el proveedor y al salir del campo
+  // N° de factura, para que la alerta aparezca antes de completar todas las
+  // líneas, no recién al intentar guardar.
+  const [avisoDuplicado, setAvisoDuplicado] = useState<{
+    lotes: { id: number; producto: string; cantidadCajas: number; pesoTotalKg: number; fechaIngreso: string }[];
+  } | null>(null);
+  const [duplicadoConfirmado, setDuplicadoConfirmado] = useState(false);
+
   useEffect(() => {
     api.proveedores.listar().then(setProveedores).catch((e) => setError(e.message));
   }, []);
+
+  function verificarDuplicado(proveedorId: number, numeroFacturaTexto: string) {
+    if (!proveedorId || !numeroFacturaTexto.trim()) return;
+    api.camara
+      .verificarDuplicadoFactura(proveedorId, numeroFacturaTexto.trim())
+      .then((resultado) => {
+        setAvisoDuplicado(resultado.duplicado ? { lotes: resultado.lotes } : null);
+        setDuplicadoConfirmado(false);
+      })
+      .catch(() => {
+        // Un fallo acá no debe bloquear cargar la factura — el guardado
+        // igual vuelve a revisar por su cuenta como respaldo.
+      });
+  }
 
   const proveedoresFiltrados = buscarProveedor.trim()
     ? proveedores.filter((p) => p.nombre.toLowerCase().includes(buscarProveedor.trim().toLowerCase()))
@@ -167,6 +190,8 @@ export default function CamaraEntrada() {
     setFecha(hoy());
     setLineas([lineaVacia(1)]);
     setSiguienteId(2);
+    setAvisoDuplicado(null);
+    setDuplicadoConfirmado(false);
   }
 
   async function guardar(e: React.FormEvent) {
@@ -178,6 +203,10 @@ export default function CamaraEntrada() {
     }
     if (!numeroFactura.trim()) {
       setError("Falta el N° de factura");
+      return;
+    }
+    if (avisoDuplicado && !duplicadoConfirmado) {
+      setError("Esta factura ya se cargó antes — revisa el aviso arriba y confirma si quieres seguir igual.");
       return;
     }
     for (const l of lineas) {
@@ -224,6 +253,7 @@ export default function CamaraEntrada() {
           ...(l.modoPeso === "total" ? { pesoTotalKg: Number(l.pesoValor) } : { pesoIndividualKg: Number(l.pesoValor) }),
           costoNetoKg: Number(l.costoNetoKg),
         })),
+        confirmarDuplicado: duplicadoConfirmado,
       });
       setCajasCreadas(resultado.cajas);
       mostrarToast(
@@ -342,6 +372,7 @@ export default function CamaraEntrada() {
                     onClick={() => {
                       setProveedorSeleccionado(p);
                       setBuscarProveedor("");
+                      verificarDuplicado(p.id, numeroFactura);
                     }}
                   >
                     {p.nombre}
@@ -365,8 +396,39 @@ export default function CamaraEntrada() {
         </label>
         <label>
           N° de factura
-          <input value={numeroFactura} onChange={(e) => setNumeroFactura(e.target.value)} required />
+          <input
+            value={numeroFactura}
+            onChange={(e) => setNumeroFactura(e.target.value)}
+            onBlur={(e) => proveedorSeleccionado && verificarDuplicado(proveedorSeleccionado.id, e.target.value)}
+            required
+          />
         </label>
+
+        {avisoDuplicado && (
+          <div className="tarjeta tarjeta-mini aviso-advertencia">
+            <p>
+              ⚠ <strong>Esta factura ya se cargó antes</strong> — mismo proveedor y N° de factura, en{" "}
+              {avisoDuplicado.lotes.length === 1 ? "este lote" : "estos lotes"}:
+            </p>
+            <ul>
+              {avisoDuplicado.lotes.map((l) => (
+                <li key={l.id}>
+                  {l.producto} — {l.cantidadCajas} caja(s), {l.pesoTotalKg.toFixed(2)} kg — ingresado el{" "}
+                  {new Date(l.fechaIngreso).toLocaleDateString("es-CL")}
+                </li>
+              ))}
+            </ul>
+            {duplicadoConfirmado ? (
+              <p className="exito">Confirmado — se va a ingresar igual, como una factura nueva y distinta.</p>
+            ) : (
+              <div className="fila-inline">
+                <button type="button" className="boton boton-peligro" onClick={() => setDuplicadoConfirmado(true)}>
+                  Sí, es una factura distinta — continuar de todas formas
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="acciones-formulario">
           <h2>Líneas de la factura</h2>

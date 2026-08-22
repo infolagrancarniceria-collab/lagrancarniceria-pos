@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../db";
-import { rangoFechasDesdeTexto } from "./reportes";
+import { rangoFechasDesdeTexto, parsearFechaSoloDia } from "./reportes";
 
 export const gastosRouter = Router();
 
@@ -68,7 +68,7 @@ gastosRouter.post("/", async (req, res) => {
       descripcion: descripcion || null,
       monto,
       usuarioId,
-      ...(fecha ? { fecha: new Date(fecha) } : {}),
+      ...(parsearFechaSoloDia(fecha) ? { fecha: parsearFechaSoloDia(fecha)! } : {}),
     },
     include: { usuario: true },
   });

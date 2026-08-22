@@ -2668,3 +2668,76 @@ Verificado con `node --check` que `electron/main.js` sigue siendo válido
 `npm run typecheck` limpio. **No se pudo probar contra una Xprinter física
 en este entorno** — pendiente que el usuario confirme que ahora la
 etiqueta sale centrada y ya no invade la siguiente.
+
+## Tres arreglos en Cámara: fecha de factura, factura duplicada y Reimprimir en blanco
+El usuario reportó tres problemas de golpe, probando "Entrada de cámara"
+con datos reales: cargó una factura con fecha de hoy pero quedó registrada
+con la fecha de ayer (21-08), le costó notar que la había cargado dos veces
+sin querer (misma factura, tras corregir un problema con la impresora), y
+"Reimprimir" en Existencias abría una pantalla en blanco.
+
+### Fecha registrada un día antes (bug real, confirmado y corregido)
+Causa: `new Date("2026-08-22")` (el formato que manda un `<input
+type="date">`) se interpreta como **medianoche UTC**, no medianoche de
+Chile — al mostrarla de vuelta convertida a la hora de Chile (UTC-4/UTC-3),
+cae en el día anterior. Confirmado reproduciendo el caso exacto:
+`TZ="America/Santiago" node -e "console.log(new
+Date('2026-08-22').toLocaleDateString('es-CL'))"` → `"21-08-2026"`.
+
+El sistema ya tenía la forma correcta de resolver esto para **rangos** de
+fecha (los filtros "Desde"/"Hasta" de Reportes, que arman la fecha con
+`new Date(año, mes-1, día, horas...)` en vez de parsear el texto ISO), pero
+esa misma técnica no se había aplicado a los campos que guardan **una sola**
+fecha elegida a mano — "fecha de la factura" en Cargar factura (Inventario)
+y en Entrada de cámara. **Arreglado** exportando una función nueva,
+`parsearFechaSoloDia` (`server/routes/reportes.ts`, reutiliza la misma
+lógica ya correcta), aplicada en los tres lugares que parseaban una fecha
+suelta escrita a mano: `server/routes/camara.ts` (fecha de la factura de
+cámara), `server/routes/inventario.ts` (fecha de "Cargar factura"), y
+`server/routes/gastos.ts` (por si en el futuro se agrega un campo de fecha
+al registrar un gasto — hoy ese formulario no lo pide, así que es un
+arreglo preventivo). Verificado con `TZ="America/Santiago"` que
+`parsearFechaSoloDia('2026-08-22')` ahora sí muestra "22-08-2026" — el
+arreglo depende de que el programa corra con la hora de Chile configurada
+en el PC (como ya pasa siempre, ver "Arquitectura y stack": todo corre
+local, en el equipo del local).
+
+### Alerta de factura duplicada (mismo proveedor + N° de factura)
+Nueva revisión en "Entrada de cámara": apenas se elige el proveedor y se
+sale del campo N° de factura (evento `onBlur`, sin esperar a intentar
+guardar), el sistema consulta si ya existe una factura cargada con ese
+mismo proveedor y número (comparación insensible a mayúsculas y espacios,
+para no dejar pasar "F-1234" vs "f-1234 " como si fueran distintas) — si la
+hay, aparece una tarjeta de aviso (ámbar, no bloqueante por sí sola)
+listando el o los lotes ya cargados con esa factura (producto, cantidad de
+cajas, kilos, fecha). El botón "Registrar factura" queda bloqueado con un
+mensaje explicando que hay que revisar el aviso, hasta que la persona
+aprieta "Sí, es una factura distinta — continuar de todas formas" (para el
+caso real de dos facturas legítimas con el mismo número, ej. de
+proveedores distintos con numeración parecida, o un reintento a propósito).
+Nuevo endpoint de solo lectura `GET /api/camara/cajas/factura/verificar-
+duplicado` para esta revisión temprana; el guardado (`POST /api/camara/
+cajas/factura`) también revisa por su cuenta (no confía en que el frontend
+ya haya avisado) y rechaza con 409 si no viene `confirmarDuplicado: true`
+en el cuerpo — mismo patrón de "el servidor vuelve a validar todo" ya usado
+en el resto del sistema.
+
+### "Reimprimir" en blanco (bug real, confirmado y corregido)
+Causa: `GET /api/camara/lotes/:id` (usado por el botón "Reimprimir" de
+Existencias) traía las cajas del lote (`cajas: { orderBy: { id: "asc" } }`)
+sin anidar también su producto (`include: { producto: true }`) — la
+pantalla intenta leer `caja.producto.descripcion` para armar cada etiqueta,
+y como `producto` venía `undefined`, React tiraba un error sin atrapar que
+descolgaba toda la pantalla (efecto visual: se ve completamente en blanco,
+sin ningún aviso de error). **Arreglado** agregando `include: { producto:
+true }` dentro de esa relación anidada.
+
+Probado de punta a punta con Playwright contra el servidor real: cargar una
+factura nueva no muestra ningún aviso de duplicado; recargar la misma
+pantalla con el mismo proveedor + N° de factura sí lo muestra, con el
+detalle correcto del lote ya cargado; intentar guardar sin confirmar el
+aviso lo rechaza con el mensaje explicando qué hacer; confirmando y
+reenviando sí guarda una segunda factura con el mismo número; y "Reimprimir"
+sobre un lote real ahora muestra la etiqueta completa (código de barras,
+producto, peso) en vez de una pantalla en blanco — datos de prueba
+limpiados después.

@@ -419,6 +419,10 @@ select {
   color: var(--color-error);
   margin-top: 0;
 }
+.aviso-advertencia {
+  border-left: 4px solid var(--color-oro);
+  background: var(--color-oro-fondo);
+}
 
 .chat-mensajes {
   display: flex;

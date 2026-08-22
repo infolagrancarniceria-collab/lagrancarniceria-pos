@@ -972,7 +972,18 @@ export const api = {
         pesoIndividualKg?: number;
         costoNetoKg: number;
       }[];
+      confirmarDuplicado?: boolean;
     }) => post<{ cajas: CajaCamara[] }>("/api/camara/cajas/factura", data),
+    // De solo lectura — se llama ANTES de guardar (al elegir proveedor o
+    // salir del campo N° de factura) para avisar de entrada si esa factura
+    // ya se cargó antes, sin esperar a que el guardado la rechace.
+    verificarDuplicadoFactura: (proveedorId: number, numeroFactura: string) => {
+      const qs = new URLSearchParams({ proveedorId: String(proveedorId), numeroFactura });
+      return get<{
+        duplicado: boolean;
+        lotes: { id: number; producto: string; cantidadCajas: number; pesoTotalKg: number; fechaIngreso: string }[];
+      }>(`/api/camara/cajas/factura/verificar-duplicado?${qs.toString()}`);
+    },
     obtenerCaja: (id: number) => get<CajaCamara>(`/api/camara/cajas/${id}`),
     avisoFifo: (cajaId: number) => get<AvisoFifoCamara>(`/api/camara/cajas/${cajaId}/fifo`),
     // Desde la pantalla de Salida de cámara, la salida se manda con

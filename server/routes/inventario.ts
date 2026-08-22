@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../db";
 import { obtenerIdsCategoriaYDescendientes } from "../lib/categorias";
+import { parsearFechaSoloDia } from "./reportes";
 
 export const inventarioRouter = Router();
 
@@ -165,7 +166,7 @@ inventarioRouter.post("/entrada-factura", async (req, res) => {
     return res.status(404).json({ error: "Uno de los productos indicados no existe" });
   }
 
-  const fechaMovimientos = fecha ? new Date(fecha) : new Date();
+  const fechaMovimientos = parsearFechaSoloDia(fecha) ?? new Date();
 
   const movimientos = await prisma.$transaction(async (tx) => {
     const creados = [];

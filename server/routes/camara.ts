@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../db";
-import { rangoFechasDesdeTexto } from "./reportes";
+import { rangoFechasDesdeTexto, parsearFechaSoloDia } from "./reportes";
 import { verificarClaveConLimite } from "../lib/clave";
 
 // Verifica la clave de supervisor con el mismo límite de intentos que ya usa
@@ -207,6 +207,47 @@ const entradaFacturaCamaraSchema = z.object({
   fecha: z.string().trim().optional(),
   usuarioId: z.number().int().positive(),
   lineas: z.array(lineaFacturaCamaraSchema).min(1, "Agrega al menos una línea"),
+  // El frontend manda esto en true recién en el reintento, después de que la
+  // persona ya vio la alerta de posible factura duplicada y decidió seguir
+  // igual (ver GET /cajas/factura/verificar-duplicado más abajo). El
+  // servidor vuelve a revisar por su cuenta (no confía en que el frontend
+  // ya haya avisado) — así una factura con el mismo proveedor + N° nunca
+  // se carga dos veces sin que alguien lo confirme a propósito.
+  confirmarDuplicado: z.boolean().optional(),
+});
+
+// Compara proveedor + N° de factura contra los lotes ya cargados —
+// insensible a mayúsculas/espacios extra, para no dejar pasar un
+// "F-1234" vs "f-1234 " como si fueran distintos.
+async function buscarLotesDuplicados(proveedorId: number, numeroFactura: string) {
+  const normalizado = numeroFactura.trim().toLowerCase();
+  const lotes = await prisma.loteCamara.findMany({
+    where: { proveedorId, numeroFactura: { not: null } },
+    include: { producto: true },
+    orderBy: { fechaIngreso: "desc" },
+  });
+  return lotes.filter((l) => l.numeroFactura!.trim().toLowerCase() === normalizado);
+}
+
+// Usado por el frontend para avisar ANTES de armar todas las líneas de la
+// factura (ej. al escribir el N° de factura, o al apretar "Revisar antes de
+// ingresar") — de solo lectura, no bloquea nada por sí solo.
+camaraRouter.get("/cajas/factura/verificar-duplicado", async (req, res) => {
+  const proveedorId = Number(req.query.proveedorId);
+  const numeroFactura = typeof req.query.numeroFactura === "string" ? req.query.numeroFactura : "";
+  if (!proveedorId || !numeroFactura.trim()) return res.json({ duplicado: false, lotes: [] });
+
+  const lotes = await buscarLotesDuplicados(proveedorId, numeroFactura);
+  res.json({
+    duplicado: lotes.length > 0,
+    lotes: lotes.map((l) => ({
+      id: l.id,
+      producto: l.producto.descripcion,
+      cantidadCajas: l.cantidadCajas,
+      pesoTotalKg: l.pesoTotalKg,
+      fechaIngreso: l.fechaIngreso,
+    })),
+  });
 });
 
 camaraRouter.post("/cajas/factura", async (req, res) => {
@@ -214,7 +255,7 @@ camaraRouter.post("/cajas/factura", async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.issues[0].message });
   }
-  const { proveedorId, numeroFactura, fecha, usuarioId, lineas } = parsed.data;
+  const { proveedorId, numeroFactura, fecha, usuarioId, lineas, confirmarDuplicado } = parsed.data;
 
   for (const linea of lineas) {
     const errorProcedencia = validarProcedencia(linea.familia, linea.procedencia);
@@ -232,7 +273,24 @@ camaraRouter.post("/cajas/factura", async (req, res) => {
     return res.status(404).json({ error: "Uno de los productos indicados no existe" });
   }
 
-  const fechaIngreso = fecha ? new Date(fecha) : undefined;
+  if (!confirmarDuplicado) {
+    const duplicados = await buscarLotesDuplicados(proveedorId, numeroFactura);
+    if (duplicados.length > 0) {
+      return res.status(409).json({
+        error: "Ya existe una factura registrada con este proveedor y N° de factura.",
+        duplicado: true,
+        lotes: duplicados.map((l) => ({
+          id: l.id,
+          producto: l.producto.descripcion,
+          cantidadCajas: l.cantidadCajas,
+          pesoTotalKg: l.pesoTotalKg,
+          fechaIngreso: l.fechaIngreso,
+        })),
+      });
+    }
+  }
+
+  const fechaIngreso = parsearFechaSoloDia(fecha) ?? undefined;
 
   const cajasPorLinea = await prisma.$transaction(async (tx) => {
     const resultado = [];
@@ -385,7 +443,7 @@ camaraRouter.get("/lotes/:id", async (req, res) => {
       producto: true,
       creadoPor: true,
       proveedor: true,
-      cajas: { orderBy: { id: "asc" } },
+      cajas: { orderBy: { id: "asc" }, include: { producto: true } },
       correcciones: { include: { usuario: true }, orderBy: { creadoEn: "desc" } },
     },
   });
