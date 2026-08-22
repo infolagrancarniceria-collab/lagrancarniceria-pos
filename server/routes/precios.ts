@@ -4,6 +4,7 @@ import { parse } from "csv-parse/sync";
 import { z } from "zod";
 import { prisma } from "../db";
 import { obtenerIdsCategoriaYDescendientes } from "../lib/categorias";
+import { verificarClaveConLimite } from "../lib/clave";
 
 export const preciosRouter = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -20,6 +21,11 @@ const cambioIndividualSchema = z.object({
   productoId: z.number().int().positive(),
   precioNuevo: z.number().positive("El precio debe ser mayor a 0"),
   usuarioId: z.number().int().positive(),
+  // Solo los manda el cambio rápido de precio desde Punto de venta — el
+  // resto de los llamadores (Productos, Entrada de cámara) nunca los pasan,
+  // así que el cambio sigue sin pedir clave ahí, igual que siempre.
+  clave: z.string().optional(),
+  motivoAutorizacion: z.string().trim().optional(),
 });
 
 preciosRouter.post("/individual", async (req, res) => {
@@ -27,13 +33,29 @@ preciosRouter.post("/individual", async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.issues[0].message });
   }
-  const { productoId, precioNuevo, usuarioId } = parsed.data;
+  const { productoId, precioNuevo, usuarioId, clave, motivoAutorizacion } = parsed.data;
 
   const usuario = await validarUsuario(usuarioId);
   if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
 
   const producto = await prisma.producto.findUnique({ where: { id: productoId } });
   if (!producto) return res.status(404).json({ error: "Producto no encontrado" });
+
+  if (clave != null) {
+    const claveSupervisor = await prisma.claveSupervisor.findFirst();
+    if (!claveSupervisor) {
+      return res.status(403).json({ error: "Clave de supervisor incorrecta" });
+    }
+    const resultadoClave = verificarClaveConLimite(req.ip ?? "desconocido", clave, claveSupervisor.hashClave);
+    if (resultadoClave.bloqueado) {
+      return res.status(429).json({
+        error: `Demasiados intentos fallidos — espera ${resultadoClave.segundosRestantes} segundos e intenta de nuevo`,
+      });
+    }
+    if (!resultadoClave.valida) {
+      return res.status(403).json({ error: "Clave de supervisor incorrecta" });
+    }
+  }
 
   const [productoActualizado] = await prisma.$transaction([
     prisma.producto.update({ where: { id: productoId }, data: { precio: precioNuevo } }),
@@ -43,7 +65,8 @@ preciosRouter.post("/individual", async (req, res) => {
         usuarioId,
         precioAnterior: producto.precio,
         precioNuevo,
-        tipoCambio: "individual",
+        tipoCambio: clave != null ? "individual_caja" : "individual",
+        motivoAutorizacion: clave != null ? motivoAutorizacion || null : null,
       },
     }),
   ]);

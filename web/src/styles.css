@@ -645,6 +645,73 @@ select {
   text-overflow: ellipsis;
 }
 
+/* Contador de ítems junto al título "Carrito" — cuenta líneas de producto
+   distintas del carrito, sin contar las anuladas. */
+.encabezado-carrito {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+.contador-items {
+  font-family: var(--fuente-titulos);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--color-vino);
+  background: var(--color-oro-fondo);
+  border: 1px solid var(--color-oro-borde);
+  padding: 0.1rem 0.6rem;
+  border-radius: 999px;
+}
+
+/* "Ir a pagar": resumen compacto de Pagos (siempre visible) — los medios de
+   pago y el formulario en sí viven en el modal, ver ".modal-contenido". */
+.falta-pagar {
+  margin: 0 0 0.5rem;
+}
+.lista-pagos-mini {
+  font-size: 0.85rem;
+  color: var(--color-texto-suave);
+  margin: 0 0 0.75rem;
+  padding-left: 1.1rem;
+}
+.lista-pagos-mini li {
+  margin-bottom: 0.15rem;
+}
+.boton-ancho {
+  width: 100%;
+  text-align: center;
+}
+
+/* Lápiz de cambio rápido de precio, junto al precio de cada ítem del
+   carrito (Punto de venta) — pide autorización antes de aplicarse. */
+.precio-con-lapiz {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+/* Especificidad más alta que ".punto-de-venta button" (que agranda todos
+   los botones de la pantalla para usarse de pie en el mesón) — mismo
+   truco ya usado para los otros botones chicos del carrito
+   (".carrito-scroll .boton-chico, .carrito-scroll .boton-quitar-item"),
+   si no el lápiz queda tan grande como cualquier botón normal. */
+.carrito-scroll .boton-lapiz {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 0.05rem 0.2rem;
+  border-radius: 6px;
+  opacity: 0.55;
+}
+.carrito-scroll .boton-lapiz:hover {
+  opacity: 1;
+  background: var(--color-superficie-2);
+}
+.fila-edicion-precio td {
+  background: var(--color-oro-fondo);
+}
+
 .buscador-producto {
   position: relative;
   flex: 1;

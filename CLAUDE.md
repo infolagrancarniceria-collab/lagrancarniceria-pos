@@ -2741,3 +2741,74 @@ reenviando sí guarda una segunda factura con el mismo número; y "Reimprimir"
 sobre un lote real ahora muestra la etiqueta completa (código de barras,
 producto, peso) en vez de una pantalla en blanco — datos de prueba
 limpiados después.
+
+## Caja: contador de ítems, "Ir a pagar" con ventana emergente, y cambio rápido de precio con autorización
+A pedido del usuario, para facilitar la navegación de Punto de venta. Antes
+de tocar código se mostró una maqueta interactiva (Artifact, fuera del
+repo) con los tres cambios juntos para que el usuario la probara y diera el
+visto bueno — pidió un ajuste (navegación con flechas/Enter dentro de la
+ventana de pago) antes de aprobarla.
+
+- **Contador de ítems escaneados**: junto al título "Carrito"
+  (`.encabezado-carrito`/`.contador-items` en `styles.css`), muestra
+  cuántas líneas de producto distintas hay en el carrito (`itemsActivos.
+  length`, ya excluye las anuladas — no es la suma de cantidades/kilos).
+- **"Ir a pagar"**: la tarjeta "Pagos" ya no muestra los tres botones de
+  medio de pago siempre visibles — ahora es un resumen compacto (falta
+  pagar / pagos cubren el total, lista mini de pagos ya agregados) más un
+  botón único "Ir a pagar". Al apretarlo (o **Enter** sin nada más
+  enfocado — mismo atajo de antes, que saltaba directo a Pagos) se abre
+  una ventana emergente (mismo estilo que el aviso de Vuelto) con los
+  medios de pago, el monto y la tabla de pagos — se pueden seguir
+  agregando pagos (ej. mitad efectivo, mitad tarjeta) sin cerrarla, y
+  "Listo" la cierra cuando se termina. **Dentro de la ventana, las flechas
+  ←/→ y Enter siguen funcionando exactamente igual que antes** (mecanismo
+  ya existente, `mediosPagoRef` + el mismo listener de flechas — no
+  necesitó cambios): las flechas recorren Efectivo/Tarjeta/Crédito
+  devolviendo el foco al botón para poder encadenar más flechas, y Enter
+  sobre el botón enfocado lo "aprieta" (comportamiento nativo del
+  navegador) — para Tarjeta/Crédito eso autocompleta el monto y mueve el
+  foco ahí, así un segundo Enter ya manda el pago.
+- **Cambio rápido de precio en el carrito, con autorización**: un lápiz
+  ✏️ junto al precio de cada producto en el carrito (`.boton-lapiz`,
+  visible solo en ítems no anulados) abre un campo para escribir el precio
+  nuevo. Al apretar "Guardar" se abre el mismo `ModalConfirmarClave` que ya
+  usa el resto de Caja (motivo de una lista rápida + "Otro", quién
+  autoriza, clave de supervisor) — a diferencia de cambiar el precio desde
+  Productos o desde Entrada de cámara (que no piden nada), este camino SÍ
+  exige autorización porque es un cambio hecho al vuelo con el cliente
+  esperando. Al confirmar, cambia el precio **real del producto en el
+  catálogo** (mismo endpoint `POST /api/precios/individual` que usa
+  Productos → editar, no un camino de escritura aparte) — queda para todas
+  las ventas futuras, no solo la actual; el precio ya cobrado en la línea
+  de esta venta (`item.precioUnitario`) no se toca retroactivamente, mismo
+  principio que ya regía en el resto del sistema.
+  **Técnico:** `/api/precios/individual` ahora acepta `clave` y
+  `motivoAutorizacion`, ambos opcionales — si `clave` viene, el servidor la
+  verifica contra `ClaveSupervisor` (mismo `verificarClaveConLimite` con
+  bloqueo tras 5 intentos fallidos ya usado en el resto del sistema) antes
+  de aplicar el cambio, y antes de rechazar guarda `motivoAutorizacion` y
+  usa `tipoCambio: "individual_caja"` en vez de `"individual"` — así
+  "Historial de cambios de precio" (`Historial.tsx`) puede distinguir estos
+  cambios de los hechos desde Productos (columna "Tipo": "Individual (desde
+  Caja)", con el motivo como `title` al pasar el mouse). Los otros
+  llamadores (Productos, Entrada de cámara) nunca mandan `clave`, así que
+  siguen sin pedir autorización, exactamente igual que antes. Nueva
+  migración `motivo_autorizacion_precio` (columna nullable, no afecta datos
+  existentes).
+
+Probado de punta a punta con Playwright contra el servidor real: el
+contador de ítems sube correctamente al agregar productos distintos; Enter
+sin foco abre la ventana de pago con el foco ya en el medio activo; las
+flechas ←/→ cambian el medio de pago correctamente (reutilizando el
+mecanismo existente sin tocarlo) y Enter lo selecciona; agregar un pago con
+vuelto muestra el aviso de Vuelto correctamente apilado sobre la ventana de
+pago (hay que cerrarlo antes de seguir); cambiar el precio con clave
+incorrecta lo rechaza sin cerrar el modal; con la clave correcta el precio
+del producto queda actualizado, el historial registra `tipoCambio:
+"individual_caja"`, el motivo elegido y quién autorizó — datos de prueba
+revertidos después. (Nota aparte, de la propia prueba: se corrigió de paso
+un problema de especificidad CSS — `.boton-lapiz` quedaba agrandado por la
+regla general `.punto-de-venta button`, ahora resuelto con
+`.carrito-scroll .boton-lapiz`, mismo patrón ya usado para los otros
+botones chicos del carrito.)

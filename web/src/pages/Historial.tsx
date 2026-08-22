@@ -3,6 +3,7 @@ import { api, formatoCLP, type HistorialEntrada } from "../api";
 
 const etiquetasTipo: Record<string, string> = {
   individual: "Individual",
+  individual_caja: "Individual (desde Caja)",
   masivo_categoria: "Masivo (categoría)",
   masivo_csv: "Masivo (planilla)",
 };
@@ -41,7 +42,7 @@ export default function Historial() {
               <td>{h.usuario.nombre}</td>
               <td>{formatoCLP(h.precioAnterior)}</td>
               <td>{formatoCLP(h.precioNuevo)}</td>
-              <td>{etiquetasTipo[h.tipoCambio] ?? h.tipoCambio}</td>
+              <td title={h.motivoAutorizacion ?? undefined}>{etiquetasTipo[h.tipoCambio] ?? h.tipoCambio}</td>
             </tr>
           ))}
           {historial.length === 0 && (

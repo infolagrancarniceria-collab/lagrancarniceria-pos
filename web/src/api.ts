@@ -434,6 +434,7 @@ export interface HistorialEntrada {
   precioAnterior: number;
   precioNuevo: number;
   tipoCambio: string;
+  motivoAutorizacion: string | null;
   fecha: string;
 }
 
@@ -715,8 +716,13 @@ export const api = {
     },
   },
   precios: {
-    cambiarIndividual: (data: { productoId: number; precioNuevo: number; usuarioId: number }) =>
-      post<Producto>("/api/precios/individual", data),
+    cambiarIndividual: (data: {
+      productoId: number;
+      precioNuevo: number;
+      usuarioId: number;
+      clave?: string;
+      motivoAutorizacion?: string;
+    }) => post<Producto>("/api/precios/individual", data),
     masivoCategoria: (data: {
       categoriaId: number;
       tipo: "porcentaje" | "monto_fijo";

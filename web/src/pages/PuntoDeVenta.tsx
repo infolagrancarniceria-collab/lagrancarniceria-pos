@@ -57,6 +57,17 @@ export default function PuntoDeVenta() {
   const [mostrarBuscarProducto, setMostrarBuscarProducto] = useState(false);
   const [mostrarFormComentario, setMostrarFormComentario] = useState(false);
   const [comentarioValor, setComentarioValor] = useState("");
+  // "Ir a pagar" — a pedido del usuario, para no tener los tres botones de
+  // medio de pago siempre ocupando espacio en pantalla: se abren en una
+  // ventana emergente (mismo estilo que el aviso de Vuelto) recién cuando
+  // hace falta.
+  const [mostrarModalPago, setMostrarModalPago] = useState(false);
+  // Ítem del carrito cuyo precio se está editando (lápiz junto al precio) —
+  // separado de itemAAnular porque no comparten el mismo flujo de
+  // confirmación.
+  const [itemEditandoPrecio, setItemEditandoPrecio] = useState<number | null>(null);
+  const [precioNuevoValor, setPrecioNuevoValor] = useState("");
+  const [itemAutorizandoPrecio, setItemAutorizandoPrecio] = useState<number | null>(null);
 
   const inputCantidadRef = useRef<HTMLInputElement>(null);
   const inputMontoPagoRef = useRef<HTMLInputElement>(null);
@@ -151,19 +162,21 @@ export default function PuntoDeVenta() {
         return;
       }
       if (e.key === "Enter") {
-        // Salto directo a Pagos con un solo Enter (en vez de varias flechas
-        // ↓), pensado para después de terminar de escanear los productos de
-        // una venta con el lector físico. Se ignora si hay un campo o botón
-        // con el foco — ese Enter ya tiene su propio significado ahí (mandar
-        // un formulario, hacer clic en el botón) y no debe pisarse. También
-        // se ignora sin intervención propia durante un escaneo real: el
-        // lector (useEscanerCodigoBarras) intercepta y detiene ese Enter
-        // antes de que llegue acá (ver ese hook), así que este atajo solo
-        // reacciona a un Enter suelto de teclado.
+        // Un Enter suelto (sin nada enfocado) abre el modal de "Ir a pagar"
+        // directo, pensado para después de terminar de escanear los
+        // productos de una venta con el lector físico. Se ignora si hay un
+        // campo o botón con el foco — ese Enter ya tiene su propio
+        // significado ahí (mandar un formulario, apretar el botón
+        // enfocado) y no debe pisarse; una vez el modal está abierto, el
+        // foco siempre queda en un botón o campo, así que este atajo no
+        // vuelve a dispararse por error mientras se está pagando. Tampoco
+        // se dispara durante un escaneo real: el lector
+        // (useEscanerCodigoBarras) intercepta y detiene ese Enter antes de
+        // que llegue acá.
         const activo = document.activeElement as HTMLElement | null;
         if (activo && ["INPUT", "SELECT", "TEXTAREA", "BUTTON"].includes(activo.tagName)) return;
         e.preventDefault();
-        enfocarPrimerCampo(seccionPagosRef.current);
+        setMostrarModalPago(true);
         return;
       }
       if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
@@ -210,6 +223,16 @@ export default function PuntoDeVenta() {
     }
     api.productos.listar({ buscar }).then(setProductos).catch((e) => setError(e.message));
   }, [buscar]);
+
+  // Al abrir el modal de pago, el foco arranca en el medio de pago ya
+  // activo (no en el monto) — así ← → funcionan de inmediato sin necesitar
+  // un clic antes, igual que ya pasaba con los botones cuando estaban
+  // siempre visibles en la pantalla.
+  useEffect(() => {
+    if (!mostrarModalPago) return;
+    const activo = mediosPagoRef.current?.querySelector<HTMLButtonElement>(".activo");
+    (activo ?? mediosPagoRef.current?.querySelector<HTMLButtonElement>("button"))?.focus();
+  }, [mostrarModalPago]);
 
   async function iniciarVenta() {
     if (!usuario) return;
@@ -322,6 +345,35 @@ export default function PuntoDeVenta() {
     setVenta(actualizada);
     setMensaje("Ítem anulado");
     setItemAAnular(null);
+  }
+
+  // Cambio rápido de precio desde el carrito (lápiz junto al precio) — a
+  // pedido del usuario, cambia el precio real del producto en el catálogo
+  // (mismo endpoint que usa Productos → editar), pero a diferencia de esos
+  // otros lugares, acá SÍ pide clave de supervisor: es un cambio hecho al
+  // vuelo con el cliente esperando, más fácil de apurar sin pensarlo dos
+  // veces que editarlo desde la ficha del producto.
+  async function confirmarCambioPrecioItem(usuarioId: number, clave: string, motivo?: string) {
+    if (!venta || itemAutorizandoPrecio == null) return;
+    const item = venta.items.find((i) => i.id === itemAutorizandoPrecio);
+    if (!item) return;
+    const nuevoPrecio = Number(precioNuevoValor);
+    setMensaje(null);
+    await api.precios.cambiarIndividual({
+      productoId: item.productoId,
+      precioNuevo: nuevoPrecio,
+      usuarioId,
+      clave,
+      motivoAutorizacion: motivo,
+    });
+    setMensaje(`Precio de ${item.producto.descripcion} actualizado a ${formatoCLP(nuevoPrecio)}`);
+    setItemAutorizandoPrecio(null);
+    setItemEditandoPrecio(null);
+    setPrecioNuevoValor("");
+    // Refresca la venta para que el precio mostrado en el carrito (el del
+    // catálogo, no el ya cobrado en esta línea) quede al día.
+    const actualizada = await api.caja.obtenerVenta(venta.id);
+    setVenta(actualizada);
   }
 
   // En efectivo, el cajero escribe lo que el cliente entregó en la mano — no
@@ -608,120 +660,162 @@ export default function PuntoDeVenta() {
 
           <section ref={seccionPagosRef} className="tarjeta">
             <h2>Pagos</h2>
-            <div className="medios-pago" ref={mediosPagoRef}>
-              <button
-                type="button"
-                className={`medio-pago-tile ${medioPago === "efectivo" ? "activo" : ""}`}
-                onClick={() => setMedioPago("efectivo")}
-              >
-                <span className="medio-pago-icono">💵</span>
-                Efectivo
-              </button>
-              <button
-                type="button"
-                className={`medio-pago-tile ${medioPago === "tarjeta" ? "activo" : ""}`}
-                onClick={() => {
-                  setMedioPago("tarjeta");
-                  // En tarjeta siempre se cobra el monto exacto — se autocompleta
-                  // lo que falta pagar para no tener que escribirlo a mano, y se
-                  // deja el foco listo para que Enter agregue el pago al toque.
-                  if (faltaPagarPositivo > 0) setMontoPago(String(faltaPagarPositivo));
-                  setTimeout(() => inputMontoPagoRef.current?.focus(), 0);
-                }}
-              >
-                <span className="medio-pago-icono">💳</span>
-                Tarjeta
-              </button>
-              <button
-                type="button"
-                className={`medio-pago-tile ${medioPago === "credito" ? "activo" : ""}`}
-                onClick={() => {
-                  setMedioPago("credito");
-                  // Igual que Tarjeta: el crédito también se deja siempre por
-                  // el monto exacto que falta, no tiene sentido escribirlo a
-                  // mano cada vez. El foco queda en el nombre del cliente (el
-                  // único dato que falta completar) para que Enter ahí mismo
-                  // agregue el pago.
-                  if (faltaPagarPositivo > 0) setMontoPago(String(faltaPagarPositivo));
-                  setTimeout(() => inputClienteNombreRef.current?.focus(), 0);
-                }}
-              >
-                <span className="medio-pago-icono">🧾</span>
-                Crédito
-              </button>
-            </div>
-            <p className="ayuda ayuda-linea">Usa ← → sobre un medio de pago para cambiarlo.</p>
-            {medioPago === "efectivo" && montoACobrarEfectivo > 0 && montoACobrarEfectivo !== faltaPagarPositivo && (
-              <p className="ayuda ayuda-linea">
-                A cobrar en efectivo (redondeo): <strong>{formatoCLP(montoACobrarEfectivo)}</strong>
-              </p>
-            )}
-            <form onSubmit={agregarPago} onKeyDown={manejarEnterComoTab} className="fila-inline">
-              {medioPago === "credito" && (
-                <input
-                  ref={inputClienteNombreRef}
-                  type="text"
-                  placeholder="Nombre del cliente"
-                  value={clienteNombre}
-                  onChange={(e) => setClienteNombre(e.target.value)}
-                />
-              )}
-              <input
-                ref={inputMontoPagoRef}
-                type="number"
-                min="1"
-                placeholder={medioPago === "efectivo" ? "Efectivo recibido" : "Monto"}
-                value={montoPago}
-                onChange={(e) => setMontoPago(e.target.value)}
-              />
-              <TecladoNumerico valor={montoPago} onCambiar={setMontoPago} />
-              <button type="submit">Agregar pago</button>
-              {vueltoPreview > 0 && <span className="exito">Vuelto: {formatoCLP(vueltoPreview)}</span>}
-            </form>
-            <table className="tabla">
-              <thead>
-                <tr>
-                  <th>Medio</th>
-                  <th>Monto</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {venta.pagos.map((p) => (
-                  <tr key={p.id}>
-                    <td>
-                      {p.medio === "efectivo" ? "Efectivo" : p.medio === "tarjeta" ? "Tarjeta" : `Crédito (${p.clienteNombre})`}
-                    </td>
-                    <td>{formatoCLP(p.monto)}</td>
-                    <td>
-                      <button type="button" onClick={() => quitarPago(p.id)}>
-                        Quitar
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-                {venta.pagos.length === 0 && (
-                  <tr>
-                    <td colSpan={3}>Todavía no hay pagos registrados.</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-            <p>
-              {!faltaPagarCubierto && faltaPagar > 0 && (
+            <p className={`falta-pagar ${faltaPagarCubierto ? "cubierto" : ""}`}>
+              {faltaPagarCubierto && itemsActivos.length > 0 ? (
+                <span className="exito">Pagos cubren el total ✓</span>
+              ) : faltaPagar > 0 ? (
                 <span className="error">Falta pagar: {formatoCLP(faltaPagar)}</span>
-              )}
-              {!faltaPagarCubierto && faltaPagar < 0 && (
+              ) : faltaPagar < 0 ? (
                 <span className="error">Los pagos superan el total en {formatoCLP(-faltaPagar)}</span>
-              )}
-              {faltaPagarCubierto && itemsActivos.length > 0 && (
-                <span className="exito">
-                  Los pagos cubren el total.
-                  {faltaPagar !== 0 && " (redondeo por pago en efectivo)"}
-                </span>
+              ) : (
+                <span className="ayuda">Sin pagos registrados</span>
               )}
             </p>
+            {venta.pagos.length > 0 && (
+              <ul className="lista-pagos-mini">
+                {venta.pagos.map((p) => (
+                  <li key={p.id}>
+                    {p.medio === "efectivo" ? "Efectivo" : p.medio === "tarjeta" ? "Tarjeta" : `Crédito (${p.clienteNombre})`}:{" "}
+                    {formatoCLP(p.monto)}
+                  </li>
+                ))}
+              </ul>
+            )}
+            <button
+              type="button"
+              className="boton boton-primario boton-ancho"
+              disabled={itemsActivos.length === 0}
+              onClick={() => setMostrarModalPago(true)}
+            >
+              Ir a pagar <span className="ayuda">(Enter)</span>
+            </button>
           </section>
+
+          {mostrarModalPago && (
+            <div className="modal-fondo">
+              <div className="modal-contenido tarjeta">
+                <div className="fila-inline" style={{ justifyContent: "space-between" }}>
+                  <h2>Agregar pago</h2>
+                  <button type="button" className="boton-chico" onClick={() => setMostrarModalPago(false)}>
+                    Listo
+                  </button>
+                </div>
+                <div className="medios-pago" ref={mediosPagoRef}>
+                  <button
+                    type="button"
+                    className={`medio-pago-tile ${medioPago === "efectivo" ? "activo" : ""}`}
+                    onClick={() => setMedioPago("efectivo")}
+                  >
+                    <span className="medio-pago-icono">💵</span>
+                    Efectivo
+                  </button>
+                  <button
+                    type="button"
+                    className={`medio-pago-tile ${medioPago === "tarjeta" ? "activo" : ""}`}
+                    onClick={() => {
+                      setMedioPago("tarjeta");
+                      // En tarjeta siempre se cobra el monto exacto — se autocompleta
+                      // lo que falta pagar para no tener que escribirlo a mano, y se
+                      // deja el foco listo para que Enter agregue el pago al toque.
+                      if (faltaPagarPositivo > 0) setMontoPago(String(faltaPagarPositivo));
+                      setTimeout(() => inputMontoPagoRef.current?.focus(), 0);
+                    }}
+                  >
+                    <span className="medio-pago-icono">💳</span>
+                    Tarjeta
+                  </button>
+                  <button
+                    type="button"
+                    className={`medio-pago-tile ${medioPago === "credito" ? "activo" : ""}`}
+                    onClick={() => {
+                      setMedioPago("credito");
+                      // Igual que Tarjeta: el crédito también se deja siempre por
+                      // el monto exacto que falta, no tiene sentido escribirlo a
+                      // mano cada vez. El foco queda en el nombre del cliente (el
+                      // único dato que falta completar) para que Enter ahí mismo
+                      // agregue el pago.
+                      if (faltaPagarPositivo > 0) setMontoPago(String(faltaPagarPositivo));
+                      setTimeout(() => inputClienteNombreRef.current?.focus(), 0);
+                    }}
+                  >
+                    <span className="medio-pago-icono">🧾</span>
+                    Crédito
+                  </button>
+                </div>
+                <p className="ayuda ayuda-linea">Usa ← → y Enter para elegir sin mouse.</p>
+                {medioPago === "efectivo" && montoACobrarEfectivo > 0 && montoACobrarEfectivo !== faltaPagarPositivo && (
+                  <p className="ayuda ayuda-linea">
+                    A cobrar en efectivo (redondeo): <strong>{formatoCLP(montoACobrarEfectivo)}</strong>
+                  </p>
+                )}
+                <form onSubmit={agregarPago} onKeyDown={manejarEnterComoTab} className="fila-inline">
+                  {medioPago === "credito" && (
+                    <input
+                      ref={inputClienteNombreRef}
+                      type="text"
+                      placeholder="Nombre del cliente"
+                      value={clienteNombre}
+                      onChange={(e) => setClienteNombre(e.target.value)}
+                    />
+                  )}
+                  <input
+                    ref={inputMontoPagoRef}
+                    type="number"
+                    min="1"
+                    placeholder={medioPago === "efectivo" ? "Efectivo recibido" : "Monto"}
+                    value={montoPago}
+                    onChange={(e) => setMontoPago(e.target.value)}
+                  />
+                  <TecladoNumerico valor={montoPago} onCambiar={setMontoPago} />
+                  <button type="submit">Agregar pago</button>
+                  {vueltoPreview > 0 && <span className="exito">Vuelto: {formatoCLP(vueltoPreview)}</span>}
+                </form>
+                <table className="tabla">
+                  <thead>
+                    <tr>
+                      <th>Medio</th>
+                      <th>Monto</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {venta.pagos.map((p) => (
+                      <tr key={p.id}>
+                        <td>
+                          {p.medio === "efectivo" ? "Efectivo" : p.medio === "tarjeta" ? "Tarjeta" : `Crédito (${p.clienteNombre})`}
+                        </td>
+                        <td>{formatoCLP(p.monto)}</td>
+                        <td>
+                          <button type="button" onClick={() => quitarPago(p.id)}>
+                            Quitar
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                    {venta.pagos.length === 0 && (
+                      <tr>
+                        <td colSpan={3}>Todavía no hay pagos registrados.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+                <p>
+                  {!faltaPagarCubierto && faltaPagar > 0 && (
+                    <span className="error">Falta pagar: {formatoCLP(faltaPagar)}</span>
+                  )}
+                  {!faltaPagarCubierto && faltaPagar < 0 && (
+                    <span className="error">Los pagos superan el total en {formatoCLP(-faltaPagar)}</span>
+                  )}
+                  {faltaPagarCubierto && itemsActivos.length > 0 && (
+                    <span className="exito">
+                      Los pagos cubren el total.
+                      {faltaPagar !== 0 && " (redondeo por pago en efectivo)"}
+                    </span>
+                  )}
+                </p>
+              </div>
+            </div>
+          )}
 
           <div className="acciones-formulario fila-inline">
             <button
@@ -740,7 +834,12 @@ export default function PuntoDeVenta() {
 
         <div className="columna-derecha">
           <section className="tarjeta">
-            <h2>Carrito</h2>
+            <div className="encabezado-carrito">
+              <h2>Carrito</h2>
+              <span className="contador-items">
+                {itemsActivos.length} {itemsActivos.length === 1 ? "ítem" : "ítems"}
+              </span>
+            </div>
             <div className="carrito-scroll">
             <table className="tabla">
               <thead>
@@ -763,7 +862,30 @@ export default function PuntoDeVenta() {
                           {item.producto.descripcion}
                         </td>
                         <td>{item.cantidad}</td>
-                        <td>{formatoCLP(item.precioUnitario)}</td>
+                        <td>
+                          {item.anulado ? (
+                            formatoCLP(item.precioUnitario)
+                          ) : (
+                            <span className="precio-con-lapiz">
+                              {formatoCLP(item.precioUnitario)}
+                              <button
+                                type="button"
+                                className="boton-lapiz"
+                                title="Cambiar precio del producto en el catálogo"
+                                onClick={() => {
+                                  if (itemEditandoPrecio === item.id) {
+                                    setItemEditandoPrecio(null);
+                                    return;
+                                  }
+                                  setItemEditandoPrecio(item.id);
+                                  setPrecioNuevoValor(String(item.producto.precio));
+                                }}
+                              >
+                                ✏️
+                              </button>
+                            </span>
+                          )}
+                        </td>
                         <td>
                           {formatoCLP(item.subtotal)}
                           {!item.anulado && item.descuentoTipo && (
@@ -836,6 +958,41 @@ export default function PuntoDeVenta() {
                                 OK
                               </button>
                               <button type="button" className="boton-chico" onClick={() => setItemDescuentoEditando(null)}>
+                                Cancelar
+                              </button>
+                            </span>
+                          </td>
+                        </tr>
+                      )}
+                      {itemEditandoPrecio === item.id && (
+                        <tr className="fila-edicion-precio">
+                          <td colSpan={5}>
+                            <span className="fila-inline">
+                              Nuevo precio de venta para {item.producto.descripcion}:
+                              <input
+                                type="number"
+                                min="1"
+                                className="input-chico"
+                                value={precioNuevoValor}
+                                onChange={(e) => setPrecioNuevoValor(e.target.value)}
+                                autoFocus
+                              />
+                              <button
+                                type="button"
+                                className="boton-chico boton-primario"
+                                onClick={() => {
+                                  const nuevo = Number(precioNuevoValor);
+                                  if (!nuevo || nuevo <= 0) {
+                                    setError("El precio nuevo debe ser mayor a 0");
+                                    return;
+                                  }
+                                  setError(null);
+                                  setItemAutorizandoPrecio(item.id);
+                                }}
+                              >
+                                Guardar
+                              </button>
+                              <button type="button" className="boton-chico" onClick={() => setItemEditandoPrecio(null)}>
                                 Cancelar
                               </button>
                             </span>
@@ -998,6 +1155,25 @@ export default function PuntoDeVenta() {
           onCancelar={() => setItemAAnular(null)}
         />
       )}
+
+      {itemAutorizandoPrecio != null &&
+        (() => {
+          const item = venta.items.find((i) => i.id === itemAutorizandoPrecio);
+          const nuevo = Number(precioNuevoValor);
+          return (
+            <ModalConfirmarClave
+              titulo="Autorizar cambio de precio"
+              descripcion={
+                item
+                  ? `${item.producto.descripcion}: de ${formatoCLP(item.producto.precio)} a ${formatoCLP(nuevo)}. Este precio queda para todas las ventas futuras, no solo esta.`
+                  : undefined
+              }
+              motivoOpciones={["Precio desactualizado", "Error de tipeo", "Ajuste puntual para el cliente"]}
+              onConfirmar={confirmarCambioPrecioItem}
+              onCancelar={() => setItemAutorizandoPrecio(null)}
+            />
+          );
+        })()}
 
       {cancelandoVenta && (
         <ModalConfirmarClave

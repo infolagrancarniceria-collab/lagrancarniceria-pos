@@ -135,7 +135,12 @@ model HistorialPrecio {
 
   precioAnterior Float
   precioNuevo    Float
-  tipoCambio     String // "individual" | "masivo_categoria" | "masivo_csv"
+  tipoCambio     String // "individual" | "individual_caja" | "masivo_categoria" | "masivo_csv"
+
+  // Solo se llena para "individual_caja" (cambio rápido de precio hecho
+  // desde Punto de venta, que pide clave de supervisor) — el resto de los
+  // tipos de cambio nunca la piden, así que queda null.
+  motivoAutorizacion String?
 
   fecha DateTime @default(now())
 }
