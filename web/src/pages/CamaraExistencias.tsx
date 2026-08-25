@@ -17,6 +17,7 @@ import { EtiquetaCamara } from "../components/EtiquetaCamara";
 import ModalConfirmarClave from "../components/ModalConfirmarClave";
 import { imprimirEtiquetaCamara, imprimirEtiquetasLoteCamara } from "../lib/imprimir";
 import { mostrarToast } from "../lib/toast";
+import ModalAlerta from "../components/ModalAlerta";
 
 const MOTIVOS_ANULAR_LOTE = ["Lote de prueba", "Entrada duplicada", "Datos incorrectos"];
 
@@ -241,7 +242,7 @@ export default function CamaraExistencias() {
           Volver a Cámara
         </Link>
       </div>
-      {error && <p className="error">{error}</p>}
+      {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
       {cargando && <p>Cargando...</p>}
 
       {existencias && (

@@ -3,6 +3,7 @@ import { api, formatoCLP, type Venta } from "../api";
 import ModalConfirmarClave from "../components/ModalConfirmarClave";
 import { ValeVenta } from "../components/ValeVenta";
 import { imprimirSilencioso as imprimirVale } from "../lib/imprimir";
+import ModalAlerta from "../components/ModalAlerta";
 
 function fechaHace(dias: number): string {
   const d = new Date();
@@ -72,7 +73,7 @@ export default function BuscarVenta() {
     <div>
       <div className="no-imprimir">
         <h1>Buscar venta</h1>
-        {error && <p className="error">{error}</p>}
+        {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
 
         <form onSubmit={buscar} className="fila-inline">
           <label>

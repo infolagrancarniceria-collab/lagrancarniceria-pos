@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, calcularMargen, formatoCLP, type Categoria, type ProductoConCosto } from "../api";
 import SelectorCategoria from "../components/SelectorCategoria";
+import ModalAlerta from "../components/ModalAlerta";
 
 interface FilaMargen extends ProductoConCosto {
   margen: number;
@@ -51,7 +52,7 @@ export default function MejorMargen() {
         costo real); los que no tienen ninguna quedan fuera de esta lista.
       </p>
 
-      {error && <p className="error">{error}</p>}
+      {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
 
       <div className="filtros">
         <SelectorCategoria
@@ -97,7 +98,7 @@ export default function MejorMargen() {
               <td>{formatoCLP(p.ultimoCosto ?? 0)}</td>
               <td>{formatoCLP(p.precio)}</td>
               <td>
-                <strong>{p.margen.toFixed(2)}%</strong>
+                <strong className={p.margen < 0 ? "error" : "exito"}>{p.margen.toFixed(2)}%</strong>
               </td>
             </tr>
           ))}

@@ -4,6 +4,7 @@ import { api, type CajaCamara, type ResultadoAjusteCamara } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
 import { ejecutarOEncolar } from "../lib/colaOffline";
 import { EstadoOffline } from "../components/EstadoOffline";
+import ModalAlerta from "../components/ModalAlerta";
 
 // Lista las cajas que quedaron marcadas "ajuste_pendiente" tras cerrar un
 // conteo por escaneo (estaban esperadas y no se escanearon). Es una lista
@@ -66,7 +67,7 @@ export default function CamaraAjustesPendientes() {
         realmente no están, confirma que faltan (queda registrado como merma de inventario); si aparecen, márcalas
         como encontradas para que vuelvan a estar disponibles en cámara.
       </p>
-      {error && <p className="error">{error}</p>}
+      {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
       <EstadoOffline />
       {cargando && <p>Cargando...</p>}
 

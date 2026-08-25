@@ -4,6 +4,7 @@ import { api, calcularMargen, formatoCLP, type Producto, type ProductoConCosto, 
 import { useUsuario } from "../context/UsuarioContext";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 import { mostrarToast } from "../lib/toast";
+import ModalAlerta from "../components/ModalAlerta";
 
 export default function RegistrarEntrada() {
   const { usuario } = useUsuario();
@@ -132,7 +133,7 @@ export default function RegistrarEntrada() {
   return (
     <div>
       <h1>Registrar entrada de mercadería</h1>
-      {error && <p className="error">{error}</p>}
+      {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
       {mensaje && <p className="exito">{mensaje}</p>}
 
       <form onSubmit={guardar} onKeyDown={manejarEnterComoTab} className="formulario">
@@ -182,10 +183,30 @@ export default function RegistrarEntrada() {
             </p>
             <p>
               <strong>Precio de venta actual:</strong> {formatoCLP(infoProducto.precio)}
-              {infoProducto.ultimoCosto != null && (
-                <> · margen: {calcularMargen(infoProducto.precio, infoProducto.ultimoCosto)?.toFixed(2)}%</>
-              )}
             </p>
+            {(() => {
+              // Igual que en Entrada de cámara: si ya hay una compra
+              // registrada se usa ese costo; si no, el costo que se está
+              // escribiendo ahora mismo en "Costo unitario" — no hace falta
+              // ninguna compra previa para ver el margen.
+              const costoConHistorial = infoProducto.ultimoCosto;
+              const costoEscrito = Number(costoUnitario) || null;
+              const costoUsado = costoConHistorial ?? costoEscrito;
+              const margen = calcularMargen(infoProducto.precio, costoUsado);
+              if (margen == null) return null;
+              return (
+                <p>
+                  <span className={`margen-destacado ${margen < 0 ? "margen-negativo" : ""}`}>
+                    <span className="margen-etiqueta">Margen</span> {margen.toFixed(2)}%
+                  </span>{" "}
+                  <span className="ayuda">
+                    {costoConHistorial != null
+                      ? "(según la última compra registrada)"
+                      : "(con el costo recién escrito — todavía no hay ninguna compra registrada)"}
+                  </span>
+                </p>
+              );
+            })()}
             <div className="fila-inline">
               <input
                 type="number"

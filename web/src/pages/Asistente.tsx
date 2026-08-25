@@ -10,6 +10,7 @@ import {
 } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
+import ModalAlerta from "../components/ModalAlerta";
 
 interface Mensaje {
   autor: "usuario" | "asistente";
@@ -302,7 +303,7 @@ export default function Asistente() {
   return (
     <div>
       <h1>Asistente</h1>
-      {error && <p className="error">{error}</p>}
+      {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
 
       <section className="tarjeta">
         <div className="chat-mensajes">

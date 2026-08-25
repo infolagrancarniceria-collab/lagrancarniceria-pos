@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, formatoCLP, type ResumenSesion, type SesionCaja } from "../api";
+import ModalAlerta from "../components/ModalAlerta";
 
 export default function Caja() {
   const [claveConfigurada, setClaveConfigurada] = useState<boolean | null>(null);
@@ -47,7 +48,7 @@ export default function Caja() {
     return (
       <div>
         <h1>Caja</h1>
-        {error && <p className="error">{error}</p>}
+        {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
         <p className="ayuda">No hay una caja abierta ahora mismo.</p>
         <Link to="/caja/abrir" className="boton boton-primario">
           Abrir caja
@@ -87,7 +88,7 @@ export default function Caja() {
           </Link>
         </div>
       </div>
-      {error && <p className="error">{error}</p>}
+      {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
 
       <div className="tarjeta">
         <p>

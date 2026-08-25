@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
+import ModalAlerta from "../components/ModalAlerta";
 
 export default function ConfigurarClaveSupervisor() {
   const navigate = useNavigate();
@@ -47,7 +48,7 @@ export default function ConfigurarClaveSupervisor() {
         Esta clave la piden solo para anular un producto de una venta por error. La conocen los
         supervisores, no cada cajero.
       </p>
-      {error && <p className="error">{error}</p>}
+      {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
       {mensaje && <p className="exito">{mensaje}</p>}
 
       <form onSubmit={guardar} onKeyDown={manejarEnterComoTab} className="formulario">

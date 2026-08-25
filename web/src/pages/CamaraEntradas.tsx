@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { api, formatoCLP, type CajaCamara } from "../api";
 import ModalConfirmarClave from "../components/ModalConfirmarClave";
 import { mostrarToast } from "../lib/toast";
+import ModalAlerta from "../components/ModalAlerta";
 
 const MOTIVOS_ANULAR_CAJA = ["Caja de prueba", "Entrada duplicada", "Datos incorrectos"];
 
@@ -83,7 +84,7 @@ export default function CamaraEntradas() {
         sigue tal cual se creó (sin ninguna salida registrada todavía) — pensado para corregir entradas de prueba o
         duplicadas antes de que se les saque algo.
       </p>
-      {error && <p className="error">{error}</p>}
+      {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
 
       <form onSubmit={buscar} className="fila-inline">
         <label>

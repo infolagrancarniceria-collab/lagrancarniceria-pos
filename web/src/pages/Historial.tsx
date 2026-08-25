@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, formatoCLP, type HistorialEntrada } from "../api";
+import ModalAlerta from "../components/ModalAlerta";
 
 const etiquetasTipo: Record<string, string> = {
   individual: "Individual",
@@ -19,7 +20,7 @@ export default function Historial() {
   return (
     <div>
       <h1>Historial de cambios de precio</h1>
-      {error && <p className="error">{error}</p>}
+      {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
 
       <table className="tabla">
         <thead>

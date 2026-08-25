@@ -5,6 +5,7 @@ import { useUsuario } from "../context/UsuarioContext";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 import { TecladoNumerico } from "../components/TecladoNumerico";
 import ModalConfirmarClave from "../components/ModalConfirmarClave";
+import ModalAlerta from "../components/ModalAlerta";
 
 const MOTIVOS_AJUSTE_FONDO = [
   "Se retiró efectivo para otro uso",
@@ -84,7 +85,7 @@ export default function AbrirCaja() {
   return (
     <div>
       <h1>Abrir caja</h1>
-      {error && <p className="error">{error}</p>}
+      {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
 
       {fondoSugerido != null && (
         <p className="ayuda">

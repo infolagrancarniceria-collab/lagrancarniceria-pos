@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, formatoCLP, type SesionCaja } from "../api";
+import ModalAlerta from "../components/ModalAlerta";
 
 export default function SesionesCaja() {
   const [sesiones, setSesiones] = useState<SesionCaja[]>([]);
@@ -12,7 +13,7 @@ export default function SesionesCaja() {
   return (
     <div>
       <h1>Historial de cajas</h1>
-      {error && <p className="error">{error}</p>}
+      {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
 
       <table className="tabla">
         <thead>

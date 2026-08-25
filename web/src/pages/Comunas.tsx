@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, formatoCLP, type Comuna } from "../api";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
+import ModalAlerta from "../components/ModalAlerta";
 
 export default function Comunas() {
   const [comunas, setComunas] = useState<Comuna[]>([]);
@@ -79,7 +80,7 @@ export default function Comunas() {
         Lista fija de comunas a las que se hace despacho, con su costo de envío — se usa al marcar una venta como
         "con despacho" en la Caja.
       </p>
-      {error && <p className="error">{error}</p>}
+      {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
       {mensaje && <p className="exito">{mensaje}</p>}
 
       <section className="tarjeta">

@@ -3,6 +3,7 @@ import { api, formatoCLP, type Categoria } from "../api";
 import SelectorCategoria from "../components/SelectorCategoria";
 import { useUsuario } from "../context/UsuarioContext";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
+import ModalAlerta from "../components/ModalAlerta";
 
 interface CambioCategoria {
   productoId: number;
@@ -110,7 +111,7 @@ export default function CambioMasivo() {
   return (
     <div>
       <h1>Cambio masivo de precios</h1>
-      {error && <p className="error">{error}</p>}
+      {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
       {mensaje && <p className="exito">{mensaje}</p>}
 
       <section className="tarjeta">

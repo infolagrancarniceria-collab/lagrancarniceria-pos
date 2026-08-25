@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { api, formatoCLP, type ResumenSesion } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
+import ModalAlerta from "../components/ModalAlerta";
 
 export default function CerrarCaja() {
   const { usuario } = useUsuario();
@@ -98,7 +99,7 @@ export default function CerrarCaja() {
   return (
     <div>
       <h1>Cerrar caja</h1>
-      {error && <p className="error">{error}</p>}
+      {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
 
       {resumen && (
         <div className="tarjeta">

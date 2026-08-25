@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, formatoCLP, type ReporteDespachos, type ReporteInventario, type ReportePrecios, type ReporteVentas } from "../api";
+import ModalAlerta from "../components/ModalAlerta";
 
 const etiquetasMotivo: Record<string, string> = {
   venta: "Venta",
@@ -57,7 +58,7 @@ export default function Reportes() {
   return (
     <div>
       <h1>Reportes</h1>
-      {error && <p className="error">{error}</p>}
+      {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
 
       <div className="fila-inline">
         <label>

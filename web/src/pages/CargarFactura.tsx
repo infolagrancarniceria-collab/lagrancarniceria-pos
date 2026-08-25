@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, formatoCLP, type Producto, type Proveedor } from "../api";
+import { api, calcularMargen, formatoCLP, type Producto, type Proveedor } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 import { mostrarToast } from "../lib/toast";
+import ModalAlerta from "../components/ModalAlerta";
 
 interface LineaForm {
   id: number;
@@ -137,7 +138,7 @@ export default function CargarFactura() {
         Registra todas las líneas de una factura de compra de una vez, con el mismo proveedor y N° de factura —
         alternativa al asistente de IA para cuando no identifica bien los productos.
       </p>
-      {error && <p className="error">{error}</p>}
+      {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
 
       <form onSubmit={guardar} onKeyDown={manejarEnterComoTab} className="formulario">
         <label>
@@ -198,64 +199,82 @@ export default function CargarFactura() {
                 <th>Cantidad</th>
                 <th>Costo unitario</th>
                 <th>Subtotal</th>
+                <th>Margen</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              {lineas.map((l) => (
-                <tr key={l.id}>
-                  <td>
-                    <div className="buscador-producto">
+              {lineas.map((l) => {
+                // El margen se calcula con el costo que se está escribiendo
+                // AHORA en esta línea (no hace falta ninguna compra previa
+                // registrada) — es lo que realmente importa al decidir si el
+                // precio de venta sigue teniendo sentido con este costo nuevo.
+                const margen = l.producto ? calcularMargen(l.producto.precio, Number(l.costoUnitario) || null) : null;
+                return (
+                  <tr key={l.id}>
+                    <td>
+                      <div className="buscador-producto">
+                        <input
+                          type="text"
+                          placeholder="Buscar por PLU o nombre..."
+                          value={l.producto ? l.producto.descripcion : l.buscarProducto}
+                          onChange={(e) => buscarProductoLinea(l.id, e.target.value)}
+                        />
+                        {!l.producto && l.buscarProducto.trim() && (
+                          <div className="resultados-busqueda">
+                            {l.resultados.length === 0 && <div className="resultado-item ayuda">Sin resultados</div>}
+                            {l.resultados.map((p) => (
+                              <button
+                                key={p.id}
+                                type="button"
+                                className="resultado-item"
+                                onClick={() => actualizarLinea(l.id, { producto: p, buscarProducto: "", resultados: [] })}
+                              >
+                                {p.plu} — {p.descripcion}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      {l.producto && <p className="ayuda">Precio de venta: {formatoCLP(l.producto.precio)}</p>}
+                    </td>
+                    <td>
                       <input
-                        type="text"
-                        placeholder="Buscar por PLU o nombre..."
-                        value={l.producto ? l.producto.descripcion : l.buscarProducto}
-                        onChange={(e) => buscarProductoLinea(l.id, e.target.value)}
+                        type="number"
+                        min="0.001"
+                        step="0.001"
+                        className="input-chico"
+                        value={l.cantidad}
+                        onChange={(e) => actualizarLinea(l.id, { cantidad: e.target.value })}
                       />
-                      {!l.producto && l.buscarProducto.trim() && (
-                        <div className="resultados-busqueda">
-                          {l.resultados.length === 0 && <div className="resultado-item ayuda">Sin resultados</div>}
-                          {l.resultados.map((p) => (
-                            <button
-                              key={p.id}
-                              type="button"
-                              className="resultado-item"
-                              onClick={() => actualizarLinea(l.id, { producto: p, buscarProducto: "", resultados: [] })}
-                            >
-                              {p.plu} — {p.descripcion}
-                            </button>
-                          ))}
-                        </div>
+                    </td>
+                    <td>
+                      <input
+                        type="number"
+                        min="1"
+                        className="input-chico"
+                        value={l.costoUnitario}
+                        onChange={(e) => actualizarLinea(l.id, { costoUnitario: e.target.value })}
+                      />
+                    </td>
+                    <td>{formatoCLP((Number(l.cantidad) || 0) * (Number(l.costoUnitario) || 0))}</td>
+                    <td>
+                      {margen != null ? (
+                        <span className={`margen-destacado ${margen < 0 ? "margen-negativo" : ""}`}>
+                          {margen.toFixed(1)}%
+                        </span>
+                      ) : (
+                        <span className="ayuda">—</span>
                       )}
-                    </div>
-                  </td>
-                  <td>
-                    <input
-                      type="number"
-                      min="0.001"
-                      step="0.001"
-                      className="input-chico"
-                      value={l.cantidad}
-                      onChange={(e) => actualizarLinea(l.id, { cantidad: e.target.value })}
-                    />
-                  </td>
-                  <td>
-                    <input
-                      type="number"
-                      min="1"
-                      className="input-chico"
-                      value={l.costoUnitario}
-                      onChange={(e) => actualizarLinea(l.id, { costoUnitario: e.target.value })}
-                    />
-                  </td>
-                  <td>{formatoCLP((Number(l.cantidad) || 0) * (Number(l.costoUnitario) || 0))}</td>
-                  <td>
-                    <button type="button" className="boton-quitar-item" title="Quitar línea" onClick={() => quitarLinea(l.id)}>
-                      ✕
-                    </button>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td>
+                      <button type="button" className="boton-quitar-item" title="Quitar línea" onClick={() => quitarLinea(l.id)}>
+                        ✕
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
           <button type="button" className="boton" onClick={agregarLinea}>

@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, formatoCLP, type FacturaAgrupada } from "../api";
+import ModalAlerta from "../components/ModalAlerta";
 
 function fechaHace(dias: number): string {
   const d = new Date();
@@ -93,7 +94,7 @@ export default function Facturas() {
 
       <h1 className="solo-imprimir">Facturas cargadas — {desde} a {hasta}</h1>
 
-      {error && <p className="error no-imprimir">{error}</p>}
+      {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
 
       <div className="filtros no-imprimir">
         <label>

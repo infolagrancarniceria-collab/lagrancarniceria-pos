@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, formatoCLP, type ReporteAnulaciones } from "../api";
+import ModalAlerta from "../components/ModalAlerta";
 
 function fechaHace(dias: number): string {
   const d = new Date();
@@ -47,7 +48,7 @@ export default function Anulaciones() {
         <h1>Anulaciones</h1>
         <Link to="/caja">Volver a Caja</Link>
       </div>
-      {error && <p className="error">{error}</p>}
+      {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
 
       <form onSubmit={buscar} className="fila-inline">
         <label>

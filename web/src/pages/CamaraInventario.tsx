@@ -8,6 +8,7 @@ import {
 } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
 import { useEscanerCodigoBarras } from "../hooks/useEscanerCodigoBarras";
+import ModalAlerta from "../components/ModalAlerta";
 
 export default function CamaraInventario() {
   const { usuario } = useUsuario();
@@ -171,7 +172,7 @@ export default function CamaraInventario() {
             Volver a Cámara
           </Link>
         </div>
-        {error && <p className="error">{error}</p>}
+        {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
         <section className="tarjeta">
           <p className="ayuda">
             Al iniciar un conteo, el sistema guarda una foto de qué cajas deberían estar en cámara ahora mismo. A
@@ -196,7 +197,7 @@ export default function CamaraInventario() {
           Volver a Cámara
         </Link>
       </div>
-      {error && <p className="error">{error}</p>}
+      {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
 
       <section className="tarjeta">
         <p>

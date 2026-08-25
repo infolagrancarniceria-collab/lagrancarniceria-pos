@@ -4,6 +4,7 @@ import { api, type Producto } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 import { mostrarToast } from "../lib/toast";
+import ModalAlerta from "../components/ModalAlerta";
 
 const etiquetasMotivo: Record<string, string> = {
   venta: "Venta",
@@ -67,7 +68,7 @@ export default function RegistrarSalida() {
   return (
     <div>
       <h1>Registrar salida / merma</h1>
-      {error && <p className="error">{error}</p>}
+      {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
       {mensaje && <p className="exito">{mensaje}</p>}
 
       <form onSubmit={guardar} onKeyDown={manejarEnterComoTab} className="formulario">

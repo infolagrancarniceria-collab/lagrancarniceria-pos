@@ -174,6 +174,11 @@ export interface SalidaMayorista {
   usuarioId: number;
   usuario: Usuario;
   observaciones: string | null;
+  anulada: boolean;
+  usuarioAnulacionId: number | null;
+  usuarioAnulacion: Usuario | null;
+  motivoAnulacion: string | null;
+  fechaAnulacion: string | null;
 }
 
 export interface AvisoFifoCamara {
@@ -1021,6 +1026,12 @@ export const api = {
     },
     marcarEstadoPagoMayorista: (id: number, estadoPago: "pagado" | "pendiente", usuarioId: number) =>
       put<SalidaMayorista>(`/api/camara/mayoristas/${id}/estado-pago`, { estadoPago, usuarioId }),
+    editarMayorista: (
+      id: number,
+      data: { usuarioId: number; clienteNombre?: string | null; precioTotal: number; observaciones?: string | null }
+    ) => put<SalidaMayorista>(`/api/camara/mayoristas/${id}`, data),
+    anularMayorista: (id: number, data: { usuarioId: number; motivo: string; clave: string }) =>
+      post<{ caja: CajaCamara; salida: SalidaMayorista }>(`/api/camara/mayoristas/${id}/anular`, data),
     cajas: (params: { estado?: string; desde?: string; hasta?: string } = {}) => {
       const qs = new URLSearchParams();
       if (params.estado) qs.set("estado", params.estado);

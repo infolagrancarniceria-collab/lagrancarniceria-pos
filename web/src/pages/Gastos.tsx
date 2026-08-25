@@ -4,6 +4,7 @@ import { useUsuario } from "../context/UsuarioContext";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 import { TecladoNumerico } from "../components/TecladoNumerico";
 import { mostrarToast } from "../lib/toast";
+import ModalAlerta from "../components/ModalAlerta";
 
 const CATEGORIAS_SUGERIDAS = ["Sueldos", "Luz", "Agua", "Arriendo", "Gas", "Insumos de aseo", "Otros"];
 
@@ -95,7 +96,7 @@ export default function Gastos() {
         Gastos del negocio que no son compra de mercadería (sueldos, luz, agua, arriendo, etc.) — la mercadería se
         sigue registrando en Inventario.
       </p>
-      {error && <p className="error">{error}</p>}
+      {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
       {mensaje && <p className="exito">{mensaje}</p>}
 
       <div className="filtros">

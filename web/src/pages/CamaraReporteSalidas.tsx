@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, formatoCLP, type ReporteSalidasCamara } from "../api";
+import ModalAlerta from "../components/ModalAlerta";
 
 function fechaHace(dias: number): string {
   const d = new Date();
@@ -53,7 +54,7 @@ export default function CamaraReporteSalidas() {
         Los kilos son el control principal. "Cajas distintas" indica cuántas cajas aportaron mercadería a cada
         destino.
       </p>
-      {error && <p className="error">{error}</p>}
+      {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
 
       <form onSubmit={cargar} className="fila-inline">
         <label>

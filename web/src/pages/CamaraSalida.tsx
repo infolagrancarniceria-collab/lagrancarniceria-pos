@@ -7,6 +7,7 @@ import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 import { ejecutarOEncolar } from "../lib/colaOffline";
 import { EstadoOffline } from "../components/EstadoOffline";
 import { mostrarToast } from "../lib/toast";
+import ModalAlerta from "../components/ModalAlerta";
 
 const DESTINOS: { valor: DestinoSalidaCamara; etiqueta: string }[] = [
   { valor: "sala_venta", etiqueta: "Sala de venta" },
@@ -162,7 +163,7 @@ export default function CamaraSalida() {
         </Link>
       </div>
 
-      {error && <p className="error">{error}</p>}
+      {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
       <EstadoOffline />
 
       {!caja && !resultado && !guardadoOffline && (

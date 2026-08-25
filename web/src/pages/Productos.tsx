@@ -11,6 +11,7 @@ import {
 import SelectorCategoria from "../components/SelectorCategoria";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 import { mostrarToast } from "../lib/toast";
+import ModalAlerta from "../components/ModalAlerta";
 
 export default function Productos() {
   const [productos, setProductos] = useState<ProductoConUltimoCosto[]>([]);
@@ -218,7 +219,7 @@ export default function Productos() {
             <code>NORMAL</code>, <code>PESABLE</code> o <code>IMPORTE</code>; <code>categoria_codigo</code> es
             opcional (si se deja vacío, el producto queda en "Sin categorizar" para ordenar después).
           </p>
-          {errorImportar && <p className="error">{errorImportar}</p>}
+          {errorImportar && <ModalAlerta mensaje={errorImportar} onCerrar={() => setErrorImportar(null)} />}
           {mensajeImportar && <p className="exito">{mensajeImportar}</p>}
           <form onSubmit={previsualizarImportar} onKeyDown={manejarEnterComoTab} className="fila-inline">
             <input type="file" accept=".csv" onChange={(e) => setArchivoImportar(e.target.files?.[0] ?? null)} />
@@ -303,7 +304,7 @@ export default function Productos() {
         </label>
       </div>
 
-      {error && <p className="error">{error}</p>}
+      {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
       {cargando && <p>Cargando...</p>}
 
       <table className="tabla">
@@ -346,7 +347,13 @@ export default function Productos() {
                 <td>{p.flagBalanza}</td>
                 <td>{p.ultimoCosto != null ? formatoCLP(p.ultimoCosto) : "—"}</td>
                 <td>{formatoCLP(p.precio)}</td>
-                <td>{margen != null ? `${margen.toFixed(2)}%` : "—"}</td>
+                <td>
+                  {margen != null ? (
+                    <strong className={margen < 0 ? "error" : "exito"}>{margen.toFixed(2)}%</strong>
+                  ) : (
+                    "—"
+                  )}
+                </td>
                 {mostrarEliminados && (
                   <td>
                     {p.activo ? (

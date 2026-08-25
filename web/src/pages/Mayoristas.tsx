@@ -1,7 +1,9 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, formatoCLP, type SalidaMayorista } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
+import ModalConfirmarClave from "../components/ModalConfirmarClave";
+import ModalAlerta from "../components/ModalAlerta";
 
 function fechaHace(dias: number): string {
   const d = new Date();
@@ -27,6 +29,18 @@ export default function Mayoristas() {
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(false);
   const [actualizandoId, setActualizandoId] = useState<number | null>(null);
+
+  // Edición en línea (cliente, precio, observaciones) — no toca el peso ni
+  // la caja de cámara, así que no necesita autorización.
+  const [editandoId, setEditandoId] = useState<number | null>(null);
+  const [editCliente, setEditCliente] = useState("");
+  const [editPrecio, setEditPrecio] = useState("");
+  const [editObservaciones, setEditObservaciones] = useState("");
+  const [guardandoEdicion, setGuardandoEdicion] = useState(false);
+
+  // Anular — sí necesita autorización (motivo + quién autoriza + clave),
+  // igual que el resto de las acciones que deshacen algo en el sistema.
+  const [anulandoId, setAnulandoId] = useState<number | null>(null);
 
   async function buscar(e?: React.FormEvent) {
     e?.preventDefault();
@@ -65,7 +79,48 @@ export default function Mayoristas() {
     }
   }
 
-  const totalPendiente = salidas.filter((s) => s.estadoPago === "pendiente").reduce((acc, s) => acc + s.precioTotal, 0);
+  function abrirEdicion(s: SalidaMayorista) {
+    setEditandoId(s.id);
+    setEditCliente(s.clienteNombre ?? "");
+    setEditPrecio(String(s.precioTotal));
+    setEditObservaciones(s.observaciones ?? "");
+  }
+
+  async function guardarEdicion(id: number) {
+    if (!usuario) return;
+    const precio = Number(editPrecio);
+    if (!precio || precio <= 0) {
+      setError("El precio total debe ser mayor a 0");
+      return;
+    }
+    setGuardandoEdicion(true);
+    setError(null);
+    try {
+      const actualizada = await api.camara.editarMayorista(id, {
+        usuarioId: usuario.id,
+        clienteNombre: editCliente.trim() || null,
+        precioTotal: precio,
+        observaciones: editObservaciones.trim() || null,
+      });
+      setSalidas((prev) => prev.map((s) => (s.id === id ? actualizada : s)));
+      setEditandoId(null);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setGuardandoEdicion(false);
+    }
+  }
+
+  async function confirmarAnular(usuarioId: number, clave: string, motivo?: string) {
+    if (anulandoId == null) return;
+    const resultado = await api.camara.anularMayorista(anulandoId, { usuarioId, clave, motivo: motivo || "" });
+    setSalidas((prev) => prev.map((s) => (s.id === anulandoId ? resultado.salida : s)));
+    setAnulandoId(null);
+  }
+
+  const totalPendiente = salidas
+    .filter((s) => !s.anulada && s.estadoPago === "pendiente")
+    .reduce((acc, s) => acc + s.precioTotal, 0);
 
   return (
     <div>
@@ -73,7 +128,7 @@ export default function Mayoristas() {
         <h1>Ventas por mayor</h1>
         <Link to="/camara">Volver a Cámara</Link>
       </div>
-      {error && <p className="error">{error}</p>}
+      {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
 
       <form onSubmit={buscar} className="fila-inline">
         <label>
@@ -115,30 +170,110 @@ export default function Mayoristas() {
             </tr>
           )}
           {salidas.map((s) => (
-            <tr key={s.id}>
-              <td>{new Date(s.fecha).toLocaleString("es-CL")}</td>
-              <td>{s.producto.descripcion}</td>
-              <td>{s.clienteNombre || "—"}</td>
-              <td>{s.cantidadKg.toFixed(3)}</td>
-              <td>{formatoCLP(s.precioTotal)}</td>
-              <td className={s.estadoPago === "pagado" ? "exito" : "error"}>
-                {s.estadoPago === "pagado" ? "Pagado" : "Pendiente"}
-              </td>
-              <td>{s.usuario.nombre}</td>
-              <td>
-                <button
-                  type="button"
-                  className="boton"
-                  disabled={actualizandoId === s.id}
-                  onClick={() => marcar(s.id, s.estadoPago === "pagado" ? "pendiente" : "pagado")}
-                >
-                  {s.estadoPago === "pagado" ? "Marcar pendiente" : "Marcar pagado"}
-                </button>
-              </td>
-            </tr>
+            <Fragment key={s.id}>
+              <tr className={s.anulada ? "fila-error" : ""}>
+                <td>{new Date(s.fecha).toLocaleString("es-CL")}</td>
+                <td>{s.producto.descripcion}</td>
+                <td>{s.clienteNombre || "—"}</td>
+                <td>{s.cantidadKg.toFixed(3)}</td>
+                <td>{formatoCLP(s.precioTotal)}</td>
+                <td className={s.anulada ? "" : s.estadoPago === "pagado" ? "exito" : "error"}>
+                  {s.anulada ? "Anulada" : s.estadoPago === "pagado" ? "Pagado" : "Pendiente"}
+                </td>
+                <td>{s.usuario.nombre}</td>
+                <td>
+                  {!s.anulada && (
+                    <span className="fila-inline" style={{ flexWrap: "nowrap" }}>
+                      <button
+                        type="button"
+                        className="boton boton-chico"
+                        disabled={actualizandoId === s.id}
+                        onClick={() => marcar(s.id, s.estadoPago === "pagado" ? "pendiente" : "pagado")}
+                      >
+                        {s.estadoPago === "pagado" ? "Marcar pendiente" : "Marcar pagado"}
+                      </button>
+                      <button type="button" className="boton boton-chico" onClick={() => abrirEdicion(s)}>
+                        Editar
+                      </button>
+                      <button
+                        type="button"
+                        className="boton boton-chico boton-peligro"
+                        onClick={() => setAnulandoId(s.id)}
+                      >
+                        Anular
+                      </button>
+                    </span>
+                  )}
+                </td>
+              </tr>
+              {editandoId === s.id && (
+                <tr>
+                  <td colSpan={8}>
+                    <div className="fila-inline">
+                      <label className="ayuda">
+                        Cliente
+                        <input
+                          type="text"
+                          value={editCliente}
+                          onChange={(e) => setEditCliente(e.target.value)}
+                        />
+                      </label>
+                      <label className="ayuda">
+                        Precio total
+                        <input
+                          type="number"
+                          min="1"
+                          className="input-chico"
+                          value={editPrecio}
+                          onChange={(e) => setEditPrecio(e.target.value)}
+                        />
+                      </label>
+                      <label className="ayuda">
+                        Observaciones
+                        <input
+                          type="text"
+                          value={editObservaciones}
+                          onChange={(e) => setEditObservaciones(e.target.value)}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        className="boton boton-chico boton-primario"
+                        disabled={guardandoEdicion}
+                        onClick={() => guardarEdicion(s.id)}
+                      >
+                        {guardandoEdicion ? "Guardando..." : "Guardar"}
+                      </button>
+                      <button type="button" className="boton boton-chico" onClick={() => setEditandoId(null)}>
+                        Cancelar
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              )}
+              {s.anulada && (
+                <tr>
+                  <td colSpan={8} className="ayuda">
+                    Anulada por {s.usuarioAnulacion?.nombre ?? "—"}
+                    {s.fechaAnulacion ? ` el ${new Date(s.fechaAnulacion).toLocaleString("es-CL")}` : ""} — motivo:{" "}
+                    {s.motivoAnulacion || "sin especificar"}
+                  </td>
+                </tr>
+              )}
+            </Fragment>
           ))}
         </tbody>
       </table>
+
+      {anulandoId != null && (
+        <ModalConfirmarClave
+          titulo="Anular venta por mayor"
+          descripcion="Devuelve el peso a la caja de cámara de origen. Solo funciona si esa caja no tuvo ningún movimiento después de esta venta. Elige el motivo, quién autoriza y la clave de supervisor."
+          motivoOpciones={["Venta ingresada por error", "Cliente canceló la compra", "Datos equivocados"]}
+          onConfirmar={confirmarAnular}
+          onCancelar={() => setAnulandoId(null)}
+        />
+      )}
     </div>
   );
 }

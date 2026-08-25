@@ -5,6 +5,7 @@ import SelectorCategoria from "../components/SelectorCategoria";
 import { useUsuario } from "../context/UsuarioContext";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 import { mostrarToast } from "../lib/toast";
+import ModalAlerta from "../components/ModalAlerta";
 
 interface FormState {
   plu: string;
@@ -196,7 +197,7 @@ export default function ProductoForm() {
   return (
     <div>
       <h1>{esNuevo ? "Nuevo producto" : `Editar producto: ${productoActual?.descripcion ?? ""}`}</h1>
-      {error && <p className="error">{error}</p>}
+      {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
       {mensaje && <p className="exito">{mensaje}</p>}
 
       {!esNuevo && productoActual && (
@@ -208,16 +209,22 @@ export default function ProductoForm() {
               margen (%).
             </p>
           ) : (
-            <p>
-              Costo: {formatoCLP(productoActual.ultimoCosto)} · Margen actual:{" "}
-              <strong>{margenActual?.toFixed(2)}%</strong>
-              {margenNuevo != null && (
-                <>
-                  {" "}
-                  → con el precio nuevo: <strong>{margenNuevo.toFixed(2)}%</strong>
-                </>
-              )}
-            </p>
+            <div>
+              <p className="ayuda">Costo: {formatoCLP(productoActual.ultimoCosto)}</p>
+              <div className="fila-inline">
+                <span className={`margen-destacado ${margenActual! < 0 ? "margen-negativo" : ""}`}>
+                  <span className="margen-etiqueta">Margen actual</span> {margenActual?.toFixed(2)}%
+                </span>
+                {margenNuevo != null && (
+                  <>
+                    →
+                    <span className={`margen-destacado ${margenNuevo < 0 ? "margen-negativo" : ""}`}>
+                      <span className="margen-etiqueta">Con el precio nuevo</span> {margenNuevo.toFixed(2)}%
+                    </span>
+                  </>
+                )}
+              </div>
+            </div>
           )}
           <form onSubmit={cambiarPrecio} onKeyDown={manejarEnterComoTab} className="fila-inline">
             <input

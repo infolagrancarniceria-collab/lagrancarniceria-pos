@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api, type Proveedor } from "../api";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 import { mostrarToast } from "../lib/toast";
+import ModalAlerta from "../components/ModalAlerta";
 
 export default function Proveedores() {
   const [proveedores, setProveedores] = useState<Proveedor[]>([]);
@@ -35,7 +36,7 @@ export default function Proveedores() {
   return (
     <div>
       <h1>Proveedores</h1>
-      {error && <p className="error">{error}</p>}
+      {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
       {mensaje && <p className="exito">{mensaje}</p>}
 
       <section className="tarjeta">

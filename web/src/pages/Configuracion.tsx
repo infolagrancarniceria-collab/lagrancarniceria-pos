@@ -4,6 +4,7 @@ import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 import { modoCajaActivo, setModoCajaActivo } from "../lib/modoCaja";
 import { obtenerImpresoraBoletas, setImpresoraBoletas, obtenerImpresoraEtiquetas, setImpresoraEtiquetas } from "../lib/impresoras";
 import type { ImpresoraDisponible } from "../electron";
+import ModalAlerta from "../components/ModalAlerta";
 
 const PREDETERMINADA = "__predeterminada__";
 
@@ -181,7 +182,7 @@ export default function Configuracion() {
             {configurada ? "Ya hay una clave configurada." : "Todavía no hay una clave configurada."}
           </p>
         )}
-        {error && <p className="error">{error}</p>}
+        {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
         {mensaje && <p className="exito">{mensaje}</p>}
 
         <form onSubmit={guardar} onKeyDown={manejarEnterComoTab} className="formulario">

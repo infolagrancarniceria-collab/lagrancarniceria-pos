@@ -2812,3 +2812,96 @@ un problema de especificidad CSS — `.boton-lapiz` quedaba agrandado por la
 regla general `.punto-de-venta button`, ahora resuelto con
 `.carrito-scroll .boton-lapiz`, mismo patrón ya usado para los otros
 botones chicos del carrito.)
+
+## Margen visible sin compra previa, destacado; anular/editar ventas por mayor; alertas como Pop Up
+Cuatro pedidos del usuario de una vez, tras usar el sistema unos días.
+
+### Margen visible al cargar una factura, aunque no haya compra previa registrada
+El usuario notó que, al ingresar una factura, no aparecía el margen (%) —
+antes dependía de que el producto ya tuviera una compra anterior
+registrada, algo que no existe todavía para un producto nuevo o la primera
+vez que se le compra. **Arreglado**: el margen ahora se calcula con el
+costo que se está escribiendo **en ese mismo momento** en la línea de la
+factura (no hace falta ninguna compra previa) — si además ya existe una
+compra anterior real (en Inventario o en cámara, según la pantalla), esa
+sigue siendo la que se usa preferentemente (más confiable que una cifra
+recién tipeada); si no existe, se usa el costo recién escrito como
+estimación en vivo, aclarando en texto chico cuál de los dos casos es.
+Aplicado en **Cargar factura** (Inventario, no mostraba margen en
+absoluto — se agregó una columna nueva a la tabla) y **Entrada de cámara**
+(ya lo mostraba, pero solo con compra previa en cámara).
+
+### Margen destacado visualmente (recuadro con color)
+A pedido del usuario ("que el margen lo destacaras más"). Nueva clase
+reutilizable `.margen-destacado` (`styles.css`) — un recuadro con borde y
+fondo de color, verde si el margen es positivo o rojo si es negativo
+(mismos tokens `--color-exito`/`--color-error` que ya usa el resto del
+sistema), en vez de texto plano perdido entre el resto de los datos.
+Aplicado donde el margen aparece como una cifra individual destacando una
+decisión (Cargar factura, Entrada de cámara, ficha de producto al cambiar
+precio, Registrar entrada de mercadería). En las tablas densas (Productos,
+Mejor margen/Combos) se optó por algo más sutil — el número en verde/rojo
+sin recuadro — para no saturar visualmente una tabla con muchas filas.
+
+### Anular y editar ventas al por mayor (Cámara → Ventas por mayor)
+El usuario pidió poder corregir una venta por mayor ya registrada, sobre
+todo mientras sigue pendiente de pago.
+- **Editar** (`PUT /api/camara/mayoristas/:id`): cliente, precio total y
+  observaciones — campos que no afectan el stock de cámara, así que no
+  piden autorización. El peso (`cantidadKg`) **no** es editable, porque ya
+  movió el saldo de una caja real — si el peso estuvo mal, la corrección
+  es anular y volver a registrar la salida correcta.
+- **Anular** (`POST /api/camara/mayoristas/:id/anular`): mismo principio
+  que "Anular una entrada" de cámara — solo funciona si la caja de origen
+  no tuvo **ningún movimiento después** de esta venta (si ya se le sacó
+  algo más, deshacer el saldo acá dejaría el número mal; en ese caso hay
+  que corregirlo a mano). Devuelve el peso exacto a la caja, la deja en
+  `en_camara` o `parcial` según corresponda, y pide autorización completa
+  (motivo + quién autoriza + clave de supervisor, mismo `ModalConfirmarClave`
+  de siempre) porque deshace una venta real. Campos nuevos en
+  `SalidaMayorista` (`anulada`, `usuarioAnulacionId`, `motivoAnulacion`,
+  `fechaAnulacion`) — una vez anulada, la fila queda visible en la tabla
+  (fila roja, "Anulada" en vez de Pagado/Pendiente, con quién y por qué)
+  en vez de desaparecer, y no se puede volver a editar ni anular.
+  Probado de punta a punta contra el backend real: editar cambia los datos
+  correctamente; anular con clave incorrecta rechaza (403) sin tocar nada;
+  anular con clave correcta devuelve exactamente el peso a la caja
+  (verificado con el saldo antes/después); anular se rechaza si la caja
+  tuvo un movimiento posterior (ej. una merma después de la venta), y
+  también se rechaza intentar editar o volver a anular una venta ya
+  anulada.
+
+### Todas las alertas de error como ventana Pop Up (como el aviso de Vuelto)
+El usuario reportó que, cargando una factura, no encontraba el mensaje de
+error hasta volver al inicio de la página — el patrón de siempre
+(`{error && <p className="error">{error}</p>}`, un texto arriba de la
+pantalla) se perdía fácil en un formulario largo. **Nuevo componente
+reutilizable `ModalAlerta`** (`web/src/components/ModalAlerta.tsx`): mismo
+lenguaje visual que ya usa el aviso de Vuelto en Punto de venta (ventana
+centrada, bloqueante, un botón "Entendido" con foco automático — Enter
+también la cierra), pero en rojo para leerse como una alerta. Reemplaza
+ese patrón en **las 39 pantallas** que lo usaban (más dos casos con una
+variable de error propia además de la principal — `errorActualizar` en
+Balanza, `errorImportar` en Productos) — barrido mecánico, mismo cambio en
+cada archivo: se agrega el import y se reemplaza esa línea exacta por
+`<ModalAlerta mensaje={error} onCerrar={() => setError(null)} />`, sin
+tocar la lógica de validación de cada pantalla (los `setError(...)` que ya
+existían siguen exactamente igual).
+
+**Lo que se dejó tal cual, a propósito** (no es el mismo problema que
+reportó el usuario): avisos informativos dentro de un resultado ya visible
+en pantalla (ej. "cajas omitidas por conflicto" en Importar cámara,
+"faltantes" en el cierre de un conteo) — el usuario ya está mirando esa
+sección cuando aparecen, no se pierden; el aviso FIFO en Salida de cámara,
+que es **a propósito no bloqueante** (se puede seguir igual) — convertirlo
+en un popup que hay que cerrar contradiría esa idea; y los indicadores de
+"Falta pagar"/"Los pagos superan el total" en Punto de venta, que están
+en el mismo lugar donde el cajero ya está mirando (la ventana de pago), no
+arriba de una pantalla larga.
+
+Probado con Playwright contra el servidor real: en Cargar factura, dejar
+la cantidad de una línea sin completar y enviar el formulario muestra el
+popup con el mensaje exacto ("Falta la cantidad de..."), Enter lo cierra
+(mismo foco automático que Vuelto); confirmado que el resto de las
+pantallas sigue compilando y renderizando sin errores (`npm run
+typecheck` limpio en las 41 pantallas tocadas).

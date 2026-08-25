@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, type MovimientoInventario } from "../api";
+import ModalAlerta from "../components/ModalAlerta";
 
 const etiquetasMotivo: Record<string, string> = {
   compra: "Compra",
@@ -28,7 +29,7 @@ export default function MovimientosInventario() {
   return (
     <div>
       <h1>Historial de movimientos de inventario</h1>
-      {error && <p className="error">{error}</p>}
+      {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
 
       <div className="filtros">
         <select value={tipo} onChange={(e) => setTipo(e.target.value as "" | "entrada" | "salida")}>

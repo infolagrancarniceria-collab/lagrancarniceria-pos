@@ -18,6 +18,7 @@ import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 import { EtiquetaCamara } from "../components/EtiquetaCamara";
 import { imprimirEtiquetaCamara, imprimirEtiquetasLoteCamara } from "../lib/imprimir";
 import { mostrarToast } from "../lib/toast";
+import ModalAlerta from "../components/ModalAlerta";
 
 interface LineaForm {
   id: number;
@@ -346,7 +347,7 @@ export default function CamaraEntrada() {
           Volver a Cámara
         </Link>
       </div>
-      {error && <p className="error">{error}</p>}
+      {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
 
       <form onSubmit={guardar} onKeyDown={manejarEnterComoTab} className="formulario">
         <label>
@@ -515,16 +516,30 @@ export default function CamaraEntrada() {
                     <strong>Precio venta:</strong> {formatoCLP(l.info.precio)} ·{" "}
                     <strong>Precio venta mayor:</strong>{" "}
                     {l.info.precioMayor != null ? formatoCLP(l.info.precioMayor) : "sin definir"}
-                    {(() => {
-                      const margen = calcularMargen(l.info.precio, l.info.ultimoCostoCamaraKg);
-                      return margen != null ? (
-                        <>
-                          {" "}
-                          · <strong>Margen:</strong> {margen.toFixed(2)}%
-                        </>
-                      ) : null;
-                    })()}
                   </p>
+                  {(() => {
+                    // Si ya hubo una compra en cámara, el margen usa ese costo
+                    // real; si no, se calcula igual con el costo que se está
+                    // escribiendo ahora en "Valor neto por kilo" — no hace
+                    // falta ninguna compra previa registrada para verlo.
+                    const costoConHistorial = l.info!.ultimoCostoCamaraKg;
+                    const costoEscrito = Number(l.costoNetoKg) || null;
+                    const costoUsado = costoConHistorial ?? costoEscrito;
+                    const margen = calcularMargen(l.info!.precio, costoUsado);
+                    if (margen == null) return null;
+                    return (
+                      <p>
+                        <span className={`margen-destacado ${margen < 0 ? "margen-negativo" : ""}`}>
+                          <span className="margen-etiqueta">Margen</span> {margen.toFixed(2)}%
+                        </span>{" "}
+                        <span className="ayuda">
+                          {costoConHistorial != null
+                            ? `(según la última compra en cámara, ${formatoCLP(costoConHistorial)}/kg)`
+                            : `(con el costo recién escrito, ${formatoCLP(costoEscrito!)}/kg — todavía no hay ninguna compra registrada)`}
+                        </span>
+                      </p>
+                    );
+                  })()}
                   {/* Estos dos campos son para cambiar el precio de venta y el de
                       venta al por mayor de este producto sin salir de la
                       pantalla — se escribe el valor nuevo en el que corresponda

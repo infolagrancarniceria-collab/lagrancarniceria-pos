@@ -795,7 +795,7 @@ async function resultadoSalidaPorClave(claveIdempotencia: string) {
   if (movimiento.referenciaTipo === "SalidaMayorista" && movimiento.referenciaId) {
     salidaMayorista = await prisma.salidaMayorista.findUnique({
       where: { id: movimiento.referenciaId },
-      include: { producto: true, usuario: true },
+      include: { producto: true, usuario: true, usuarioAnulacion: true },
     });
   }
   return { caja, movimiento, salidaMayorista };
@@ -882,7 +882,7 @@ camaraRouter.post("/cajas/:id/salida", async (req, res) => {
           usuarioId,
           observaciones: motivo || null,
         },
-        include: { producto: true, usuario: true },
+        include: { producto: true, usuario: true, usuarioAnulacion: true },
       });
       referenciaTipo = "SalidaMayorista";
       referenciaId = salidaMayorista.id;
@@ -937,7 +937,7 @@ camaraRouter.get("/mayoristas", async (req, res) => {
       fecha: { gte: desde, lte: hasta },
       ...(estadoPago ? { estadoPago } : {}),
     },
-    include: { producto: true, usuario: true },
+    include: { producto: true, usuario: true, usuarioAnulacion: true },
     orderBy: { fecha: "desc" },
   });
   res.json(salidas);
@@ -958,13 +958,139 @@ camaraRouter.put("/mayoristas/:id/estado-pago", async (req, res) => {
 
   const salida = await prisma.salidaMayorista.findUnique({ where: { id: Number(req.params.id) } });
   if (!salida) return res.status(404).json({ error: "Venta por mayor no encontrada" });
+  if (salida.anulada) return res.status(400).json({ error: "Esta venta está anulada" });
 
   const actualizada = await prisma.salidaMayorista.update({
     where: { id: salida.id },
     data: { estadoPago: parsed.data.estadoPago },
-    include: { producto: true, usuario: true },
+    include: { producto: true, usuario: true, usuarioAnulacion: true },
   });
   res.json(actualizada);
+});
+
+// Editar una venta al por mayor ya registrada — a pedido del usuario, para
+// corregir un dato mal ingresado (ej. el nombre del cliente, o el precio
+// que finalmente se acordó) sin tener que anular y rehacer todo. Solo los
+// campos que NO afectan el stock de cámara (cliente, precio, notas) — el
+// peso (`cantidadKg`) no es editable acá porque ya movió el saldo de una
+// caja real; si el peso estuvo mal, la corrección es anular esta venta
+// (devuelve el peso a la caja) y volver a registrar la salida correcta.
+const editarMayoristaSchema = z.object({
+  usuarioId: z.number().int().positive(),
+  clienteNombre: z.string().trim().optional().nullable(),
+  precioTotal: z.number().positive("El precio total debe ser mayor a 0"),
+  observaciones: z.string().trim().optional().nullable(),
+});
+
+camaraRouter.put("/mayoristas/:id", async (req, res) => {
+  const parsed = editarMayoristaSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0].message });
+  }
+  const { usuarioId, clienteNombre, precioTotal, observaciones } = parsed.data;
+
+  const usuario = await validarUsuario(usuarioId);
+  if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
+
+  const salida = await prisma.salidaMayorista.findUnique({ where: { id: Number(req.params.id) } });
+  if (!salida) return res.status(404).json({ error: "Venta por mayor no encontrada" });
+  if (salida.anulada) return res.status(400).json({ error: "Esta venta está anulada — no se puede editar" });
+
+  const actualizada = await prisma.salidaMayorista.update({
+    where: { id: salida.id },
+    data: { clienteNombre: clienteNombre || null, precioTotal, observaciones: observaciones || null },
+    include: { producto: true, usuario: true, usuarioAnulacion: true },
+  });
+  res.json(actualizada);
+});
+
+// Anular una venta al por mayor — a pedido del usuario ("sobre todo si aún
+// están marcadas como pendientes"), para corregir una venta mal ingresada
+// por completo. Mismo principio que "Anular una entrada" de cámara: solo
+// se permite mientras la caja de origen no haya tenido NINGÚN movimiento
+// después de esta venta (si ya se le sacó algo más, deshacer el saldo acá
+// dejaría el número mal) — devuelve el peso a la caja y la deja como
+// estaba antes de esta venta.
+const anularMayoristaSchema = z.object({
+  usuarioId: z.number().int().positive(),
+  motivo: z.string().trim().min(1, "Indica el motivo de la anulación"),
+  clave: z.string().trim().min(1, "Falta la clave de supervisor"),
+});
+
+camaraRouter.post("/mayoristas/:id/anular", async (req, res) => {
+  const parsed = anularMayoristaSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0].message });
+  const { usuarioId, motivo, clave } = parsed.data;
+
+  const usuario = await validarUsuario(usuarioId);
+  if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
+
+  const errorClave = await verificarClaveSupervisor(req, clave);
+  if (errorClave) return res.status(errorClave.status).json({ error: errorClave.error });
+
+  const salida = await prisma.salidaMayorista.findUnique({ where: { id: Number(req.params.id) } });
+  if (!salida) return res.status(404).json({ error: "Venta por mayor no encontrada" });
+  if (salida.anulada) return res.status(400).json({ error: "Esta venta ya está anulada" });
+
+  const movimiento = await prisma.movimientoCamara.findFirst({
+    where: { referenciaTipo: "SalidaMayorista", referenciaId: salida.id },
+  });
+  if (!salida.cajaCamaraId || !movimiento) {
+    return res.status(400).json({
+      error: "Esta venta no tiene una caja de cámara asociada (dato antiguo) — no se puede anular automáticamente",
+    });
+  }
+
+  const caja = await prisma.cajaCamara.findUnique({ where: { id: salida.cajaCamaraId } });
+  if (!caja) return res.status(404).json({ error: "La caja de origen ya no existe" });
+
+  const movimientoMasReciente = await prisma.movimientoCamara.findFirst({
+    where: { cajaId: caja.id },
+    orderBy: { id: "desc" },
+  });
+  if (movimientoMasReciente?.id !== movimiento.id) {
+    return res.status(400).json({
+      error: "La caja de origen tuvo movimientos después de esta venta — no se puede anular directamente, corrígelo con un ajuste manual",
+    });
+  }
+
+  const nuevoSaldo = Math.min(caja.pesoInicialKg, Math.round((caja.saldoKg + salida.cantidadKg) * 1000) / 1000);
+  const nuevoEstado = nuevoSaldo >= caja.pesoInicialKg - EPSILON_KG ? "en_camara" : "parcial";
+
+  const resultado = await prisma.$transaction(async (tx) => {
+    const cajaActualizada = await tx.cajaCamara.update({
+      where: { id: caja.id },
+      data: { saldoKg: nuevoSaldo, estado: nuevoEstado, version: { increment: 1 } },
+      include: cajaConIncludes,
+    });
+    const salidaAnulada = await tx.salidaMayorista.update({
+      where: { id: salida.id },
+      data: {
+        anulada: true,
+        usuarioAnulacionId: usuarioId,
+        motivoAnulacion: motivo,
+        fechaAnulacion: new Date(),
+      },
+      include: { producto: true, usuario: true, usuarioAnulacion: true },
+    });
+    const movimientoReversion = await tx.movimientoCamara.create({
+      data: {
+        cajaId: caja.id,
+        tipo: "anulacion_mayorista",
+        pesoKg: salida.cantidadKg,
+        origen: "camara",
+        destino: "en_camara",
+        motivo,
+        referenciaTipo: "SalidaMayorista",
+        referenciaId: salida.id,
+        usuarioId,
+        claveIdempotencia: randomUUID(),
+      },
+    });
+    return { caja: cajaActualizada, salida: salidaAnulada, movimiento: movimientoReversion };
+  });
+
+  res.json(resultado);
 });
 
 // --- Inventario por escaneo + conciliación de faltantes ---

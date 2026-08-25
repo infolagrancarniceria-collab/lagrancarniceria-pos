@@ -40,6 +40,7 @@ model Usuario {
   sesionesCamaraFinalizadas   SesionInventarioCamara[]  @relation("SesionesCamaraFinalizadasPorUsuario")
   escaneosCamara              EscaneoInventarioCamara[]
   salidasMayoristaRegistradas SalidaMayorista[]
+  salidasMayoristaAnuladas    SalidaMayorista[] @relation("SalidasMayoristasAnuladasPorUsuario")
 }
 
 // Gastos generales del negocio (sueldos, luz, agua, arriendo, etc.) —
@@ -621,4 +622,16 @@ model SalidaMayorista {
   usuario   Usuario @relation(fields: [usuarioId], references: [id])
 
   observaciones String?
+
+  // Anular una venta al por mayor ya registrada (ej. se ingresó mal, o el
+  // cliente se arrepintió) — solo se puede si la caja de cámara de origen
+  // no tuvo ningún movimiento después de esta venta, mismo principio que
+  // "Anular una entrada" de cámara. Se guarda el registro igual que
+  // cualquier otra anulación del sistema (usuario, motivo, fecha) en vez
+  // de borrar la fila.
+  anulada            Boolean   @default(false)
+  usuarioAnulacionId Int?
+  usuarioAnulacion   Usuario?  @relation("SalidasMayoristasAnuladasPorUsuario", fields: [usuarioAnulacionId], references: [id])
+  motivoAnulacion    String?
+  fechaAnulacion     DateTime?
 }

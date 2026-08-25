@@ -17,6 +17,7 @@ import { TecladoNumerico } from "../components/TecladoNumerico";
 import ModalConfirmarClave from "../components/ModalConfirmarClave";
 import { ValeVenta } from "../components/ValeVenta";
 import { imprimirSilencioso } from "../lib/imprimir";
+import ModalAlerta from "../components/ModalAlerta";
 
 export default function PuntoDeVenta() {
   const { usuario } = useUsuario();
@@ -571,7 +572,7 @@ export default function PuntoDeVenta() {
       <>
         <div className="punto-de-venta no-imprimir">
           <h1>Punto de venta</h1>
-          {error && <p className="error">{error}</p>}
+          {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
           <p>Cargando...</p>
         </div>
         <div className="vale-oculto-hasta-imprimir">{ventaParaImprimir && <ValeVenta venta={ventaParaImprimir} />}</div>
@@ -586,7 +587,7 @@ export default function PuntoDeVenta() {
         <h1>Punto de venta</h1>
         <div className="total-venta-destacado">Total: {formatoCLP(totalVenta)}</div>
       </div>
-      {error && <p className="error">{error}</p>}
+      {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
       {mensaje && <p className="exito">{mensaje}</p>}
 
       <p className="ayuda ayuda-linea">🔦 Lector de código de barras listo — escanea en cualquier momento.</p>

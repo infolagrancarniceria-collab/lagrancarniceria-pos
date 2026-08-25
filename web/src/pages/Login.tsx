@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { api, type Usuario } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
+import ModalAlerta from "../components/ModalAlerta";
 
 export default function Login() {
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
@@ -36,7 +37,7 @@ export default function Login() {
     <div className="pantalla-login">
       <h1>La Gran Carnicería</h1>
       <p>¿Quién eres?</p>
-      {error && <p className="error">{error}</p>}
+      {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
       <div className="lista-usuarios">
         {usuarios.map((u) => (
           <button key={u.id} type="button" className="boton-usuario" onClick={() => elegir(u)}>

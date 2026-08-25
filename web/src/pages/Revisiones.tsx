@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, type Producto } from "../api";
+import ModalAlerta from "../components/ModalAlerta";
 
 // Lista los productos que quedaron con stock negativo — sucede cuando se
 // vende un producto sin que el sistema tuviera stock suficiente registrado
@@ -34,7 +35,7 @@ export default function Revisiones() {
         registrado). Corrige cada uno con un ajuste en su ficha — desaparecen de esta lista solos apenas el
         stock vuelve a estar en 0 o más.
       </p>
-      {error && <p className="error">{error}</p>}
+      {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
       {cargando && <p>Cargando...</p>}
 
       <table className="tabla">

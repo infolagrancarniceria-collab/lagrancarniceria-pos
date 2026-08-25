@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, formatoCLP, type MedioCobro, type PagoVenta } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
+import ModalAlerta from "../components/ModalAlerta";
 
 export default function CreditosPendientes() {
   const { usuario } = useUsuario();
@@ -56,7 +57,7 @@ export default function CreditosPendientes() {
         Ventas que quedaron a crédito (fiadas) y todavía no se han cobrado. Al cobrarlas, esa plata se suma al
         efectivo o tarjeta del día en que se cobra — no del día en que se hizo la venta original.
       </p>
-      {error && <p className="error">{error}</p>}
+      {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
       {mensaje && <p className="exito">{mensaje}</p>}
       {cargando && <p>Cargando...</p>}
 

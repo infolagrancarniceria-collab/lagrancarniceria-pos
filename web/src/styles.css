@@ -547,6 +547,33 @@ select {
   font-size: 0.9rem;
   margin: 0 0 1.3rem;
 }
+
+/* Ventana emergente de error — mismo lenguaje visual que .modal-vuelto,
+   en rojo en vez de verde. Ver ModalAlerta.tsx. */
+.modal-alerta {
+  background: var(--color-superficie);
+  border-radius: 18px;
+  padding: 2rem 2.2rem 1.7rem;
+  text-align: center;
+  box-shadow: 0 24px 60px -20px rgba(26, 18, 13, 0.45);
+  width: min(420px, 90vw);
+  border-top: 6px solid var(--color-error);
+}
+.modal-alerta-etiqueta {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--color-error);
+  font-weight: 700;
+  margin-bottom: 0.7rem;
+}
+.modal-alerta-mensaje {
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--color-texto);
+  line-height: 1.4;
+  margin: 0 0 1.4rem;
+}
 .punto-de-venta h2 {
   font-size: 1.05rem;
   margin: 0 0 0.4rem;
@@ -710,6 +737,38 @@ select {
 }
 .fila-edicion-precio td {
   background: var(--color-oro-fondo);
+}
+
+/* Margen (%) destacado — a pedido del usuario, para que salte a la vista
+   en vez de perderse como texto plano junto al resto de los datos.
+   Verde/rojo según si el margen es positivo o negativo, reutilizando los
+   mismos tokens de color que ya usa el resto del sistema (nunca un color
+   inventado aparte). */
+.margen-destacado {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-family: var(--fuente-titulos);
+  font-weight: 700;
+  font-size: 1.15rem;
+  padding: 0.3rem 0.85rem;
+  border-radius: 8px;
+  background: var(--color-exito-fondo);
+  color: var(--color-exito);
+  border: 1.5px solid var(--color-exito);
+}
+.margen-destacado.margen-negativo {
+  background: var(--color-error-fondo);
+  color: var(--color-error);
+  border-color: var(--color-error);
+}
+.margen-destacado .margen-etiqueta {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-weight: 600;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  opacity: 0.85;
 }
 
 .buscador-producto {

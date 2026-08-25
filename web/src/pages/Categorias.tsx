@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, type Categoria } from "../api";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
+import ModalAlerta from "../components/ModalAlerta";
 
 export default function Categorias() {
   const [categorias, setCategorias] = useState<Categoria[]>([]);
@@ -47,7 +48,7 @@ export default function Categorias() {
   return (
     <div>
       <h1>Categorías</h1>
-      {error && <p className="error">{error}</p>}
+      {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
       {mensaje && <p className="exito">{mensaje}</p>}
 
       <section className="tarjeta">

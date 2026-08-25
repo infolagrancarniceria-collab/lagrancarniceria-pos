@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, type Categoria, type ProductoConStock } from "../api";
 import SelectorCategoria from "../components/SelectorCategoria";
+import ModalAlerta from "../components/ModalAlerta";
 
 export default function Inventario() {
   const [productos, setProductos] = useState<ProductoConStock[]>([]);
@@ -53,7 +54,7 @@ export default function Inventario() {
         </div>
       </div>
 
-      {error && <p className="error">{error}</p>}
+      {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
 
       <div className="filtros">
         <SelectorCategoria

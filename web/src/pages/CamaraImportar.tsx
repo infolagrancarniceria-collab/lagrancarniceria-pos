@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { api, type GrupoImportacionCamara, type Producto, type PrevisualizacionImportacionCamara, type ResultadoImportacionCamara } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
 import { mostrarToast } from "../lib/toast";
+import ModalAlerta from "../components/ModalAlerta";
 
 function SelectorProducto({
   grupo,
@@ -150,7 +151,7 @@ export default function CamaraImportar() {
           Volver a Cámara
         </Link>
       </div>
-      {error && <p className="error">{error}</p>}
+      {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
 
       {resultado && (
         <section className="tarjeta">

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, type ResultadoActualizarBalanza } from "../api";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
+import ModalAlerta from "../components/ModalAlerta";
 
 export default function Balanza() {
   const [ip1, setIp1] = useState("");
@@ -64,7 +65,7 @@ export default function Balanza() {
           Manda el catálogo completo de productos pesables e importe (precio, PLU, nombre) a las dos
           balanzas, por red.
         </p>
-        {errorActualizar && <p className="error">{errorActualizar}</p>}
+        {errorActualizar && <ModalAlerta mensaje={errorActualizar} onCerrar={() => setErrorActualizar(null)} />}
         <button type="button" className="boton boton-primario" onClick={actualizarBalanza} disabled={actualizando}>
           {actualizando ? "Actualizando..." : "Actualizar balanza"}
         </button>
@@ -94,7 +95,7 @@ export default function Balanza() {
 
       <section className="tarjeta">
         <h2>Configuración de red</h2>
-        {error && <p className="error">{error}</p>}
+        {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
         {mensaje && <p className="exito">{mensaje}</p>}
         <form onSubmit={guardar} onKeyDown={manejarEnterComoTab} className="formulario">
           <label>
