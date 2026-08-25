@@ -2905,3 +2905,62 @@ popup con el mensaje exacto ("Falta la cantidad de..."), Enter lo cierra
 (mismo foco automático que Vuelto); confirmado que el resto de las
 pantallas sigue compilando y renderizando sin errores (`npm run
 typecheck` limpio en las 41 pantallas tocadas).
+
+## App instalable en el celular para "Salida de cámara" + escaneo con la cámara
+El usuario preguntó si era posible tener "una especie de app" en el celular
+para escanear la caja que sale de cámara y elegir su destino. Antes de
+programar se le explicó que el flujo en sí **ya existía** ("Salida de
+cámara", accesible desde el navegador del celular por la red WiFI local,
+con modo sin conexión propio) — lo que realmente faltaba, según sus
+respuestas, era (1) un ícono en la pantalla de inicio en vez de escribir la
+dirección cada vez, y (2) usar la cámara del celular para leer el código de
+barras en vez de solo poder escribirlo a mano.
+
+- **Ícono instalable (PWA)**: `web/public/manifest.webmanifest` (nombre,
+  colores, íconos) + `web/public/sw.js` (service worker mínimo — solo lo
+  necesario para que el navegador ofrezca "Agregar a pantalla de inicio"
+  como app; nunca cachea `/api/*`, que sigue yendo directo a la red igual
+  que siempre) + enlaces nuevos en `web/index.html`. **Confirmado con el
+  usuario:** el ícono instalado abre **directo en "Salida de cámara"**
+  (`start_url` del manifest), sin el menú de todo el sistema — mismo
+  concepto que "modo caja exclusiva" (`modoCaja.ts`), aplicado acá como
+  "modo cámara" (`web/src/lib/modoCamara.ts`), pero detectado solo (sin
+  ningún interruptor manual): el navegador expone `display-mode:
+  standalone` cuando se abre desde el ícono instalado, a diferencia de una
+  pestaña normal. `Layout.tsx` muestra una tira superior angosta en vez de
+  la barra lateral cuando ese modo está activo. **De paso, corregido**: el
+  login navegaba siempre a `/productos` sin importar el modo (bug que ya
+  afectaba a "modo caja exclusiva" también) — ahora respeta el modo activo
+  al elegir usuario.
+  **Limitación real, explicada al usuario:** los service workers (y por lo
+  tanto la instalación completa como app) exigen una conexión seguro
+  (HTTPS) o `localhost` — este sistema corre por WiFi local en HTTP plano
+  (`http://192.168.x.x:5175`), así que el comportamiento exacto de
+  "Agregar a pantalla de inicio" puede variar según el celular/navegador
+  (funciona sin problema en iPhone; en Android puede quedar como un simple
+  acceso directo en vez de una instalación completa, según la versión de
+  Chrome). **Pendiente que el usuario lo pruebe en sus celulares reales.**
+- **Escanear con la cámara**: nuevo componente reutilizable
+  `web/src/components/EscanerCamara.tsx`, usando `@zxing/browser` (librería
+  gratuita y de código abierto, queda incluida en el programa — no depende
+  de internet en tiempo de ejecución), restringido a Code128 (el formato
+  que ya usan las etiquetas de cámara). Se agregó un botón "📷 Escanear con
+  la cámara" en "Salida de cámara", junto al ingreso manual que ya
+  existía — al detectar un código, llama exactamente a la misma función
+  `buscarCaja()` que ya usan el lector físico y el ingreso manual, sin
+  duplicar lógica. Cargado con `React.lazy()` (solo en esa pantalla) para
+  no sumarle el peso de la librería (~480kb) a la carga inicial del resto
+  del sistema.
+
+Probado con Playwright usando una cámara falsa de Chromium
+(`--use-fake-device-for-media-stream`): "modo cámara" se activa
+correctamente simulando `display-mode: standalone` (barra lateral
+ausente, tira superior angosta, arranca en Salida de cámara tras elegir
+usuario); el botón de escanear abre la cámara, pide permiso y el lector
+queda decodificando cuadros en vivo de forma continua (confirmado por los
+intentos de decodificación reales en la consola); cerrar el escáner libera
+la cámara sin errores. **No se pudo probar la detección real de un código
+de barras** en este entorno (haría falta un video de prueba con un código
+Code128 real) — la librería es ampliamente usada y se llamó exactamente
+según su API documentada. **Pendiente la prueba real** con la etiqueta
+física y el celular del usuario.

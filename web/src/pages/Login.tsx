@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { api, type Usuario } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
+import { modoCajaActivo } from "../lib/modoCaja";
+import { modoCamaraActivo } from "../lib/modoCamara";
 import ModalAlerta from "../components/ModalAlerta";
 
 export default function Login() {
@@ -16,9 +18,19 @@ export default function Login() {
     api.usuarios.listar().then(setUsuarios).catch((e) => setError(e.message));
   }, []);
 
+  // Misma pantalla de inicio que ya usa App.tsx para el redirect de "/" —
+  // acá también hace falta, porque elegir usuario navega directo en vez de
+  // pasar por esa ruta raíz (si no, "modo caja exclusiva" y la app
+  // instalada de Cámara mandarían igual a Productos la primera vez).
+  function pantallaInicio(): string {
+    if (modoCajaActivo()) return "/caja";
+    if (modoCamaraActivo()) return "/camara/salida";
+    return "/productos";
+  }
+
   function elegir(usuario: Usuario) {
     setUsuario(usuario);
-    navigate("/productos");
+    navigate(pantallaInicio());
   }
 
   async function agregarUsuario(e: React.FormEvent) {

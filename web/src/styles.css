@@ -311,6 +311,51 @@ select {
   margin: 0 auto;
 }
 
+/* App instalada en el celular (modo cámara, ver modoCamara.ts) — pensada
+   para pantallas angostas, sin la barra lateral de todo el sistema. */
+.layout-camara-app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+.topbar-camara-app {
+  background: linear-gradient(120deg, var(--color-vino) 0%, var(--color-vino-2) 100%);
+  color: #fdf3ec;
+  padding: 0.85rem 1.1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: var(--fuente-titulos);
+  font-weight: 700;
+  font-size: 1.05rem;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.topbar-camara-app button {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  color: #fdf3ec;
+  font-size: 1.1rem;
+  padding: 0.3rem 0.6rem;
+}
+.layout-camara-app .contenido {
+  padding: 1rem 0.85rem 2rem;
+}
+
+/* Escáner de código de barras con la cámara del celular (EscanerCamara.tsx) */
+.escaner-camara {
+  width: min(420px, 92vw);
+}
+.escaner-camara-video {
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
+  border-radius: 10px;
+  background: #000;
+  margin-bottom: 1rem;
+}
+
 /* Componentes comunes */
 .encabezado-pantalla {
   display: flex;

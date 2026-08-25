@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, formatoCLP, type AvisoFifoCamara, type CajaCamara, type DestinoSalidaCamara, type ResultadoSalidaCamara } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
@@ -8,6 +8,11 @@ import { ejecutarOEncolar } from "../lib/colaOffline";
 import { EstadoOffline } from "../components/EstadoOffline";
 import { mostrarToast } from "../lib/toast";
 import ModalAlerta from "../components/ModalAlerta";
+
+// Carga la librería de escaneo (@zxing, pesada) solo cuando esta pantalla
+// realmente la necesita — así el resto del sistema (Productos, Caja, etc.)
+// no paga ese peso en su carga inicial.
+const EscanerCamara = lazy(() => import("../components/EscanerCamara"));
 
 const DESTINOS: { valor: DestinoSalidaCamara; etiqueta: string }[] = [
   { valor: "sala_venta", etiqueta: "Sala de venta" },
@@ -37,6 +42,7 @@ export default function CamaraSalida() {
   const [guardando, setGuardando] = useState(false);
   const [resultado, setResultado] = useState<ResultadoSalidaCamara | null>(null);
   const [guardadoOffline, setGuardadoOffline] = useState(false);
+  const [mostrarEscanerCamara, setMostrarEscanerCamara] = useState(false);
 
   function limpiarFormulario() {
     setDestino("sala_venta");
@@ -166,11 +172,28 @@ export default function CamaraSalida() {
       {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
       <EstadoOffline />
 
+      {mostrarEscanerCamara && (
+        <Suspense fallback={null}>
+          <EscanerCamara
+            onDetectado={(codigo) => {
+              setMostrarEscanerCamara(false);
+              buscarCaja(codigo);
+            }}
+            onCerrar={() => setMostrarEscanerCamara(false)}
+          />
+        </Suspense>
+      )}
+
       {!caja && !resultado && !guardadoOffline && (
         <section className="tarjeta">
           <p className="ayuda">
             {buscando ? "Buscando caja..." : "Escanea el código de barras de la etiqueta de la caja que sale de cámara."}
           </p>
+          <div className="acciones-formulario">
+            <button type="button" className="boton boton-primario" onClick={() => setMostrarEscanerCamara(true)}>
+              📷 Escanear con la cámara
+            </button>
+          </div>
           <form
             className="fila-inline"
             onSubmit={(e) => {

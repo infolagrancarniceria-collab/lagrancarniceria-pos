@@ -59,6 +59,8 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.116.0",
     "@prisma/client": "^5.20.0",
+    "@zxing/browser": "^0.2.1",
+    "@zxing/library": "^0.23.0",
     "csv-parse": "^5.5.6",
     "dotenv": "^16.4.5",
     "express": "^4.21.0",

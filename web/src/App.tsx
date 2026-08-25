@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { UsuarioProvider } from "./context/UsuarioContext";
 import { modoCajaActivo } from "./lib/modoCaja";
+import { modoCamaraActivo } from "./lib/modoCamara";
 import RequireUsuario from "./components/RequireUsuario";
 import Layout from "./components/Layout";
 import Login from "./pages/Login";
@@ -46,8 +47,9 @@ import CamaraReporteSalidas from "./pages/CamaraReporteSalidas";
 
 export default function App() {
   // En "modo caja exclusiva" (ver web/src/lib/modoCaja.ts), este PC arranca
-  // directo en Caja en vez de Productos.
-  const inicio = modoCajaActivo() ? "/caja" : "/productos";
+  // directo en Caja en vez de Productos. La app instalada en el celular
+  // (ver web/src/lib/modoCamara.ts) arranca directo en Salida de cámara.
+  const inicio = modoCajaActivo() ? "/caja" : modoCamaraActivo() ? "/camara/salida" : "/productos";
 
   return (
     <UsuarioProvider>

@@ -1,16 +1,39 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useUsuario } from "../context/UsuarioContext";
 import { modoCajaActivo } from "../lib/modoCaja";
+import { modoCamaraActivo } from "../lib/modoCamara";
 import { ToastHost } from "./ToastHost";
 
 export default function Layout() {
   const { usuario, setUsuario } = useUsuario();
   const navigate = useNavigate();
   const modoCaja = modoCajaActivo();
+  const modoCamara = modoCamaraActivo();
 
   function cambiarUsuario() {
     setUsuario(null);
     navigate("/login");
+  }
+
+  // App instalada desde el celular (ver modoCamara.ts) — pantalla angosta,
+  // pensada para usarse de pie con el celular en la mano: sin la barra
+  // lateral de todo el sistema, solo una tira arriba con el nombre y
+  // "Cambiar usuario". El contenido (Salida de cámara) ocupa todo el resto.
+  if (modoCamara) {
+    return (
+      <div className="layout-camara-app">
+        <header className="topbar-camara-app">
+          <span>❄️ La Gran Carnicería</span>
+          <button type="button" onClick={cambiarUsuario} title="Cambiar usuario">
+            ↩️
+          </button>
+        </header>
+        <main className="contenido">
+          <Outlet />
+        </main>
+        <ToastHost />
+      </div>
+    );
   }
 
   // Ítem de navegación con emoji + etiqueta separados en spans propios —
