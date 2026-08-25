@@ -2964,3 +2964,37 @@ de barras** en este entorno (haría falta un video de prueba con un código
 Code128 real) — la librería es ampliamente usada y se llamó exactamente
 según su API documentada. **Pendiente la prueba real** con la etiqueta
 física y el celular del usuario.
+
+## Existencias: kilos y valor estimado por producto (no solo cajas)
+A pedido del usuario: la tabla "Cajas disponibles por producto" (Cámara →
+Existencias) solo mostraba cantidad de cajas — pidió agregar kilos y total
+estimado en dinero por producto también. Antes de programar se confirmó
+que "total estimado en dinero" debía mostrar **los dos** valores posibles
+(no estaba claro cuál quería): cuánto vale la mercadería guardada (costo de
+compra) y cuánto se sacaría si se vendiera toda (precio de venta) — números
+distintos y ambos útiles.
+
+- **Nuevas columnas "Kilos", "Valor (costo)" y "Valor (venta)"** en la
+  tabla, con su propio subtotal por familia (mismo patrón que ya tenía la
+  columna de cajas). "Valor (costo)" es `kilos × costo neto de cada caja`
+  (mismo cálculo que ya usaba "Valor neto" del resumen de arriba); "Valor
+  (venta)" es `kilos × precio de venta actual del producto` — un ingreso
+  potencial, no lo que ya se pagó.
+- El resumen de arriba (Cajas/Kilos/Valor neto) ganó una cuarta cifra,
+  **"Valor de venta potencial"**, con la misma fórmula pero sumando todas
+  las cajas de cámara — para que el mismo tipo de comparación (costo vs.
+  venta) esté disponible tanto en el total general como por producto.
+- **Técnico:** `GET /api/camara/existencias` ahora también agrupa
+  `kilos`/`valorCosto`/`valorVenta` por producto (antes solo contaba
+  cajas) y devuelve `totalValorVenta` a nivel general — un producto puede
+  tener cajas de distintos costos de compra (lotes distintos), así que el
+  costo se calcula caja por caja (`saldoKg × costoNetoKg` de cada una,
+  igual que ya hacía el total general), no con un costo único por
+  producto.
+
+Probado de punta a punta contra el servidor real: 2 cajas de prueba de 25kg
+cada una a $8.000/kg (producto con precio de venta $13.980/kg) — la fila
+del producto en Existencias mostró exactamente 50,000 kg, $400.000 de
+costo y $699.000 de valor de venta, calzando con el cálculo manual; los
+subtotales por familia sumaron correctamente los productos de esa
+familia — datos de prueba limpiados después.

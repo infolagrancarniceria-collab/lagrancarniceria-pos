@@ -110,11 +110,15 @@ export interface ExistenciasCamara {
   totalCajas: number;
   totalKilos: number;
   totalValor: number;
+  totalValorVenta: number;
   porProducto: {
     familia: string;
     producto: string;
     productoId: number;
     cajas: number;
+    kilos: number;
+    valorCosto: number;
+    valorVenta: number;
     ultimosCostos: number[];
     bajoStock: boolean;
   }[];

@@ -255,7 +255,10 @@ export default function CamaraExistencias() {
               <strong>Kilos disponibles:</strong> {existencias.totalKilos.toFixed(3)} kg
             </div>
             <div>
-              <strong>Valor neto:</strong> {formatoCLP(existencias.totalValor)}
+              <strong>Valor neto (costo):</strong> {formatoCLP(existencias.totalValor)}
+            </div>
+            <div>
+              <strong>Valor de venta potencial:</strong> {formatoCLP(existencias.totalValorVenta)}
             </div>
           </div>
         </section>
@@ -268,18 +271,24 @@ export default function CamaraExistencias() {
             <th>Familia</th>
             <th>Producto</th>
             <th>Cantidad de cajas</th>
+            <th>Kilos</th>
+            <th>Valor (costo)</th>
+            <th>Valor (venta)</th>
             <th>Costo/kg últimas 2 compras</th>
           </tr>
         </thead>
         <tbody>
           {existencias?.porProducto.length === 0 && (
             <tr>
-              <td colSpan={4}>No hay cajas disponibles en cámara.</td>
+              <td colSpan={7}>No hay cajas disponibles en cámara.</td>
             </tr>
           )}
           {familias.map((familia) => {
             const filas = existencias?.porProducto.filter((g) => g.familia === familia) ?? [];
-            const subtotal = filas.reduce((s, g) => s + g.cajas, 0);
+            const subtotalCajas = filas.reduce((s, g) => s + g.cajas, 0);
+            const subtotalKilos = filas.reduce((s, g) => s + g.kilos, 0);
+            const subtotalValorCosto = filas.reduce((s, g) => s + g.valorCosto, 0);
+            const subtotalValorVenta = filas.reduce((s, g) => s + g.valorVenta, 0);
             return (
               <Fragment key={familia}>
                 {filas.map((g) => (
@@ -292,6 +301,9 @@ export default function CamaraExistencias() {
                       <b>{g.cajas}</b>
                       {g.bajoStock && " (stock bajo)"}
                     </td>
+                    <td>{g.kilos.toFixed(3)} kg</td>
+                    <td>{formatoCLP(g.valorCosto)}</td>
+                    <td>{formatoCLP(g.valorVenta)}</td>
                     <td>
                       {g.ultimosCostos.length === 0 ? (
                         "—"
@@ -308,7 +320,10 @@ export default function CamaraExistencias() {
                 ))}
                 <tr className="fila-total">
                   <td colSpan={2}>Total {familia}</td>
-                  <td>{subtotal}</td>
+                  <td>{subtotalCajas}</td>
+                  <td>{subtotalKilos.toFixed(3)} kg</td>
+                  <td>{formatoCLP(subtotalValorCosto)}</td>
+                  <td>{formatoCLP(subtotalValorVenta)}</td>
                   <td></td>
                 </tr>
               </Fragment>

@@ -629,12 +629,31 @@ camaraRouter.get("/existencias", async (_req, res) => {
   const totalCajas = cajas.length;
   const totalKilos = cajas.reduce((s, c) => s + c.saldoKg, 0);
   const totalValor = cajas.reduce((s, c) => s + c.saldoKg * c.costoNetoKg, 0);
+  // Cuánto se sacaría si se vendiera todo lo que hay en cámara al precio de
+  // venta actual de cada producto — a diferencia de "totalValor" (el costo
+  // de compra, lo que vale el inventario guardado), esto es un ingreso
+  // potencial, no lo que ya se pagó.
+  const totalValorVenta = cajas.reduce((s, c) => s + c.saldoKg * c.producto.precio, 0);
 
-  const grupos = new Map<string, { familia: string; producto: string; productoId: number; cajas: number }>();
+  const grupos = new Map<
+    string,
+    { familia: string; producto: string; productoId: number; cajas: number; kilos: number; valorCosto: number; valorVenta: number }
+  >();
   for (const c of cajas) {
     const clave = `${c.familiaNombre}|${c.productoId}`;
-    const actual = grupos.get(clave) ?? { familia: c.familiaNombre, producto: c.producto.descripcion, productoId: c.productoId, cajas: 0 };
+    const actual = grupos.get(clave) ?? {
+      familia: c.familiaNombre,
+      producto: c.producto.descripcion,
+      productoId: c.productoId,
+      cajas: 0,
+      kilos: 0,
+      valorCosto: 0,
+      valorVenta: 0,
+    };
     actual.cajas++;
+    actual.kilos += c.saldoKg;
+    actual.valorCosto += c.saldoKg * c.costoNetoKg;
+    actual.valorVenta += c.saldoKg * c.producto.precio;
     grupos.set(clave, actual);
   }
 
@@ -684,7 +703,7 @@ camaraRouter.get("/existencias", async (_req, res) => {
     }))
     .sort((a, b) => b.diasEnCamara - a.diasEnCamara);
 
-  res.json({ totalCajas, totalKilos, totalValor, porProducto, cajasEstancadas });
+  res.json({ totalCajas, totalKilos, totalValor, totalValorVenta, porProducto, cajasEstancadas });
 });
 
 // Destinos fijos de salida — "otro" se agregó a pedido del usuario (además
