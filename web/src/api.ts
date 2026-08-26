@@ -984,6 +984,10 @@ export const api = {
     guardarClaveIA: (claveApiAnthropic: string) =>
       post<void>("/api/configuracion/ia", { claveApiAnthropic }),
     direccionRed: () => get<{ direcciones: string[]; puerto: number }>("/api/configuracion/direccion-red"),
+    estadoSyncWeb: () =>
+      get<{ configurada: boolean; webSyncUrl: string | null }>("/api/configuracion/sync-web/estado"),
+    guardarSyncWeb: (data: { webSyncUrl: string; syncApiKey: string }) =>
+      post<void>("/api/configuracion/sync-web", data),
   },
   asistente: {
     enviarMensaje: (mensaje: string, historial: unknown[]) =>

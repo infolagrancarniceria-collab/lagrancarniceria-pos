@@ -4,9 +4,16 @@
 //
 // La web es la única pieza que toca la base de datos en la nube
 // directamente — este módulo nunca guarda ni lee esa base de datos, solo le
-// habla por HTTPS a las rutas /api/sync/* de la web, autenticado con
-// SYNC_API_KEY (una llave acotada solo para sincronizar catálogo/pedidos,
-// no la contraseña completa de esa base de datos).
+// habla por HTTPS a las rutas /api/sync/* de la web, autenticado con una
+// llave acotada solo para sincronizar catálogo/pedidos (no la contraseña
+// completa de esa base de datos).
+//
+// La configuración (URL + llave) vive en la tabla ConfiguracionSyncWeb
+// (pantalla Configuración → "Sincronización con la web"), no solo en
+// variables de entorno — un .env sirve para desarrollo, pero el instalador
+// que llega al PC de la carnicería no trae ningún archivo .env, así que sin
+// esto no habría forma de configurarlo ahí. Las variables de entorno
+// (WEB_SYNC_URL / SYNC_API_KEY) quedan como respaldo para desarrollo local.
 //
 // Es "best effort" a propósito: si el local está sin internet o la web no
 // responde, se reintenta solo en el próximo ciclo — nunca bloquea ni afecta
@@ -16,13 +23,20 @@
 // seguir trabajando.
 import { prisma } from "../db";
 
-const WEB_SYNC_URL = process.env.WEB_SYNC_URL;
-const SYNC_API_KEY = process.env.SYNC_API_KEY;
 const INTERVALO_MS = 5 * 60 * 1000; // 5 minutos — respaldo por si un push puntual falló sin internet
 const TIMEOUT_MS = 15_000;
 
-function configurado(): boolean {
-  return Boolean(WEB_SYNC_URL && SYNC_API_KEY);
+interface ConfigSyncWeb {
+  url: string;
+  clave: string;
+}
+
+async function obtenerConfig(): Promise<ConfigSyncWeb | null> {
+  const fila = await prisma.configuracionSyncWeb.findFirst();
+  const url = fila?.webSyncUrl || process.env.WEB_SYNC_URL;
+  const clave = fila?.syncApiKey || process.env.SYNC_API_KEY;
+  if (!url || !clave) return null;
+  return { url: url.replace(/\/+$/, ""), clave };
 }
 
 interface ProductoSync {
@@ -79,13 +93,16 @@ let sincronizandoCatalogo = false;
 // complejidad extra (y los bugs) de calcular diffs incrementales. La web
 // trata cada snapshot recibido como la verdad completa del momento.
 export async function sincronizarCatalogoConWeb(): Promise<void> {
-  if (!configurado() || sincronizandoCatalogo) return;
+  if (sincronizandoCatalogo) return;
+  const config = await obtenerConfig();
+  if (!config) return;
+
   sincronizandoCatalogo = true;
   try {
     const snapshot = await construirSnapshotCatalogo();
-    const respuesta = await fetch(`${WEB_SYNC_URL}/api/sync/catalogo`, {
+    const respuesta = await fetch(`${config.url}/api/sync/catalogo`, {
       method: "POST",
-      headers: { "content-type": "application/json", "x-sync-key": SYNC_API_KEY! },
+      headers: { "content-type": "application/json", "x-sync-key": config.clave },
       body: JSON.stringify(snapshot),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
@@ -117,10 +134,12 @@ interface PedidoWebRemoto {
 // "idWeb" es la clave para no duplicar un pedido si la confirmación se
 // pierde y la web lo reenvía.
 export async function traerPedidosWebPendientes(): Promise<void> {
-  if (!configurado()) return;
+  const config = await obtenerConfig();
+  if (!config) return;
+
   try {
-    const respuesta = await fetch(`${WEB_SYNC_URL}/api/sync/pedidos-pendientes`, {
-      headers: { "x-sync-key": SYNC_API_KEY! },
+    const respuesta = await fetch(`${config.url}/api/sync/pedidos-pendientes`, {
+      headers: { "x-sync-key": config.clave },
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
     if (!respuesta.ok) {
@@ -151,9 +170,9 @@ export async function traerPedidosWebPendientes(): Promise<void> {
       idsGuardados.push(pedido.idWeb);
     }
 
-    await fetch(`${WEB_SYNC_URL}/api/sync/pedidos-confirmar`, {
+    await fetch(`${config.url}/api/sync/pedidos-confirmar`, {
       method: "POST",
-      headers: { "content-type": "application/json", "x-sync-key": SYNC_API_KEY! },
+      headers: { "content-type": "application/json", "x-sync-key": config.clave },
       body: JSON.stringify({ idsWeb: idsGuardados }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
@@ -164,14 +183,12 @@ export async function traerPedidosWebPendientes(): Promise<void> {
 
 let intervalo: NodeJS.Timeout | undefined;
 
-// Se llama una vez al levantar el servidor (ver server/index.ts). Si no hay
-// WEB_SYNC_URL/SYNC_API_KEY configurados (ej. instalación que todavía no se
-// conectó a la web), queda desactivado sin romper nada más del POS.
+// Se llama una vez al levantar el servidor (ver server/index.ts). El
+// intervalo siempre queda corriendo — cada ciclo revisa solo si hay
+// configuración guardada (obtenerConfig), así que si todavía no se
+// configuró (instalación nueva) o se configura después desde la pantalla de
+// Configuración, el sync se activa solo, sin reiniciar el programa.
 export function iniciarSyncWeb(): void {
-  if (!configurado()) {
-    console.log("[sync-web] WEB_SYNC_URL / SYNC_API_KEY no configurados — sync con la web desactivado");
-    return;
-  }
   if (intervalo) return;
   const ciclo = () => {
     void sincronizarCatalogoConWeb();

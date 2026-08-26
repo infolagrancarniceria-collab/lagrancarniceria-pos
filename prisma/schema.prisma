@@ -235,6 +235,21 @@ model ConfiguracionBalanza {
   actualizadoEn DateTime @updatedAt
 }
 
+// URL de la web y llave de sync (ver server/lib/syncWeb.ts) — vive acá, no
+// solo en variables de entorno, porque el instalador que llega al PC de la
+// carnicería no trae ningún archivo .env: sin esto no habría forma de
+// configurar el sync desde una instalación real. syncApiKey se guarda tal
+// cual (no hasheada, a diferencia de ClaveSupervisor) porque hay que poder
+// volver a mandarla en cada sync — nunca se muestra de vuelta al frontend
+// una vez guardada, mismo patrón que ConfiguracionIA. Siempre hay como
+// máximo una fila.
+model ConfiguracionSyncWeb {
+  id            Int      @id @default(autoincrement())
+  webSyncUrl    String?
+  syncApiKey    String?
+  actualizadoEn DateTime @updatedAt
+}
+
 // Solo puede haber una sesión de caja "abierta" a la vez (una sola persona
 // usa el sistema a la vez, según la arquitectura del proyecto).
 model SesionCaja {
