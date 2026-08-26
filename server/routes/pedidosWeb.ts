@@ -12,9 +12,12 @@ function serializar(p: {
   fecha: Date;
   clienteNombre: string;
   clienteTelefono: string;
-  clienteDireccion: string;
-  comunaNombre: string;
-  costoEnvio: number;
+  tipoEntrega: string;
+  clienteDireccion: string | null;
+  comunaNombre: string | null;
+  costoEnvio: number | null;
+  fechaEntrega: string | null;
+  medioPago: string | null;
   itemsJson: string;
   comentario: string | null;
   estado: string;

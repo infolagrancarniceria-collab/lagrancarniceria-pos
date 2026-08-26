@@ -135,9 +135,12 @@ interface PedidoWebRemoto {
   fecha: string;
   clienteNombre: string;
   clienteTelefono: string;
-  clienteDireccion: string;
-  comunaNombre: string;
-  costoEnvio: number;
+  tipoEntrega: string;
+  clienteDireccion: string | null;
+  comunaNombre: string | null;
+  costoEnvio: number | null;
+  fechaEntrega: string | null;
+  medioPago: string | null;
   items: unknown;
   comentario?: string | null;
 }
@@ -173,9 +176,12 @@ export async function traerPedidosWebPendientes(): Promise<void> {
             fecha: new Date(pedido.fecha),
             clienteNombre: pedido.clienteNombre,
             clienteTelefono: pedido.clienteTelefono,
+            tipoEntrega: pedido.tipoEntrega,
             clienteDireccion: pedido.clienteDireccion,
             comunaNombre: pedido.comunaNombre,
             costoEnvio: pedido.costoEnvio,
+            fechaEntrega: pedido.fechaEntrega,
+            medioPago: pedido.medioPago,
             itemsJson: JSON.stringify(pedido.items),
             comentario: pedido.comentario ?? null,
           },

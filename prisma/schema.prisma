@@ -433,16 +433,24 @@ model PedidoWeb {
 
   fecha DateTime
 
-  clienteNombre    String
-  clienteTelefono  String
-  clienteDireccion String
-  comunaNombre     String
-  costoEnvio       Float
+  clienteNombre   String
+  clienteTelefono String
+
+  // "retiro" | "despacho" — clienteDireccion/comunaNombre/costoEnvio solo
+  // vienen si es despacho (mismo criterio que el modelo Pedido de la web).
+  tipoEntrega      String  @default("despacho")
+  clienteDireccion String?
+  comunaNombre     String?
+  costoEnvio       Float?
+
+  fechaEntrega String?
+  // Solo informativo — el pago real se coordina aparte, no hay pasarela.
+  medioPago    String?
 
   // JSON con el detalle de productos pedidos (nombre, corte elegido,
-  // cantidad aproximada en kg/unidad) — solo para mostrar, no hay relación
-  // con Producto porque el pedido puede referirse a un catálogo que ya
-  // cambió para cuando se revisa.
+  // envasado, instrucciones, cantidad aproximada en kg/unidad) — solo para
+  // mostrar, no hay relación con Producto porque el pedido puede referirse
+  // a un catálogo que ya cambió para cuando se revisa.
   itemsJson String
 
   comentario String?

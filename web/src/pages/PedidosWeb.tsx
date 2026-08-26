@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, formatoCLP, type PedidoWeb } from "../api";
+import { api, formatoCLP, formatoPeso, type PedidoWeb } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
 import { mostrarToast } from "../lib/toast";
 import ModalAlerta from "../components/ModalAlerta";
@@ -41,7 +41,7 @@ export default function PedidosWeb() {
         <h1>Pedidos web</h1>
       </div>
       <p className="ayuda">
-        Pedidos armados por clientes en lagrancarniceria.com (cotización de despacho) — se traen automáticamente
+        Pedidos armados por clientes en lagrancarniceria.com (retiro en tienda o despacho) — se traen automáticamente
         cada pocos minutos si el PC tiene internet. No reemplazan una venta en Caja: son solo el pedido que el
         cliente pidió, para que el equipo lo revise y coordine el despacho.
       </p>
@@ -73,18 +73,29 @@ export default function PedidosWeb() {
             <span>{new Date(p.fecha).toLocaleString("es-CL")}</span>
           </div>
           <p>
-            <strong>Teléfono:</strong> {p.clienteTelefono} · <strong>Dirección:</strong> {p.clienteDireccion} (
-            {p.comunaNombre})
+            <strong>Teléfono:</strong> {p.clienteTelefono} ·{" "}
+            <strong>Entrega:</strong> {p.tipoEntrega === "despacho" ? "Despacho a domicilio" : "Retiro en tienda"}
+            {p.fechaEntrega ? ` · ${p.fechaEntrega}` : ""}
           </p>
-          <p>
-            <strong>Costo de envío:</strong> {formatoCLP(p.costoEnvio)}
-          </p>
+          {p.tipoEntrega === "despacho" && (
+            <p>
+              <strong>Dirección:</strong> {p.clienteDireccion} ({p.comunaNombre}) ·{" "}
+              <strong>Costo de envío:</strong> {p.costoEnvio != null ? formatoCLP(p.costoEnvio) : "—"}
+            </p>
+          )}
+          {p.medioPago && (
+            <p>
+              <strong>Medio de pago:</strong> {p.medioPago}
+            </p>
+          )}
           <table className="tabla">
             <thead>
               <tr>
                 <th>Producto</th>
                 <th>Corte</th>
+                <th>Envasado</th>
                 <th>Cantidad</th>
+                <th>Instrucciones</th>
               </tr>
             </thead>
             <tbody>
@@ -92,9 +103,9 @@ export default function PedidosWeb() {
                 <tr key={i}>
                   <td>{item.descripcion}</td>
                   <td>{item.corte ?? "—"}</td>
-                  <td>
-                    {item.cantidad} {item.unidad === "kg" ? "kg" : "un."}
-                  </td>
+                  <td>{item.envasado ?? "—"}</td>
+                  <td>{item.unidad === "kg" ? formatoPeso(item.cantidad) : `${item.cantidad} un.`}</td>
+                  <td>{item.instrucciones ?? "—"}</td>
                 </tr>
               ))}
             </tbody>

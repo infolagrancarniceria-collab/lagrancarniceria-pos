@@ -57,6 +57,8 @@ export interface CorteOpcion {
 export interface PedidoWebItem {
   descripcion: string;
   corte: string | null;
+  envasado: "Tradicional" | "Al vacío" | null;
+  instrucciones: string | null;
   cantidad: number;
   unidad: "kg" | "unidad";
 }
@@ -67,9 +69,12 @@ export interface PedidoWeb {
   fecha: string;
   clienteNombre: string;
   clienteTelefono: string;
-  clienteDireccion: string;
-  comunaNombre: string;
-  costoEnvio: number;
+  tipoEntrega: "retiro" | "despacho";
+  clienteDireccion: string | null;
+  comunaNombre: string | null;
+  costoEnvio: number | null;
+  fechaEntrega: string | null;
+  medioPago: string | null;
   items: PedidoWebItem[];
   comentario: string | null;
   estado: "pendiente" | "atendido" | "anulado";
@@ -1184,4 +1189,14 @@ export const api = {
 
 export function formatoCLP(valor: number): string {
   return valor.toLocaleString("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 });
+}
+
+// Los ítems de PedidoWeb con unidad "kg" traen la cantidad en gramos (mismo
+// criterio que usa la web en su carrito) — gramos bajo 1 kg, kilos con coma
+// decimal desde 1 kg.
+export function formatoPeso(gramos: number): string {
+  if (gramos < 1000) return `${gramos} g`;
+  const kilos = gramos / 1000;
+  const texto = kilos.toFixed(1).replace(".", ",").replace(",0", "");
+  return `${texto} kg`;
 }
