@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import {
   api,
   formatoCLP,
+  calcularMargen,
   redondearA10,
   TOLERANCIA_REDONDEO_EFECTIVO,
   type Comuna,
@@ -69,6 +70,12 @@ export default function PuntoDeVenta() {
   const [itemEditandoPrecio, setItemEditandoPrecio] = useState<number | null>(null);
   const [precioNuevoValor, setPrecioNuevoValor] = useState("");
   const [itemAutorizandoPrecio, setItemAutorizandoPrecio] = useState<number | null>(null);
+  // Costo (última compra) por producto, para mostrar el margen (%) de cada
+  // línea del carrito — a pedido del usuario. Se pide de a uno (no hay un
+  // endpoint que traiga varios productos por id a la vez) y se guarda en
+  // caché acá mismo, para no volver a pedirlo si el mismo producto aparece
+  // más de una vez o la venta se vuelve a renderizar.
+  const [costosPorProducto, setCostosPorProducto] = useState<Record<number, number | null>>({});
 
   const inputCantidadRef = useRef<HTMLInputElement>(null);
   const inputMontoPagoRef = useRef<HTMLInputElement>(null);
@@ -92,6 +99,23 @@ export default function PuntoDeVenta() {
     setComentarioValor(venta?.comentario ?? "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [venta?.id]);
+
+  // Trae el costo (última compra) de cada producto nuevo que aparece en el
+  // carrito, para poder mostrar el margen (%) por línea — a pedido del
+  // usuario. Solo pide los que todavía no están en la caché.
+  useEffect(() => {
+    const idsFaltantes = [...new Set((venta?.items ?? []).map((i) => i.productoId))].filter(
+      (id) => !(id in costosPorProducto)
+    );
+    if (idsFaltantes.length === 0) return;
+    idsFaltantes.forEach((id) => {
+      api.productos
+        .obtener(id)
+        .then((p) => setCostosPorProducto((prev) => ({ ...prev, [id]: p.ultimoCosto })))
+        .catch(() => setCostosPorProducto((prev) => ({ ...prev, [id]: null })));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [venta?.items]);
 
   // Imprime el vale de la venta que se acaba de confirmar, sin salir de
   // Punto de Venta — el vale se renderiza oculto en pantalla (ver
@@ -886,6 +910,17 @@ export default function PuntoDeVenta() {
                               </button>
                             </span>
                           )}
+                          {(() => {
+                            const costo = costosPorProducto[item.productoId];
+                            if (costo == null) return null;
+                            const margen = calcularMargen(item.precioUnitario, costo);
+                            if (margen == null) return null;
+                            return (
+                              <div className={margen < 0 ? "error" : "exito"} style={{ fontSize: "0.8rem" }}>
+                                Margen: {margen.toFixed(1)}%
+                              </div>
+                            );
+                          })()}
                         </td>
                         <td>
                           {formatoCLP(item.subtotal)}

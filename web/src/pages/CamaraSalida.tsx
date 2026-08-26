@@ -164,9 +164,14 @@ export default function CamaraSalida() {
     <div>
       <div className="encabezado-pantalla">
         <h1>Salida de cámara</h1>
-        <Link to="/camara" className="boton">
-          Volver a Cámara
-        </Link>
+        <span className="fila-inline">
+          <Link to="/camara/reporte-salidas" className="boton">
+            📊 Ver salidas por fecha
+          </Link>
+          <Link to="/camara" className="boton">
+            Volver a Cámara
+          </Link>
+        </span>
       </div>
 
       {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}

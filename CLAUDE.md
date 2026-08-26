@@ -2998,3 +2998,90 @@ del producto en Existencias mostró exactamente 50,000 kg, $400.000 de
 costo y $699.000 de valor de venta, calzando con el cálculo manual; los
 subtotales por familia sumaron correctamente los productos de esa
 familia — datos de prueba limpiados después.
+
+## Cámara: fecha de salida, "Reporte de salidas" más visible, filtro de fechas en Existencias, y margen (%) donde faltaba
+Cuatro pedidos del usuario de una vez: "Agregar fecha de salida de cámara,
+buscar entre fechas a la salida de cámara y existencias actuales. Mostrar
+Margen actual en secciones que actualmente no se muestran". Antes de
+programar se preguntó dónde debía ir la fecha de salida, si "buscar entre
+fechas" era algo nuevo o ya existía, cómo debía filtrar por fecha
+Existencias (una foto histórica reconstruida, o filtrar por fecha de
+ingreso de las cajas actuales), y en qué pantallas faltaba mostrar el
+margen — las respuestas revelaron que dos de los cuatro pedidos ya estaban
+resueltos por funcionalidad existente con un problema real de
+"visibilidad", no de funcionalidad faltante.
+
+- **Columna "Salida" en "Revisar entradas"**: a pedido del usuario ("En
+  'Revisar entradas' (Recomendado)"), la tabla de esa pantalla ahora
+  muestra, junto a la fecha de ingreso, la fecha en que cada caja salió
+  completa de cámara (si ya salió) — `GET /api/camara/cajas` calcula esta
+  fecha buscando el `MovimientoCamara` tipo `"salida_completa"` más
+  reciente de cada caja con estado `"salida"`, sin necesitar ningún campo
+  nuevo en la base de datos (se deriva de datos que ya existían).
+- **"Reporte de salidas" ya existía con búsqueda por fechas — el problema
+  era que "mi papá no lo encontró"** entre 9 botones iguales sin ninguna
+  pista de qué hacía cada uno (`Camara.tsx`, antes una sola fila plana de
+  enlaces). Rediseñado como una grilla de tarjetas (`.grilla-camara`,
+  nueva en `styles.css`) agrupadas en dos secciones — "Registrar un
+  movimiento" (Entrada, Salida, Inventario por escaneo) y "Buscar y
+  revisar" (Reporte de salidas, Revisar entradas, Existencias, Ventas por
+  mayor, Ajustes pendientes, Importar) — cada una con una descripción
+  corta de una línea explicando qué muestra. De paso, "Salida de cámara"
+  ahora tiene un enlace directo a "Reporte de salidas" en su propio
+  encabezado, para llegar sin volver al menú de Cámara.
+- **Filtro de fechas en Existencias, por fecha de ingreso**: a pedido del
+  usuario ("Filtrar por fecha de ingreso de las cajas" — no una foto
+  histórica reconstruida, que hubiera sido mucho más complejo y no es lo
+  que pidió). `GET /api/camara/existencias` acepta `desde`/`hasta`
+  opcionales (mismo `rangoFechasDesdeTexto` de siempre) y filtra las cajas
+  activas por `fechaIngreso` antes de agruparlas — sin filtro se sigue
+  viendo todo lo que hay guardado ahora mismo (comportamiento anterior
+  intacto), el filtro es un acotamiento opcional, con un botón "Quitar
+  filtro" para volver a la vista completa.
+- **Margen (%) en las tres pantallas que el usuario eligió** (preguntó
+  cuáles, dio las tres: Carrito de Punto de venta, Existencias de Cámara,
+  Ventas por mayor):
+  - **Existencias**: nueva columna "Margen (%)" en "Cajas disponibles por
+    producto" (y su subtotal por familia), calculada con
+    `calcularMargen(valorVenta, valorCosto)` de cada fila — como ambos ya
+    son kilos × precio/costo por kg, los kilos se cancelan al dividir, así
+    que da el mismo resultado que calcularlo por kilo sin tener que
+    despejarlo aparte. Texto en verde/rojo sin recuadro, mismo criterio ya
+    usado en las tablas densas de Productos y Mejor margen/Combos (el
+    recuadro `.margen-destacado` se reserva para una cifra individual
+    destacada, no para una columna de tabla).
+  - **Ventas por mayor**: nueva columna "Margen (%)", usando el costo neto
+    por kilo de la **caja de cámara de origen** de esa venta
+    (`cajaCamara.costoNetoKg`, agregado a los 6 `include` de
+    `SalidaMayorista` en `server/routes/camara.ts`) contra el precio
+    pactado (`precioTotal ÷ cantidadKg`) — más preciso que un costo
+    genérico del producto, porque usa el costo real del lote que
+    efectivamente se vendió. Si la venta no quedó ligada a una caja
+    (`cajaCamaraId` nulo, ej. datos migrados), muestra "—" en vez de un
+    número inventado.
+  - **Carrito de Punto de venta**: bajo el precio de cada línea (no una
+    columna nueva, a propósito — el carrito ya se había simplificado antes
+    para no volver a necesitar scroll horizontal, ver "Ajustes tras la
+    primera semana de uso real"), una anotación chica "Margen: X%" en
+    verde/rojo, calculada con el último costo de compra del producto
+    (`Producto.ultimoCosto`, de Inventario) contra el precio que se está
+    cobrando en esa línea. Se pide el costo de cada producto nuevo que
+    aparece en el carrito (`GET /api/productos/:id`, que ya lo devuelve) y
+    se cachea en memoria para no volver a pedirlo — si el producto no
+    tiene ninguna compra de Inventario registrada (ej. solo tiene costo de
+    Cámara, un dato distinto), no se muestra nada en vez de un número
+    inventado.
+
+Probado de punta a punta contra el servidor real: crear una caja de prueba
+y confirmar que el filtro de fechas de Existencias la incluye/excluye
+correctamente según el rango elegido (fuera de un rango que no incluye hoy
+desaparece de los totales, dentro de un rango que sí lo incluye aparece con
+sus kilos exactos); con Playwright, la columna Margen de Existencias
+mostró 4,62% para un producto de prueba (calzando con el cálculo manual:
+costo $16.000, venta $19.920 → margen exacto), Ventas por mayor mostró
+17,65%/-6,63% para ventas de prueba reales y "—" para una sin caja de
+origen ligada, y el carrito de Punto de venta mostró "Margen: 32,4%" para
+CHURRASCO DE VACUNO (costo $9.200, precio $14.500 — el mismo caso ya
+verificado en la ficha de producto y en Mejor margen) sin mostrar nada para
+un producto sin costo de Inventario registrado — datos y ventas de prueba
+limpiados después.

@@ -104,6 +104,7 @@ export default function CamaraEntradas() {
             <th>Familia</th>
             <th>Procedencia</th>
             <th>Ingreso</th>
+            <th>Salida</th>
             <th>Peso inicial (kg)</th>
             <th>Saldo (kg)</th>
             <th>Costo/kg</th>
@@ -115,7 +116,7 @@ export default function CamaraEntradas() {
         <tbody>
           {cajas.length === 0 && !cargando && (
             <tr>
-              <td colSpan={11}>Sin cajas en este rango.</td>
+              <td colSpan={12}>Sin cajas en este rango.</td>
             </tr>
           )}
           {cajas.map((c) => (
@@ -125,6 +126,7 @@ export default function CamaraEntradas() {
               <td>{c.familiaNombre}</td>
               <td>{c.procedencia ?? "—"}</td>
               <td>{new Date(c.fechaIngreso).toLocaleString("es-CL")}</td>
+              <td>{c.fechaSalida ? new Date(c.fechaSalida).toLocaleString("es-CL") : "—"}</td>
               <td>{c.pesoInicialKg.toFixed(3)}</td>
               <td>{c.saldoKg.toFixed(3)}</td>
               <td>{formatoCLP(c.costoNetoKg)}</td>

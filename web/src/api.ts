@@ -53,6 +53,9 @@ export interface CajaCamara {
   familiaNombre: string;
   procedencia: string | null;
   fechaIngreso: string;
+  // Solo viene en la respuesta de "Revisar entradas" (GET /api/camara/cajas)
+  // — cuándo salió por completo esta caja, si su estado actual es "salida".
+  fechaSalida?: string | null;
   pesoInicialKg: number;
   saldoKg: number;
   costoNetoKg: number;
@@ -175,6 +178,7 @@ export interface SalidaMayorista {
   estadoPago: "pagado" | "pendiente";
   clienteNombre: string | null;
   cajaCamaraId: number | null;
+  cajaCamara: { costoNetoKg: number } | null;
   usuarioId: number;
   usuario: Usuario;
   observaciones: string | null;
@@ -1067,7 +1071,13 @@ export const api = {
     ) => put<{ lote: LoteCamara; cajas: CajaCamara[] }>(`/api/camara/lotes/${id}`, data),
     anularLote: (id: number, usuarioId: number, clave: string, motivo: string) =>
       post<{ cajas: CajaCamara[] }>(`/api/camara/lotes/${id}/anular`, { usuarioId, clave, motivo }),
-    existencias: () => get<ExistenciasCamara>("/api/camara/existencias"),
+    existencias: (params: { desde?: string; hasta?: string } = {}) => {
+      const qs = new URLSearchParams();
+      if (params.desde) qs.set("desde", params.desde);
+      if (params.hasta) qs.set("hasta", params.hasta);
+      const query = qs.toString();
+      return get<ExistenciasCamara>(`/api/camara/existencias${query ? `?${query}` : ""}`);
+    },
     reporteSalidas: (params: { desde?: string; hasta?: string } = {}) => {
       const qs = new URLSearchParams();
       if (params.desde) qs.set("desde", params.desde);

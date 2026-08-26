@@ -316,7 +316,27 @@ camaraRouter.get("/cajas", async (req, res) => {
     include: cajaConIncludes,
     orderBy: { fechaIngreso: "desc" },
   });
-  res.json(cajas);
+
+  // "Fecha de salida" — a pedido del usuario, para ver de un vistazo en
+  // "Revisar entradas" cuándo salió por completo una caja, junto a su
+  // fecha de ingreso. Solo aplica a las que están efectivamente "salida"
+  // ahora mismo — se busca el movimiento que la dejó así (el más reciente
+  // "salida_completa" de esa caja, por si alguna vez se reactivó y volvió
+  // a salir del todo).
+  const idsSalida = cajas.filter((c) => c.estado === "salida").map((c) => c.id);
+  const fechasSalidaPorCaja = new Map<number, Date>();
+  if (idsSalida.length) {
+    const movimientos = await prisma.movimientoCamara.findMany({
+      where: { cajaId: { in: idsSalida }, tipo: "salida_completa" },
+      orderBy: { creadoEn: "desc" },
+      select: { cajaId: true, creadoEn: true },
+    });
+    for (const m of movimientos) {
+      if (!fechasSalidaPorCaja.has(m.cajaId)) fechasSalidaPorCaja.set(m.cajaId, m.creadoEn);
+    }
+  }
+
+  res.json(cajas.map((c) => ({ ...c, fechaSalida: fechasSalidaPorCaja.get(c.id) ?? null })));
 });
 
 camaraRouter.get("/cajas/:id", async (req, res) => {
@@ -621,9 +641,20 @@ const UMBRAL_STOCK_BAJO_CAJAS = 2;
 // tiempo en cámara se marca como "estancada" — para no dejarla olvidada.
 const UNA_SEMANA_MS = 7 * 24 * 60 * 60 * 1000;
 
-camaraRouter.get("/existencias", async (_req, res) => {
+camaraRouter.get("/existencias", async (req, res) => {
+  // Filtro opcional por fecha de INGRESO de las cajas — a pedido del
+  // usuario, para poder ver, por ejemplo, solo lo que entró en cierto mes,
+  // en vez de siempre todo lo que hay guardado ahora mismo. Existencias
+  // sigue siendo una foto del stock actual (no un historial reconstruido a
+  // una fecha pasada) — este filtro solo decide QUÉ cajas activas entran
+  // en el cálculo, según cuándo ingresaron.
+  const hayRangoFechas = req.query.desde != null || req.query.hasta != null;
+  const { desde, hasta } = rangoFechasDesdeTexto(req.query.desde, req.query.hasta);
   const cajas = await prisma.cajaCamara.findMany({
-    where: { estado: { in: [...ESTADOS_ACTIVOS] } },
+    where: {
+      estado: { in: [...ESTADOS_ACTIVOS] },
+      ...(hayRangoFechas ? { fechaIngreso: { gte: desde, lte: hasta } } : {}),
+    },
     include: { producto: true },
   });
   const totalCajas = cajas.length;
@@ -814,7 +845,7 @@ async function resultadoSalidaPorClave(claveIdempotencia: string) {
   if (movimiento.referenciaTipo === "SalidaMayorista" && movimiento.referenciaId) {
     salidaMayorista = await prisma.salidaMayorista.findUnique({
       where: { id: movimiento.referenciaId },
-      include: { producto: true, usuario: true, usuarioAnulacion: true },
+      include: { producto: true, usuario: true, usuarioAnulacion: true, cajaCamara: { select: { costoNetoKg: true } } },
     });
   }
   return { caja, movimiento, salidaMayorista };
@@ -901,7 +932,7 @@ camaraRouter.post("/cajas/:id/salida", async (req, res) => {
           usuarioId,
           observaciones: motivo || null,
         },
-        include: { producto: true, usuario: true, usuarioAnulacion: true },
+        include: { producto: true, usuario: true, usuarioAnulacion: true, cajaCamara: { select: { costoNetoKg: true } } },
       });
       referenciaTipo = "SalidaMayorista";
       referenciaId = salidaMayorista.id;
@@ -956,7 +987,7 @@ camaraRouter.get("/mayoristas", async (req, res) => {
       fecha: { gte: desde, lte: hasta },
       ...(estadoPago ? { estadoPago } : {}),
     },
-    include: { producto: true, usuario: true, usuarioAnulacion: true },
+    include: { producto: true, usuario: true, usuarioAnulacion: true, cajaCamara: { select: { costoNetoKg: true } } },
     orderBy: { fecha: "desc" },
   });
   res.json(salidas);
@@ -982,7 +1013,7 @@ camaraRouter.put("/mayoristas/:id/estado-pago", async (req, res) => {
   const actualizada = await prisma.salidaMayorista.update({
     where: { id: salida.id },
     data: { estadoPago: parsed.data.estadoPago },
-    include: { producto: true, usuario: true, usuarioAnulacion: true },
+    include: { producto: true, usuario: true, usuarioAnulacion: true, cajaCamara: { select: { costoNetoKg: true } } },
   });
   res.json(actualizada);
 });
@@ -1018,7 +1049,7 @@ camaraRouter.put("/mayoristas/:id", async (req, res) => {
   const actualizada = await prisma.salidaMayorista.update({
     where: { id: salida.id },
     data: { clienteNombre: clienteNombre || null, precioTotal, observaciones: observaciones || null },
-    include: { producto: true, usuario: true, usuarioAnulacion: true },
+    include: { producto: true, usuario: true, usuarioAnulacion: true, cajaCamara: { select: { costoNetoKg: true } } },
   });
   res.json(actualizada);
 });
@@ -1090,7 +1121,7 @@ camaraRouter.post("/mayoristas/:id/anular", async (req, res) => {
         motivoAnulacion: motivo,
         fechaAnulacion: new Date(),
       },
-      include: { producto: true, usuario: true, usuarioAnulacion: true },
+      include: { producto: true, usuario: true, usuarioAnulacion: true, cajaCamara: { select: { costoNetoKg: true } } },
     });
     const movimientoReversion = await tx.movimientoCamara.create({
       data: {

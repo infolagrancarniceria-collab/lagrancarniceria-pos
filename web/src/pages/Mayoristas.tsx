@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, formatoCLP, type SalidaMayorista } from "../api";
+import { api, formatoCLP, calcularMargen, type SalidaMayorista } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
 import ModalConfirmarClave from "../components/ModalConfirmarClave";
 import ModalAlerta from "../components/ModalAlerta";
@@ -156,6 +156,7 @@ export default function Mayoristas() {
             <th>Cliente</th>
             <th>Cantidad (kg)</th>
             <th>Total</th>
+            <th>Margen (%)</th>
             <th>Estado</th>
             <th>Registró</th>
             <th></th>
@@ -164,7 +165,7 @@ export default function Mayoristas() {
         <tbody>
           {salidas.length === 0 && (
             <tr>
-              <td colSpan={8} className="ayuda">
+              <td colSpan={9} className="ayuda">
                 Sin ventas por mayor en este rango.
               </td>
             </tr>
@@ -177,6 +178,18 @@ export default function Mayoristas() {
                 <td>{s.clienteNombre || "—"}</td>
                 <td>{s.cantidadKg.toFixed(3)}</td>
                 <td>{formatoCLP(s.precioTotal)}</td>
+                <td>
+                  {(() => {
+                    const costoNetoKg = s.cajaCamara?.costoNetoKg ?? null;
+                    if (costoNetoKg == null || !s.cantidadKg) return "—";
+                    const margen = calcularMargen(s.precioTotal / s.cantidadKg, costoNetoKg);
+                    return margen != null ? (
+                      <strong className={margen < 0 ? "error" : "exito"}>{margen.toFixed(2)}%</strong>
+                    ) : (
+                      "—"
+                    );
+                  })()}
+                </td>
                 <td className={s.anulada ? "" : s.estadoPago === "pagado" ? "exito" : "error"}>
                   {s.anulada ? "Anulada" : s.estadoPago === "pagado" ? "Pagado" : "Pendiente"}
                 </td>
@@ -208,7 +221,7 @@ export default function Mayoristas() {
               </tr>
               {editandoId === s.id && (
                 <tr>
-                  <td colSpan={8}>
+                  <td colSpan={9}>
                     <div className="fila-inline">
                       <label className="ayuda">
                         Cliente
@@ -253,7 +266,7 @@ export default function Mayoristas() {
               )}
               {s.anulada && (
                 <tr>
-                  <td colSpan={8} className="ayuda">
+                  <td colSpan={9} className="ayuda">
                     Anulada por {s.usuarioAnulacion?.nombre ?? "—"}
                     {s.fechaAnulacion ? ` el ${new Date(s.fechaAnulacion).toLocaleString("es-CL")}` : ""} — motivo:{" "}
                     {s.motivoAnulacion || "sin especificar"}

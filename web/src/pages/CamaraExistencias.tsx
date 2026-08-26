@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import {
   api,
   formatoCLP,
+  calcularMargen,
   FAMILIAS_CAMARA,
   PROCEDENCIAS_VACUNO,
   type CajaCamara,
@@ -20,6 +21,16 @@ import { mostrarToast } from "../lib/toast";
 import ModalAlerta from "../components/ModalAlerta";
 
 const MOTIVOS_ANULAR_LOTE = ["Lote de prueba", "Entrada duplicada", "Datos incorrectos"];
+
+function fechaHace(dias: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - dias);
+  return d.toISOString().slice(0, 10);
+}
+
+function hoy(): string {
+  return new Date().toISOString().slice(0, 10);
+}
 
 interface FormularioCorreccion {
   familia: FamiliaCamara;
@@ -56,6 +67,9 @@ export default function CamaraExistencias() {
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(false);
 
+  const [desde, setDesde] = useState("");
+  const [hasta, setHasta] = useState("");
+
   const [corrigiendoId, setCorrigiendoId] = useState<number | null>(null);
   const [formCorreccion, setFormCorreccion] = useState<FormularioCorreccion | null>(null);
   const [guardandoCorreccion, setGuardandoCorreccion] = useState(false);
@@ -66,11 +80,16 @@ export default function CamaraExistencias() {
   const [imprimiendoId, setImprimiendoId] = useState<number | null>(null);
   const [imprimiendoLote, setImprimiendoLote] = useState(false);
 
-  async function cargar() {
+  async function cargar(filtro?: { desde: string; hasta: string }, e?: React.FormEvent) {
+    e?.preventDefault();
+    const f = filtro ?? { desde, hasta };
     setError(null);
     setCargando(true);
     try {
-      const [existenciasData, lotesData] = await Promise.all([api.camara.existencias(), api.camara.lotes()]);
+      const [existenciasData, lotesData] = await Promise.all([
+        api.camara.existencias({ desde: f.desde || undefined, hasta: f.hasta || undefined }),
+        api.camara.lotes(),
+      ]);
       setExistencias(existenciasData);
       setLotes(lotesData);
     } catch (e) {
@@ -82,7 +101,14 @@ export default function CamaraExistencias() {
 
   useEffect(() => {
     cargar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  function limpiarFiltroFechas() {
+    setDesde("");
+    setHasta("");
+    cargar({ desde: "", hasta: "" });
+  }
 
   // Agrupa por familia con subtotal, igual que ya lo mostraba el sistema
   // que usaba el papá del usuario.
@@ -243,6 +269,25 @@ export default function CamaraExistencias() {
         </Link>
       </div>
       {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
+
+      <form onSubmit={(e) => cargar(undefined, e)} className="fila-inline">
+        <label>
+          Ingresadas desde <input type="date" value={desde} onChange={(e) => setDesde(e.target.value)} />
+        </label>
+        <label>
+          Hasta <input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} />
+        </label>
+        <button type="submit">{cargando ? "Buscando..." : "Filtrar"}</button>
+        {(desde || hasta) && (
+          <button type="button" className="boton" onClick={limpiarFiltroFechas}>
+            Quitar filtro
+          </button>
+        )}
+      </form>
+      <p className="ayuda">
+        Sin filtro se muestra todo lo que hay guardado ahora en cámara. El filtro se aplica sobre la fecha en que cada
+        caja ingresó.
+      </p>
       {cargando && <p>Cargando...</p>}
 
       {existencias && (
@@ -274,13 +319,14 @@ export default function CamaraExistencias() {
             <th>Kilos</th>
             <th>Valor (costo)</th>
             <th>Valor (venta)</th>
+            <th>Margen (%)</th>
             <th>Costo/kg últimas 2 compras</th>
           </tr>
         </thead>
         <tbody>
           {existencias?.porProducto.length === 0 && (
             <tr>
-              <td colSpan={7}>No hay cajas disponibles en cámara.</td>
+              <td colSpan={8}>No hay cajas disponibles en cámara.</td>
             </tr>
           )}
           {familias.map((familia) => {
@@ -289,41 +335,63 @@ export default function CamaraExistencias() {
             const subtotalKilos = filas.reduce((s, g) => s + g.kilos, 0);
             const subtotalValorCosto = filas.reduce((s, g) => s + g.valorCosto, 0);
             const subtotalValorVenta = filas.reduce((s, g) => s + g.valorVenta, 0);
+            const margenSubtotal = calcularMargen(subtotalValorVenta, subtotalValorCosto);
             return (
               <Fragment key={familia}>
-                {filas.map((g) => (
-                  <tr key={`${g.familia}-${g.producto}`} className={g.bajoStock ? "fila-error" : ""}>
-                    <td>
-                      <b>{g.familia}</b>
-                    </td>
-                    <td>{g.producto}</td>
-                    <td>
-                      <b>{g.cajas}</b>
-                      {g.bajoStock && " (stock bajo)"}
-                    </td>
-                    <td>{g.kilos.toFixed(3)} kg</td>
-                    <td>{formatoCLP(g.valorCosto)}</td>
-                    <td>{formatoCLP(g.valorVenta)}</td>
-                    <td>
-                      {g.ultimosCostos.length === 0 ? (
-                        "—"
-                      ) : (
-                        <>
-                          {formatoCLP(g.ultimosCostos[0])}
-                          {g.ultimosCostos.length > 1 && (
-                            <span className="ayuda"> (antes {formatoCLP(g.ultimosCostos[1])})</span>
-                          )}
-                        </>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                {filas.map((g) => {
+                  // valorVenta y valorCosto ya son kilos × precio/costo por kg —
+                  // al dividir uno sobre el otro los kilos se cancelan, así que
+                  // calcularMargen(total venta, total costo) da el mismo margen
+                  // (%) que si se calculara por kilo, sin tener que despejarlo.
+                  const margen = calcularMargen(g.valorVenta, g.valorCosto);
+                  return (
+                    <tr key={`${g.familia}-${g.producto}`} className={g.bajoStock ? "fila-error" : ""}>
+                      <td>
+                        <b>{g.familia}</b>
+                      </td>
+                      <td>{g.producto}</td>
+                      <td>
+                        <b>{g.cajas}</b>
+                        {g.bajoStock && " (stock bajo)"}
+                      </td>
+                      <td>{g.kilos.toFixed(3)} kg</td>
+                      <td>{formatoCLP(g.valorCosto)}</td>
+                      <td>{formatoCLP(g.valorVenta)}</td>
+                      <td>
+                        {margen != null ? (
+                          <strong className={margen < 0 ? "error" : "exito"}>{margen.toFixed(2)}%</strong>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td>
+                        {g.ultimosCostos.length === 0 ? (
+                          "—"
+                        ) : (
+                          <>
+                            {formatoCLP(g.ultimosCostos[0])}
+                            {g.ultimosCostos.length > 1 && (
+                              <span className="ayuda"> (antes {formatoCLP(g.ultimosCostos[1])})</span>
+                            )}
+                          </>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
                 <tr className="fila-total">
                   <td colSpan={2}>Total {familia}</td>
                   <td>{subtotalCajas}</td>
                   <td>{subtotalKilos.toFixed(3)} kg</td>
                   <td>{formatoCLP(subtotalValorCosto)}</td>
                   <td>{formatoCLP(subtotalValorVenta)}</td>
+                  <td>
+                    {margenSubtotal != null ? (
+                      <strong className={margenSubtotal < 0 ? "error" : "exito"}>{margenSubtotal.toFixed(2)}%</strong>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
                   <td></td>
                 </tr>
               </Fragment>
