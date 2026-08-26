@@ -4,6 +4,7 @@ import { parse } from "csv-parse/sync";
 import { z } from "zod";
 import { prisma } from "../db";
 import { obtenerIdsCategoriaYDescendientes } from "../lib/categorias";
+import { sincronizarCatalogoConWeb } from "../lib/syncWeb";
 
 export const productosRouter = Router();
 // Límite de tamaño explícito (antes no había ninguno, sin querer permitía
@@ -184,6 +185,9 @@ const productoBaseSchema = z.object({
   codigoProveedor: z.string().trim().optional().nullable(),
   umbralStockBajo: z.number().min(0).optional().nullable(),
   precioMayor: z.number().positive().optional().nullable(),
+  // Familia para el selector de corte en la web (ej. "Vacuno", "Cerdo") —
+  // null si el producto no debe mostrar selector de corte.
+  familiaCorte: z.string().trim().optional().nullable(),
 });
 
 function validarCodigoBarrasVsFlag(data: {
@@ -227,6 +231,7 @@ productosRouter.post("/", async (req, res) => {
     data: { ...data, codigoBarras: data.codigoBarras || null },
     include: { categoria: true },
   });
+  void sincronizarCatalogoConWeb();
   res.status(201).json(producto);
 });
 
@@ -265,6 +270,7 @@ productosRouter.put("/:id", async (req, res) => {
     data: { ...data, codigoBarras: data.codigoBarras || null },
     include: { categoria: true },
   });
+  void sincronizarCatalogoConWeb();
   res.json(producto);
 });
 
@@ -274,6 +280,7 @@ productosRouter.delete("/:id", async (req, res) => {
   if (!existente) return res.status(404).json({ error: "Producto no encontrado" });
 
   await prisma.producto.update({ where: { id }, data: { activo: false } });
+  void sincronizarCatalogoConWeb();
   res.status(204).send();
 });
 
@@ -291,6 +298,35 @@ productosRouter.post("/:id/reactivar", async (req, res) => {
     data: { activo: true },
     include: { categoria: true },
   });
+  void sincronizarCatalogoConWeb();
+  res.json(producto);
+});
+
+// Toggle rápido de visibilidad en la web (pantalla "Productos" — dos
+// casillas: "Oculto" y "Fuera de stock"). Separado del PUT normal a
+// propósito, para no obligar a mandar todos los demás campos del producto
+// solo para tildar una casilla.
+const webVisibilidadSchema = z.object({
+  visibleEnWeb: z.boolean().optional(),
+  agotadoWeb: z.boolean().optional(),
+});
+
+productosRouter.put("/:id/web", async (req, res) => {
+  const id = Number(req.params.id);
+  const existente = await prisma.producto.findUnique({ where: { id } });
+  if (!existente) return res.status(404).json({ error: "Producto no encontrado" });
+
+  const parsed = webVisibilidadSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0].message });
+  }
+
+  const producto = await prisma.producto.update({
+    where: { id },
+    data: parsed.data,
+    include: { categoria: true },
+  });
+  void sincronizarCatalogoConWeb();
   res.json(producto);
 });
 
@@ -339,6 +375,7 @@ productosRouter.post("/categorizar-masivo", async (req, res) => {
     where: { id: { in: productoIds } },
     data: { categoriaId },
   });
+  void sincronizarCatalogoConWeb();
   res.json({ actualizados: resultado.count });
 });
 
@@ -360,6 +397,7 @@ productosRouter.post("/eliminar-masivo", async (req, res) => {
     where: { id: { in: parsed.data.productoIds } },
     data: { activo: false },
   });
+  void sincronizarCatalogoConWeb();
   res.json({ eliminados: resultado.count });
 });
 
@@ -479,5 +517,6 @@ productosRouter.post("/importar-csv", upload.single("archivo"), async (req, res)
     )
   );
 
+  void sincronizarCatalogoConWeb();
   res.json({ previsualizacion: false, filas, creados: creados.length });
 });

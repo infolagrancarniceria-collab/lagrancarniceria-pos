@@ -1,6 +1,14 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { api, calcularMargen, formatoCLP, type Categoria, type FlagBalanza, type ProductoConCosto } from "../api";
+import {
+  api,
+  calcularMargen,
+  formatoCLP,
+  FAMILIAS_CAMARA,
+  type Categoria,
+  type FlagBalanza,
+  type ProductoConCosto,
+} from "../api";
 import SelectorCategoria from "../components/SelectorCategoria";
 import { useUsuario } from "../context/UsuarioContext";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
@@ -24,6 +32,7 @@ interface FormState {
   duracion: string;
   codigoProveedor: string;
   umbralStockBajo: string;
+  familiaCorte: string;
 }
 
 const formVacio: FormState = {
@@ -43,6 +52,7 @@ const formVacio: FormState = {
   duracion: "",
   codigoProveedor: "",
   umbralStockBajo: "",
+  familiaCorte: "",
 };
 
 export default function ProductoForm() {
@@ -98,6 +108,7 @@ export default function ProductoForm() {
           duracion: p.duracion ?? "",
           codigoProveedor: p.codigoProveedor ?? "",
           umbralStockBajo: p.umbralStockBajo != null ? String(p.umbralStockBajo) : "",
+          familiaCorte: p.familiaCorte ?? "",
         });
       })
       .catch((e) => setError(e.message));
@@ -133,6 +144,7 @@ export default function ProductoForm() {
       codigoProveedor: form.codigoProveedor.trim() || null,
       umbralStockBajo: form.umbralStockBajo ? Number(form.umbralStockBajo) : null,
       precioMayor: form.precioMayor ? Number(form.precioMayor) : null,
+      familiaCorte: form.familiaCorte || null,
     };
 
     setGuardando(true);
@@ -360,6 +372,21 @@ export default function ProductoForm() {
             value={form.umbralStockBajo}
             onChange={(e) => actualizarCampo("umbralStockBajo", e.target.value)}
           />
+        </label>
+        <label>
+          Familia de corte (página web)
+          <select value={form.familiaCorte} onChange={(e) => actualizarCampo("familiaCorte", e.target.value)}>
+            <option value="">Sin selector de corte</option>
+            {FAMILIAS_CAMARA.map((f) => (
+              <option key={f} value={f}>
+                {f}
+              </option>
+            ))}
+          </select>
+          <span className="ayuda">
+            Si eliges una familia, en la web este producto muestra las opciones de corte configuradas para esa
+            familia (Bifes, Trozo entero, Molida, etc. — ver Comunas → Opciones de corte).
+          </span>
         </label>
 
         <div className="acciones-formulario">

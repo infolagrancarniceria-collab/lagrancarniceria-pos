@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, formatoCLP, type Comuna } from "../api";
+import { api, FAMILIAS_CAMARA, type Comuna, type CorteOpcion, formatoCLP } from "../api";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 import ModalAlerta from "../components/ModalAlerta";
 
@@ -14,11 +14,21 @@ export default function Comunas() {
   const [editNombre, setEditNombre] = useState("");
   const [editCosto, setEditCosto] = useState("");
 
+  const [cortes, setCortes] = useState<CorteOpcion[]>([]);
+  const [corteFamilia, setCorteFamilia] = useState<string>(FAMILIAS_CAMARA[0]);
+  const [corteNombre, setCorteNombre] = useState("");
+  const [errorCortes, setErrorCortes] = useState<string | null>(null);
+
   function cargar() {
     api.comunas.listar().then(setComunas).catch((e) => setError(e.message));
   }
 
+  function cargarCortes() {
+    api.cortes.listar().then(setCortes).catch((e) => setErrorCortes(e.message));
+  }
+
   useEffect(cargar, []);
+  useEffect(cargarCortes, []);
 
   async function crear(e: React.FormEvent) {
     e.preventDefault();
@@ -70,6 +80,33 @@ export default function Comunas() {
       cargar();
     } catch (e) {
       setError((e as Error).message);
+    }
+  }
+
+  async function crearCorte(e: React.FormEvent) {
+    e.preventDefault();
+    setErrorCortes(null);
+    if (!corteNombre.trim()) {
+      setErrorCortes("Falta el nombre del corte");
+      return;
+    }
+    try {
+      await api.cortes.crear({ familia: corteFamilia, nombre: corteNombre.trim(), orden: cortes.length });
+      setCorteNombre("");
+      cargarCortes();
+    } catch (e) {
+      setErrorCortes((e as Error).message);
+    }
+  }
+
+  async function eliminarCorte(id: number) {
+    const confirmado = window.confirm("¿Eliminar esta opción de corte? Deja de mostrarse en la web.");
+    if (!confirmado) return;
+    try {
+      await api.cortes.eliminar(id);
+      cargarCortes();
+    } catch (e) {
+      setErrorCortes((e as Error).message);
     }
   }
 
@@ -147,6 +184,72 @@ export default function Comunas() {
           {comunas.length === 0 && (
             <tr>
               <td colSpan={3}>Todavía no hay comunas creadas.</td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+
+      <h1>Opciones de corte (página web)</h1>
+      <p className="ayuda">
+        Para cada familia (Vacuno, Cerdo, etc.), las opciones de corte que se muestran en la web cuando un producto
+        tiene esa familia asignada (ver "Familia de corte" en la ficha de un producto). Ej. familia Vacuno: Bifes,
+        Trozo entero, Molida, Parrilla.
+      </p>
+      {errorCortes && <ModalAlerta mensaje={errorCortes} onCerrar={() => setErrorCortes(null)} />}
+
+      <section className="tarjeta">
+        <h2>Nueva opción de corte</h2>
+        <form onSubmit={crearCorte} onKeyDown={manejarEnterComoTab} className="formulario">
+          <label>
+            Familia
+            <select value={corteFamilia} onChange={(e) => setCorteFamilia(e.target.value)}>
+              {FAMILIAS_CAMARA.map((f) => (
+                <option key={f} value={f}>
+                  {f}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Nombre del corte
+            <input
+              value={corteNombre}
+              onChange={(e) => setCorteNombre(e.target.value)}
+              placeholder="ej. Bifes, Molida, Parrilla"
+              required
+            />
+          </label>
+          <div className="acciones-formulario">
+            <button type="submit" className="boton boton-primario">
+              Agregar opción de corte
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <table className="tabla">
+        <thead>
+          <tr>
+            <th>Familia</th>
+            <th>Corte</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {cortes.map((c) => (
+            <tr key={c.id}>
+              <td>{c.familia}</td>
+              <td>{c.nombre}</td>
+              <td className="fila-inline">
+                <button type="button" className="boton-quitar-item" title="Eliminar" onClick={() => eliminarCorte(c.id)}>
+                  ✕
+                </button>
+              </td>
+            </tr>
+          ))}
+          {cortes.length === 0 && (
+            <tr>
+              <td colSpan={3}>Todavía no hay opciones de corte creadas.</td>
             </tr>
           )}
         </tbody>

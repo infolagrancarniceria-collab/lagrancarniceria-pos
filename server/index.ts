@@ -25,7 +25,10 @@ import { balanzaRouter } from "./routes/balanza";
 import { gastosRouter } from "./routes/gastos";
 import { comunasRouter } from "./routes/comunas";
 import { camaraRouter } from "./routes/camara";
+import { cortesRouter } from "./routes/cortes";
+import { pedidosWebRouter } from "./routes/pedidosWeb";
 import { aplicarMigracionesPendientes, reconstruirLotesCamaraFaltantes } from "./lib/migraciones";
+import { iniciarSyncWeb } from "./lib/syncWeb";
 
 const app = express();
 const PORT = Number(process.env.PORT) || 5175;
@@ -91,6 +94,8 @@ app.use("/api/balanza", balanzaRouter);
 app.use("/api/gastos", gastosRouter);
 app.use("/api/comunas", comunasRouter);
 app.use("/api/camara", camaraRouter);
+app.use("/api/cortes", cortesRouter);
+app.use("/api/pedidos-web", pedidosWebRouter);
 
 // En producción, el mismo servidor sirve la interfaz web ya compilada
 // (así la tablet/celular en la red del local también puede entrar por navegador).
@@ -125,6 +130,10 @@ export async function iniciarServidor(): Promise<void> {
   // detalle de por qué es seguro y por qué no hace falta hacerlo desde una
   // migración .sql.
   await reconstruirLotesCamaraFaltantes();
+  // No se espera (no lleva await): el primer ciclo de sync corre en segundo
+  // plano y no debe demorar el arranque del servidor si la web tarda o no
+  // responde.
+  iniciarSyncWeb();
 
   return new Promise((resolve) => {
     app.listen(PORT, "0.0.0.0", () => {

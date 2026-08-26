@@ -41,6 +41,7 @@ model Usuario {
   escaneosCamara              EscaneoInventarioCamara[]
   salidasMayoristaRegistradas SalidaMayorista[]
   salidasMayoristaAnuladas    SalidaMayorista[] @relation("SalidasMayoristasAnuladasPorUsuario")
+  pedidosWebAtendidos         PedidoWeb[]
 }
 
 // Gastos generales del negocio (sueldos, luz, agua, arriendo, etc.) —
@@ -110,6 +111,24 @@ model Producto {
   activo        Boolean  @default(true)
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
+
+  // --- Página web (lagrancarniceria.com) ---
+  // Independiente de "activo" (que es el estado general del POS): un
+  // producto puede seguir activo en el POS pero no publicarse en la web.
+  visibleEnWeb Boolean @default(true)
+  // Toggle manual e independiente del stock interno (stockActual) — el
+  // conteo de inventario no es lo bastante granular/inmediato para todos
+  // los productos como para decidir solo, así que "agotado en la web" lo
+  // marca el cajero a mano.
+  agotadoWeb Boolean @default(false)
+
+  // Familia para el selector de corte en la web (Bifes, trozo entero,
+  // medallones, picada, molida, parrilla, otros) — mismo patrón de string
+  // libre que familiaNombre en Cámara (ver CajaCamara/LoteCamara), en vez
+  // de un enum: SQLite no los soporta nativamente. Null = el producto no
+  // muestra selector de corte. Las opciones válidas para cada familia
+  // viven en CorteOpcion.
+  familiaCorte String?
 
   // Se actualiza solo con cada movimiento de inventario (entrada/salida);
   // no se edita a mano desde la ficha del producto.
@@ -247,6 +266,20 @@ model SesionCaja {
   cobrosDeCredito PagoVenta[] @relation("CobrosDeCredito")
 }
 
+// Opciones de corte que se muestran en la web para una familia de producto
+// (ej. familia "Vacuno": Bifes, Trozo entero, Medallones, Picada, Molida,
+// Parrilla, Otros). Estándar por familia, no por producto individual — se
+// asignan a un producto a través de Producto.familiaCorte.
+model CorteOpcion {
+  id      Int     @id @default(autoincrement())
+  familia String
+  nombre  String
+  orden   Int     @default(0)
+  activo  Boolean @default(true)
+
+  @@unique([familia, nombre])
+}
+
 // Lista fija de comunas a las que se hace despacho, con su costo de envío
 // predefinido (evita que el cajero tenga que escribirlo/tipear la comuna
 // cada vez, y permite sacar estadísticas por comuna).
@@ -349,6 +382,41 @@ model PagoVenta {
   usuarioCobroId    Int?
   usuarioCobro      Usuario?    @relation("CobrosDeCreditoRegistradosPorUsuario", fields: [usuarioCobroId], references: [id])
   fechaCobro        DateTime?
+}
+
+// Copia local de los pedidos armados en la página web (cotización de
+// despacho) — se trae mediante el módulo de sync (no se generan acá). No
+// reemplaza a Venta ni se liquida contra Producto: es solo el registro de
+// lo que el cliente pidió por la web, para que el equipo lo revise y
+// coordine, igual que antes se revisaba a mano la planilla de Google
+// Sheets. "idWeb" evita duplicar un pedido si el sync se reintenta.
+model PedidoWeb {
+  id    Int    @id @default(autoincrement())
+  idWeb String @unique
+
+  fecha DateTime
+
+  clienteNombre    String
+  clienteTelefono  String
+  clienteDireccion String
+  comunaNombre     String
+  costoEnvio       Float
+
+  // JSON con el detalle de productos pedidos (nombre, corte elegido,
+  // cantidad aproximada en kg/unidad) — solo para mostrar, no hay relación
+  // con Producto porque el pedido puede referirse a un catálogo que ya
+  // cambió para cuando se revisa.
+  itemsJson String
+
+  comentario String?
+
+  estado String @default("pendiente") // "pendiente" | "atendido" | "anulado"
+
+  atendidoPorId Int?
+  atendidoPor   Usuario?  @relation(fields: [atendidoPorId], references: [id])
+  atendidoEn    DateTime?
+
+  sincronizadoEn DateTime @default(now())
 }
 
 // --- Módulo de Cámara Frigorífica ---

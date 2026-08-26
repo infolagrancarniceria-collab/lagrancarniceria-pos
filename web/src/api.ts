@@ -35,6 +35,41 @@ export interface Producto {
   activo: boolean;
   stockActual: number;
   umbralStockBajo: number | null;
+  // --- Página web ---
+  visibleEnWeb: boolean;
+  agotadoWeb: boolean;
+  familiaCorte: string | null;
+}
+
+export interface CorteOpcion {
+  id: number;
+  familia: string;
+  nombre: string;
+  orden: number;
+}
+
+export interface PedidoWebItem {
+  descripcion: string;
+  corte: string | null;
+  cantidad: number;
+  unidad: "kg" | "unidad";
+}
+
+export interface PedidoWeb {
+  id: number;
+  idWeb: string;
+  fecha: string;
+  clienteNombre: string;
+  clienteTelefono: string;
+  clienteDireccion: string;
+  comunaNombre: string;
+  costoEnvio: number;
+  items: PedidoWebItem[];
+  comentario: string | null;
+  estado: "pendiente" | "atendido" | "anulado";
+  atendidoPorId: number | null;
+  atendidoEn: string | null;
+  sincronizadoEn: string;
 }
 
 export type FamiliaCamara = "Vacuno" | "Cerdo" | "Pollo" | "Otros";
@@ -701,13 +736,19 @@ export const api = {
       const query = qs.toString();
       return get<ProductoConCosto[]>(`/api/productos/margenes${query ? `?${query}` : ""}`);
     },
-    crear: (data: Omit<Producto, "id" | "categoria" | "activo" | "stockActual">) =>
-      post<Producto>("/api/productos", data),
+    crear: (
+      data: Omit<Producto, "id" | "categoria" | "activo" | "stockActual" | "visibleEnWeb" | "agotadoWeb">
+    ) => post<Producto>("/api/productos", data),
     actualizar: (
       id: number,
-      data: Omit<Producto, "id" | "categoria" | "activo" | "precio" | "stockActual">
+      data: Omit<
+        Producto,
+        "id" | "categoria" | "activo" | "precio" | "stockActual" | "visibleEnWeb" | "agotadoWeb"
+      >
     ) => put<Producto>(`/api/productos/${id}`, data),
     eliminar: (id: number) => del<void>(`/api/productos/${id}`),
+    actualizarVisibilidadWeb: (id: number, data: { visibleEnWeb?: boolean; agotadoWeb?: boolean }) =>
+      put<Producto>(`/api/productos/${id}/web`, data),
     categorizarMasivo: (productoIds: number[], categoriaId: number) =>
       post<{ actualizados: number }>("/api/productos/categorizar-masivo", { productoIds, categoriaId }),
     eliminarMasivo: (productoIds: number[]) =>
@@ -779,6 +820,20 @@ export const api = {
     actualizar: (id: number, data: { nombre: string; costoEnvio: number }) =>
       put<Comuna>(`/api/comunas/${id}`, data),
     eliminar: (id: number) => del<void>(`/api/comunas/${id}`),
+  },
+  cortes: {
+    listar: () => get<CorteOpcion[]>("/api/cortes"),
+    crear: (data: { familia: string; nombre: string; orden?: number }) =>
+      post<CorteOpcion>("/api/cortes", data),
+    actualizar: (id: number, data: { familia: string; nombre: string; orden?: number }) =>
+      put<CorteOpcion>(`/api/cortes/${id}`, data),
+    eliminar: (id: number) => del<void>(`/api/cortes/${id}`),
+  },
+  pedidosWeb: {
+    listar: (estado?: "pendiente" | "atendido" | "anulado") =>
+      get<PedidoWeb[]>(`/api/pedidos-web${estado ? `?estado=${estado}` : ""}`),
+    marcarAtendido: (id: number, usuarioId: number) =>
+      put<PedidoWeb>(`/api/pedidos-web/${id}/atender`, { usuarioId }),
   },
   inventario: {
     stock: (soloBajo = false, categoriaId?: number) => {

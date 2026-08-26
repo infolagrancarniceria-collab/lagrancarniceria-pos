@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../db";
+import { sincronizarCatalogoConWeb } from "../lib/syncWeb";
 
 export const comunasRouter = Router();
 
@@ -29,6 +30,7 @@ comunasRouter.post("/", async (req, res) => {
   }
 
   const comuna = await prisma.comuna.create({ data: parsed.data });
+  void sincronizarCatalogoConWeb();
   res.status(201).json(comuna);
 });
 
@@ -53,6 +55,7 @@ comunasRouter.put("/:id", async (req, res) => {
   }
 
   const comuna = await prisma.comuna.update({ where: { id }, data: parsed.data });
+  void sincronizarCatalogoConWeb();
   res.json(comuna);
 });
 
@@ -62,5 +65,6 @@ comunasRouter.delete("/:id", async (req, res) => {
   if (!existente) return res.status(404).json({ error: "Comuna no encontrada" });
 
   await prisma.comuna.update({ where: { id }, data: { activo: false } });
+  void sincronizarCatalogoConWeb();
   res.status(204).send();
 });

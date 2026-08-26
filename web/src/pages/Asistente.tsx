@@ -139,6 +139,7 @@ async function ejecutarPropuesta(accion: PropuestaAsistente["accion"], usuarioId
         duracion: null,
         codigoProveedor: null,
         umbralStockBajo: null,
+        familiaCorte: null,
         precioMayor: null,
       });
       return;
