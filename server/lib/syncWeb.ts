@@ -45,10 +45,17 @@ interface ProductoSync {
   descripcion: string;
   nombreCorto: string | null;
   categoriaNombre: string;
+  marca: string | null;
+  descripcionCorta: string | null;
   precio: number;
   unidad: "kg" | "unidad";
   familiaCorte: string | null;
-  agotado: boolean;
+  disponibilidad: "disponible" | "agotado" | "proximamente";
+  featured: boolean;
+  lowStock: boolean;
+  promoPrecioUnitario: number | null;
+  promoGramosMinimos: number | null;
+  promoEtiqueta: string | null;
 }
 
 interface SnapshotCatalogo {
@@ -74,12 +81,19 @@ async function construirSnapshotCatalogo(): Promise<SnapshotCatalogo> {
       descripcion: p.descripcion,
       nombreCorto: p.nombreCorto,
       categoriaNombre: p.categoria.nombre,
+      marca: p.marca,
+      descripcionCorta: p.descripcionCorta,
       precio: p.precio,
       // Mismo criterio que ya usa el resto del sistema (ver comentario en
       // Producto.precio): NORMAL se vende por unidad, PESABLE/IMPORTE por kg.
       unidad: p.flagBalanza === "NORMAL" ? "unidad" : "kg",
       familiaCorte: p.familiaCorte,
-      agotado: p.agotadoWeb,
+      disponibilidad: p.disponibilidadWeb as "disponible" | "agotado" | "proximamente",
+      featured: p.featured,
+      lowStock: p.lowStock,
+      promoPrecioUnitario: p.promoPrecioUnitario,
+      promoGramosMinimos: p.promoGramosMinimos,
+      promoEtiqueta: p.promoEtiqueta,
     })),
     comunas: comunas.map((c) => ({ nombre: c.nombre, costoEnvio: c.costoEnvio })),
     cortes: cortes.map((c) => ({ familia: c.familia, nombre: c.nombre, orden: c.orden })),

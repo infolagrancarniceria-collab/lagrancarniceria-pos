@@ -116,11 +116,33 @@ model Producto {
   // Independiente de "activo" (que es el estado general del POS): un
   // producto puede seguir activo en el POS pero no publicarse en la web.
   visibleEnWeb Boolean @default(true)
+
   // Toggle manual e independiente del stock interno (stockActual) — el
   // conteo de inventario no es lo bastante granular/inmediato para todos
-  // los productos como para decidir solo, así que "agotado en la web" lo
-  // marca el cajero a mano.
-  agotadoWeb Boolean @default(false)
+  // los productos como para decidir solo, así que la disponibilidad en la
+  // web la marca el cajero a mano. "disponible" | "agotado" |
+  // "proximamente" — string en vez de enum por lo mismo que familiaCorte
+  // (SQLite no soporta enums nativos).
+  disponibilidadWeb String @default("disponible")
+
+  // Destacado: aparece en el filtro "Destacados" de la web (no es un badge
+  // en la tarjeta, es un filtro aparte).
+  featured Boolean @default(false)
+  // Pocas unidades: badge en la tarjeta, independiente de disponibilidadWeb
+  // (un producto puede estar "disponible" y a la vez "con pocas unidades").
+  lowStock Boolean @default(false)
+
+  // Promoción por volumen (ej. "$3.980/kg al llevar 3 kilos o más") — los
+  // tres campos van juntos: si promoPrecioUnitario tiene valor, el
+  // producto muestra el badge "Oferta" y la etiqueta en la tarjeta.
+  promoPrecioUnitario Float?
+  promoGramosMinimos  Int?
+  promoEtiqueta       String?
+
+  // Texto corto opcional para la tarjeta de producto en la web (distinto
+  // de "descripcion", que es el nombre del producto) — null si no se ha
+  // escrito ninguno todavía.
+  descripcionCorta String?
 
   // Familia para el selector de corte en la web (Bifes, trozo entero,
   // medallones, picada, molida, parrilla, otros) — mismo patrón de string

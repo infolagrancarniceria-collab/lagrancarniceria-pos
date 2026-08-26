@@ -188,6 +188,13 @@ const productoBaseSchema = z.object({
   // Familia para el selector de corte en la web (ej. "Vacuno", "Cerdo") —
   // null si el producto no debe mostrar selector de corte.
   familiaCorte: z.string().trim().optional().nullable(),
+  // Texto corto para la tarjeta de producto en la web (opcional).
+  descripcionCorta: z.string().trim().optional().nullable(),
+  // Promoción por volumen en la web — los tres van juntos: si se llena uno
+  // hay que llenar los tres (se valida en el frontend, ver ProductoForm).
+  promoPrecioUnitario: z.number().positive().optional().nullable(),
+  promoGramosMinimos: z.number().int().positive().optional().nullable(),
+  promoEtiqueta: z.string().trim().optional().nullable(),
 });
 
 function validarCodigoBarrasVsFlag(data: {
@@ -302,13 +309,15 @@ productosRouter.post("/:id/reactivar", async (req, res) => {
   res.json(producto);
 });
 
-// Toggle rápido de visibilidad en la web (pantalla "Productos" — dos
-// casillas: "Oculto" y "Fuera de stock"). Separado del PUT normal a
-// propósito, para no obligar a mandar todos los demás campos del producto
-// solo para tildar una casilla.
+// Toggle rápido de visibilidad en la web (pantalla "Productos" — casillas
+// "Oculto", "Destacado", "Pocas unidades" + selector de disponibilidad).
+// Separado del PUT normal a propósito, para no obligar a mandar todos los
+// demás campos del producto solo para tildar una casilla.
 const webVisibilidadSchema = z.object({
   visibleEnWeb: z.boolean().optional(),
-  agotadoWeb: z.boolean().optional(),
+  disponibilidadWeb: z.enum(["disponible", "agotado", "proximamente"]).optional(),
+  featured: z.boolean().optional(),
+  lowStock: z.boolean().optional(),
 });
 
 productosRouter.put("/:id/web", async (req, res) => {

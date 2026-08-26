@@ -37,7 +37,13 @@ export interface Producto {
   umbralStockBajo: number | null;
   // --- Página web ---
   visibleEnWeb: boolean;
-  agotadoWeb: boolean;
+  disponibilidadWeb: "disponible" | "agotado" | "proximamente";
+  featured: boolean;
+  lowStock: boolean;
+  promoPrecioUnitario: number | null;
+  promoGramosMinimos: number | null;
+  promoEtiqueta: string | null;
+  descripcionCorta: string | null;
   familiaCorte: string | null;
 }
 
@@ -737,18 +743,36 @@ export const api = {
       return get<ProductoConCosto[]>(`/api/productos/margenes${query ? `?${query}` : ""}`);
     },
     crear: (
-      data: Omit<Producto, "id" | "categoria" | "activo" | "stockActual" | "visibleEnWeb" | "agotadoWeb">
+      data: Omit<
+        Producto,
+        "id" | "categoria" | "activo" | "stockActual" | "visibleEnWeb" | "disponibilidadWeb" | "featured" | "lowStock"
+      >
     ) => post<Producto>("/api/productos", data),
     actualizar: (
       id: number,
       data: Omit<
         Producto,
-        "id" | "categoria" | "activo" | "precio" | "stockActual" | "visibleEnWeb" | "agotadoWeb"
+        | "id"
+        | "categoria"
+        | "activo"
+        | "precio"
+        | "stockActual"
+        | "visibleEnWeb"
+        | "disponibilidadWeb"
+        | "featured"
+        | "lowStock"
       >
     ) => put<Producto>(`/api/productos/${id}`, data),
     eliminar: (id: number) => del<void>(`/api/productos/${id}`),
-    actualizarVisibilidadWeb: (id: number, data: { visibleEnWeb?: boolean; agotadoWeb?: boolean }) =>
-      put<Producto>(`/api/productos/${id}/web`, data),
+    actualizarVisibilidadWeb: (
+      id: number,
+      data: {
+        visibleEnWeb?: boolean;
+        disponibilidadWeb?: "disponible" | "agotado" | "proximamente";
+        featured?: boolean;
+        lowStock?: boolean;
+      }
+    ) => put<Producto>(`/api/productos/${id}/web`, data),
     categorizarMasivo: (productoIds: number[], categoriaId: number) =>
       post<{ actualizados: number }>("/api/productos/categorizar-masivo", { productoIds, categoriaId }),
     eliminarMasivo: (productoIds: number[]) =>
