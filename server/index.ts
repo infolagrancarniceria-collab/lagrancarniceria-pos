@@ -26,6 +26,7 @@ import { gastosRouter } from "./routes/gastos";
 import { comunasRouter } from "./routes/comunas";
 import { camaraRouter } from "./routes/camara";
 import { aplicarMigracionesPendientes, reconstruirLotesCamaraFaltantes } from "./lib/migraciones";
+import { ejecutarRespaldoAutomaticoSiCorresponde } from "./lib/respaldos";
 
 const app = express();
 const PORT = Number(process.env.PORT) || 5175;
@@ -125,6 +126,15 @@ export async function iniciarServidor(): Promise<void> {
   // detalle de por qué es seguro y por qué no hace falta hacerlo desde una
   // migración .sql.
   await reconstruirLotesCamaraFaltantes();
+
+  // Respaldo automático de la base de datos — revisa al iniciar y después
+  // cada una hora si ya tocaba el de hoy (por fecha calendario, no "cada 24
+  // horas exactas"), para no depender de que el programa se reinicie todos
+  // los días a la misma hora.
+  await ejecutarRespaldoAutomaticoSiCorresponde();
+  setInterval(() => {
+    ejecutarRespaldoAutomaticoSiCorresponde();
+  }, 60 * 60 * 1000);
 
   return new Promise((resolve) => {
     app.listen(PORT, "0.0.0.0", () => {

@@ -216,6 +216,28 @@ model ConfiguracionBalanza {
   actualizadoEn DateTime @updatedAt
 }
 
+// Configuración y estado del respaldo automático de la base de datos — a
+// pedido del usuario, para no depender de copiar el archivo a mano. El
+// respaldo "local" (carpeta aparte en el mismo PC) siempre está activo; el
+// respaldo a USB es opcional y solo se intenta si hay una ruta configurada
+// Y ese USB está conectado en el momento (si no lo está, no es un error,
+// simplemente ese respaldo puntual queda pendiente para la próxima vez).
+// Siempre hay como máximo una fila (mismo patrón que ConfiguracionBalanza).
+model ConfiguracionRespaldo {
+  id      Int     @id @default(autoincrement())
+  rutaUsb String?
+
+  ultimoLocalEn    DateTime?
+  ultimoLocalOk    Boolean?
+  ultimoLocalError String?
+
+  ultimoUsbEn    DateTime?
+  ultimoUsbOk    Boolean?
+  ultimoUsbError String?
+
+  actualizadoEn DateTime @updatedAt
+}
+
 // Solo puede haber una sesión de caja "abierta" a la vez (una sola persona
 // usa el sistema a la vez, según la arquitectura del proyecto).
 model SesionCaja {

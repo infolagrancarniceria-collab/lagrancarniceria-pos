@@ -1,7 +1,7 @@
 // Proceso principal de Electron. Se escribe en JavaScript plano (no TypeScript)
 // porque Electron ejecuta este archivo con su propio Node.js interno, sin pasar
 // por un compilador — mantenerlo simple evita configuración adicional.
-const { app, BrowserWindow, ipcMain } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 
@@ -76,6 +76,17 @@ ipcMain.handle("imprimir-silencioso", (evento, opciones) => {
 ipcMain.handle("listar-impresoras", async (evento) => {
   const ventana = BrowserWindow.fromWebContents(evento.sender);
   return ventana.webContents.getPrintersAsync();
+});
+
+// Selector nativo de carpeta de Windows — usado para elegir la carpeta del
+// USB/disco externo donde también se guarda el respaldo de la base de
+// datos, sin obligar a escribir la ruta a mano (ej. "E:\Respaldos").
+// Devuelve null si la persona cancela el diálogo.
+ipcMain.handle("elegir-carpeta", async (evento) => {
+  const ventana = BrowserWindow.fromWebContents(evento.sender);
+  const resultado = await dialog.showOpenDialog(ventana, { properties: ["openDirectory"] });
+  if (resultado.canceled || resultado.filePaths.length === 0) return null;
+  return resultado.filePaths[0];
 });
 
 // La carpeta donde se instala el programa queda de solo lectura una vez

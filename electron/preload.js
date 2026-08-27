@@ -11,4 +11,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // Windows (ver electron/main.js para el motivo).
   imprimirSilencioso: (opciones) => ipcRenderer.invoke("imprimir-silencioso", opciones),
   listarImpresoras: () => ipcRenderer.invoke("listar-impresoras"),
+  // Selector nativo de carpeta de Windows — usado en Configuración para
+  // elegir la carpeta del USB/disco externo del respaldo, sin escribir la
+  // ruta a mano. Devuelve null si se cancela el diálogo.
+  elegirCarpeta: () => ipcRenderer.invoke("elegir-carpeta"),
 });

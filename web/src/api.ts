@@ -568,6 +568,23 @@ export interface ConfiguracionBalanza {
   actualizadoEn: string;
 }
 
+interface EstadoDestinoRespaldo {
+  ultimoEn: string | null;
+  ok: boolean | null;
+  error: string | null;
+}
+
+export interface EstadoRespaldo {
+  rutaUsb: string | null;
+  local: EstadoDestinoRespaldo;
+  usb: EstadoDestinoRespaldo;
+}
+
+export interface ResultadoRespaldo {
+  local: { ok: boolean; error?: string };
+  usb: { ok: boolean; error?: string; omitido?: boolean } | null;
+}
+
 export interface ResultadoEnvioBalanza {
   ip: string;
   exito: boolean;
@@ -933,6 +950,10 @@ export const api = {
     guardarClaveIA: (claveApiAnthropic: string) =>
       post<void>("/api/configuracion/ia", { claveApiAnthropic }),
     direccionRed: () => get<{ direcciones: string[]; puerto: number }>("/api/configuracion/direccion-red"),
+    estadoRespaldo: () => get<EstadoRespaldo>("/api/configuracion/respaldo"),
+    guardarRutaUsbRespaldo: (rutaUsb: string | null) =>
+      put<void>("/api/configuracion/respaldo/ruta-usb", { rutaUsb }),
+    respaldarAhora: () => post<ResultadoRespaldo>("/api/configuracion/respaldo/ahora", {}),
   },
   asistente: {
     enviarMensaje: (mensaje: string, historial: unknown[]) =>

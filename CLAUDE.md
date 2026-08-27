@@ -3131,3 +3131,61 @@ encadenando flechas — documentado más arriba en "Comentario opcional...")
 también paga y confirma sola con un segundo Enter, sin vuelto de por medio;
 y ya no aparece ningún texto "Margen:" en Punto de venta — datos de prueba
 limpiados después.
+
+## Respaldo automático de la base de datos
+A pedido del usuario, tras preguntarle qué mejora faltaba considerar en el
+sistema: la brecha más grande, dado que ya maneja plata real todos los
+días, era que el respaldo seguía siendo copiar el archivo a mano. Antes de
+programar se le preguntó dónde debían guardarse los respaldos (en este PC,
+en un USB, en otro PC de la red, o varias a la vez) — eligió **este PC +
+USB**.
+
+- **Local, siempre activo**: todos los días (chequeo al iniciar el
+  programa y después cada una hora, comparando por fecha calendario, no
+  "cada 24 horas exactas" — así funciona igual aunque el PC se prenda/
+  apague a horas distintas cada día) se copia la base de datos completa a
+  una carpeta `respaldos/` al lado del archivo real, con la fecha en el
+  nombre (`respaldo-2026-08-27.db`). Se conservan los últimos 30 días de
+  cada destino, borrando solos los más viejos — no crece sin límite.
+- **USB/disco externo, opcional**: se configura una carpeta destino en
+  Configuración → "Respaldo de la base de datos". Si ese USB no está
+  conectado el día que toca, **no se trata como error** — no se actualiza
+  la fecha del último intento, así se reintenta solo la próxima vez que sí
+  esté conectado, sin necesitar ninguna acción manual. Al usar el botón
+  "Respaldar ahora" con el USB desconectado, se avisa igual con un mensaje
+  puntual en pantalla (no persistido, porque justamente no cuenta como un
+  intento real).
+- **Botón "Respaldar ahora"**: fuerza un respaldo a ambos destinos aunque
+  ya se haya hecho el de hoy — para antes de algo importante, o para
+  probar que la carpeta de USB configurada realmente funciona.
+- **Selector nativo de carpeta** (`window.electronAPI.elegirCarpeta`,
+  nuevo en `electron/main.js`/`preload.js`, mismo patrón que
+  `listarImpresoras`) en la app instalada, para no tener que escribir la
+  ruta del USB a mano (ej. `E:\Respaldos`); en el navegador (sin Electron)
+  se puede escribir la ruta directo, como respaldo del selector. Aclarado
+  en pantalla: la carpeta siempre tiene que existir en **el PC principal**
+  (el que corre el servidor), no en el equipo desde el que se esté viendo
+  la pantalla de Configuración.
+- **Técnico**: nueva tabla `ConfiguracionRespaldo` (una sola fila, mismo
+  patrón que `ConfiguracionBalanza`) con la ruta del USB y el resultado del
+  último intento por destino. `server/lib/respaldos.ts` calcula el archivo
+  real de la base de datos a partir de `DATABASE_URL` (mismo criterio que
+  usa Prisma para resolver una ruta relativa como `file:./dev.db`, contra
+  la carpeta `prisma/`) — necesario porque Prisma no expone esa ruta
+  directo. Las fechas se comparan en hora **local**, no UTC (mismo tipo de
+  bug ya corregido antes para la fecha de una factura, ver
+  `parsearFechaSoloDia` — usar `toISOString()` se corre de día cerca de la
+  medianoche en Chile).
+
+Probado de punta a punta contra el servidor real: el respaldo automático
+se dispara solo al iniciar (confirmado con un archivo `.db` real, válido,
+del mismo tamaño que el original); "Respaldar ahora" respalda a ambos
+destinos correctamente; con 35 respaldos de prueba ya en una carpeta, uno
+nuevo deja exactamente 30 (los 5 más viejos se borran solos); desconectar
+el USB (borrar la carpeta) no rompe el respaldo local y avisa en pantalla
+sin quedar guardado como un fallo real; "Quitar" limpia la configuración y
+el aviso puntual correctamente — datos y carpetas de prueba limpiados
+después.
+
+**Pendiente**: los avisos críticos proactivos (ej. caja del día sin
+cerrar, stock crítico) que el usuario pidió abordar después de esto.

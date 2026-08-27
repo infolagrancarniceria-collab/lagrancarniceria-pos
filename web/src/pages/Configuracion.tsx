@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { api } from "../api";
+import { api, type EstadoRespaldo } from "../api";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 import { modoCajaActivo, setModoCajaActivo } from "../lib/modoCaja";
 import { obtenerImpresoraBoletas, setImpresoraBoletas, obtenerImpresoraEtiquetas, setImpresoraEtiquetas } from "../lib/impresoras";
 import type { ImpresoraDisponible } from "../electron";
 import ModalAlerta from "../components/ModalAlerta";
+import { mostrarToast } from "../lib/toast";
 
 const PREDETERMINADA = "__predeterminada__";
 
@@ -21,6 +22,17 @@ export default function Configuracion() {
   const [impresoraEtiquetas, setImpresoraEtiquetasState] = useState(
     () => obtenerImpresoraEtiquetas() ?? PREDETERMINADA
   );
+  const [estadoRespaldo, setEstadoRespaldo] = useState<EstadoRespaldo | null>(null);
+  const [rutaUsbInput, setRutaUsbInput] = useState("");
+  const [guardandoRutaUsb, setGuardandoRutaUsb] = useState(false);
+  const [respaldando, setRespaldando] = useState(false);
+  const [errorRespaldo, setErrorRespaldo] = useState<string | null>(null);
+  // Aviso de "el USB no estaba conectado" tras apretar "Respaldar ahora" —
+  // no se guarda en la base de datos a propósito (para poder reintentar
+  // solo apenas se conecte, ver ejecutarRespaldo en el servidor), así que
+  // solo se puede mostrar como aviso puntual de esta respuesta, no como
+  // parte del estado persistido que se recarga después.
+  const [avisoUsb, setAvisoUsb] = useState<string | null>(null);
 
   function cambiarModoCaja(activo: boolean) {
     setModoCajaActivo(activo);
@@ -30,6 +42,16 @@ export default function Configuracion() {
     window.location.reload();
   }
 
+  function cargarEstadoRespaldo() {
+    api.configuracion
+      .estadoRespaldo()
+      .then((r) => {
+        setEstadoRespaldo(r);
+        setRutaUsbInput(r.rutaUsb ?? "");
+      })
+      .catch((e) => setErrorRespaldo(e.message));
+  }
+
   useEffect(() => {
     api.configuracion
       .estadoIA()
@@ -37,7 +59,59 @@ export default function Configuracion() {
       .catch((e) => setError(e.message));
     api.configuracion.direccionRed().then(setDireccionRed).catch(() => {});
     window.electronAPI?.listarImpresoras().then(setImpresoras).catch(() => setImpresoras([]));
+    cargarEstadoRespaldo();
   }, []);
+
+  async function elegirCarpetaUsb() {
+    const carpeta = await window.electronAPI?.elegirCarpeta();
+    if (!carpeta) return;
+    setRutaUsbInput(carpeta);
+    await guardarRutaUsb(carpeta);
+  }
+
+  async function guardarRutaUsb(ruta: string | null) {
+    setErrorRespaldo(null);
+    setAvisoUsb(null);
+    setGuardandoRutaUsb(true);
+    try {
+      await api.configuracion.guardarRutaUsbRespaldo(ruta);
+      cargarEstadoRespaldo();
+    } catch (e) {
+      setErrorRespaldo((e as Error).message);
+    } finally {
+      setGuardandoRutaUsb(false);
+    }
+  }
+
+  async function respaldarAhora() {
+    setErrorRespaldo(null);
+    setAvisoUsb(null);
+    setRespaldando(true);
+    try {
+      const resultado = await api.configuracion.respaldarAhora();
+      if (!resultado.local.ok) {
+        setErrorRespaldo(`Falló el respaldo local: ${resultado.local.error ?? "error desconocido"}`);
+      } else if (resultado.usb && !resultado.usb.ok) {
+        if (resultado.usb.omitido) {
+          setAvisoUsb(resultado.usb.error ?? "No se pudo respaldar al USB en este momento.");
+        } else {
+          setErrorRespaldo(`Falló el respaldo a USB: ${resultado.usb.error ?? "error desconocido"}`);
+        }
+      } else {
+        mostrarToast("Respaldo hecho correctamente");
+      }
+      cargarEstadoRespaldo();
+    } catch (e) {
+      setErrorRespaldo((e as Error).message);
+    } finally {
+      setRespaldando(false);
+    }
+  }
+
+  function formatoFechaHora(iso: string | null): string {
+    if (!iso) return "nunca";
+    return new Date(iso).toLocaleString("es-CL");
+  }
 
   async function guardar(e: React.FormEvent) {
     e.preventDefault();
@@ -106,6 +180,91 @@ export default function Configuracion() {
           <input type="checkbox" checked={modoCaja} onChange={(e) => cambiarModoCaja(e.target.checked)} />
           Activar modo caja exclusiva en este PC
         </label>
+      </section>
+
+      <section className="tarjeta">
+        <h2>Respaldo de la base de datos</h2>
+        <p className="ayuda">
+          Todos los días se guarda una copia completa de la base de datos (ventas, precios, inventario, todo) sin
+          que haya que hacer nada — se conservan los últimos 30 días de cada destino, borrando solos los más
+          viejos. Las carpetas de respaldo siempre son las de <strong>el PC principal</strong> (el que actúa de
+          servidor), no las del equipo que estés usando para ver esta pantalla.
+        </p>
+        {errorRespaldo && <ModalAlerta mensaje={errorRespaldo} onCerrar={() => setErrorRespaldo(null)} />}
+
+        <div className="fila-inline">
+          <div>
+            <strong>Local (en este PC):</strong>{" "}
+            {estadoRespaldo?.local.ultimoEn ? (
+              <span className={estadoRespaldo.local.ok ? "exito" : "error"}>
+                {estadoRespaldo.local.ok ? "✓" : "✗"} {formatoFechaHora(estadoRespaldo.local.ultimoEn)}
+              </span>
+            ) : (
+              <span className="ayuda">todavía no se ha hecho ninguno</span>
+            )}
+            {estadoRespaldo?.local.ok === false && estadoRespaldo.local.error && (
+              <div className="ayuda">{estadoRespaldo.local.error}</div>
+            )}
+          </div>
+        </div>
+
+        <div style={{ marginTop: "1rem" }}>
+          <strong>USB / disco externo (opcional):</strong>{" "}
+          {estadoRespaldo?.rutaUsb ? (
+            estadoRespaldo.usb.ultimoEn ? (
+              <span className={estadoRespaldo.usb.ok ? "exito" : "error"}>
+                {estadoRespaldo.usb.ok ? "✓" : "✗"} {formatoFechaHora(estadoRespaldo.usb.ultimoEn)}
+              </span>
+            ) : (
+              <span className="ayuda">todavía no se ha hecho ninguno</span>
+            )
+          ) : (
+            <span className="ayuda">sin configurar</span>
+          )}
+          {estadoRespaldo?.rutaUsb && estadoRespaldo.usb.ok === false && estadoRespaldo.usb.error && (
+            <div className="ayuda">{estadoRespaldo.usb.error}</div>
+          )}
+          <p className="ayuda">
+            Si el USB no está conectado el día que toca respaldar, no es un error — simplemente se hace apenas
+            vuelva a estar conectado.
+          </p>
+          {avisoUsb && <p className="ayuda">⚠ {avisoUsb}</p>}
+          <div className="fila-inline">
+            {window.electronAPI ? (
+              <button type="button" className="boton" onClick={elegirCarpetaUsb} disabled={guardandoRutaUsb}>
+                {estadoRespaldo?.rutaUsb ? "Cambiar carpeta..." : "Elegir carpeta..."}
+              </button>
+            ) : (
+              <>
+                <input
+                  type="text"
+                  placeholder="Ej: E:\Respaldos"
+                  value={rutaUsbInput}
+                  onChange={(e) => setRutaUsbInput(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="boton"
+                  disabled={guardandoRutaUsb || !rutaUsbInput.trim()}
+                  onClick={() => guardarRutaUsb(rutaUsbInput.trim())}
+                >
+                  Guardar
+                </button>
+              </>
+            )}
+            {estadoRespaldo?.rutaUsb && (
+              <button type="button" className="boton" disabled={guardandoRutaUsb} onClick={() => guardarRutaUsb(null)}>
+                Quitar
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="acciones-formulario">
+          <button type="button" className="boton boton-primario" disabled={respaldando} onClick={respaldarAhora}>
+            {respaldando ? "Respaldando..." : "Respaldar ahora"}
+          </button>
+        </div>
       </section>
 
       {window.electronAPI && (

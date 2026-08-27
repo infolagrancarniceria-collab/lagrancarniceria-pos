@@ -21,6 +21,10 @@ declare global {
         pageSize?: { width: number; height: number };
       }) => Promise<{ exito: boolean; razonError?: string }>;
       listarImpresoras: () => Promise<ImpresoraDisponible[]>;
+      // Abre el selector nativo de carpetas de Windows — usado en
+      // Configuración para elegir la carpeta del USB del respaldo. Devuelve
+      // null si la persona cancela el diálogo.
+      elegirCarpeta: () => Promise<string | null>;
     };
   }
 }
