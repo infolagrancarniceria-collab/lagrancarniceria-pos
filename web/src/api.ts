@@ -585,6 +585,13 @@ export interface ResultadoRespaldo {
   usb: { ok: boolean; error?: string; omitido?: boolean } | null;
 }
 
+export interface AvisosCriticos {
+  cajaSinCerrar: { sesionId: number; fechaApertura: string; usuario: string } | null;
+  stockBajo: { cantidad: number };
+  cajasEstancadas: { cantidad: number };
+  ajustesPendientesCamara: { cantidad: number };
+}
+
 export interface ResultadoEnvioBalanza {
   ip: string;
   exito: boolean;
@@ -954,6 +961,9 @@ export const api = {
     guardarRutaUsbRespaldo: (rutaUsb: string | null) =>
       put<void>("/api/configuracion/respaldo/ruta-usb", { rutaUsb }),
     respaldarAhora: () => post<ResultadoRespaldo>("/api/configuracion/respaldo/ahora", {}),
+  },
+  avisos: {
+    obtener: () => get<AvisosCriticos>("/api/avisos"),
   },
   asistente: {
     enviarMensaje: (mensaje: string, historial: unknown[]) =>

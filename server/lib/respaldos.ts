@@ -33,8 +33,10 @@ function resolverRutaBaseDeDatos(): string {
 // Fecha en formato AAAA-MM-DD, en hora LOCAL (no UTC) — usar
 // toISOString().slice(0,10) se corre de día cerca de la medianoche en
 // Chile (mismo tipo de bug ya encontrado y corregido antes para la fecha
-// de una factura, ver parsearFechaSoloDia en reportes.ts).
-function fechaLocalYMD(fecha: Date): string {
+// de una factura, ver parsearFechaSoloDia en reportes.ts). Exportada
+// porque también la usa server/lib/avisos.ts para el mismo tipo de
+// comparación ("¿esto es de hoy?").
+export function fechaLocalYMD(fecha: Date): string {
   const anio = fecha.getFullYear();
   const mes = String(fecha.getMonth() + 1).padStart(2, "0");
   const dia = String(fecha.getDate()).padStart(2, "0");

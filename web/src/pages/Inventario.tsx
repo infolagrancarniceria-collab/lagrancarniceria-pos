@@ -7,7 +7,11 @@ import ModalAlerta from "../components/ModalAlerta";
 export default function Inventario() {
   const [productos, setProductos] = useState<ProductoConStock[]>([]);
   const [categorias, setCategorias] = useState<Categoria[]>([]);
-  const [soloBajoStock, setSoloBajoStock] = useState(false);
+  // Pre-marcado si se llega desde el aviso de "stock bajo" (ver
+  // web/src/pages/Avisos.tsx, enlaza a "/inventario?bajo=true").
+  const [soloBajoStock, setSoloBajoStock] = useState(
+    () => new URLSearchParams(window.location.search).get("bajo") === "true"
+  );
   const [categoriaId, setCategoriaId] = useState<number | "">("");
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(false);

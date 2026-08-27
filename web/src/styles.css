@@ -304,6 +304,22 @@ select {
   background: rgba(255, 255, 255, 0.1);
   color: #fdf3ec;
 }
+/* Contador de avisos críticos pendientes, junto al ítem "Avisos" del menú
+   — mismo criterio de "no molestar si no hace falta": no aparece en
+   absoluto si no hay ningún aviso activo (ver Layout.tsx, badge={0} no
+   renderiza nada). */
+.nav-badge {
+  background: var(--color-error);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.75rem;
+  border-radius: 999px;
+  padding: 0.05rem 0.45rem;
+  margin-left: auto;
+}
+.sidebar-compacta .nav-badge {
+  display: none;
+}
 .sidebar nav a.active {
   background: rgba(255, 255, 255, 0.16);
   color: #fdf3ec;
@@ -485,6 +501,7 @@ select {
 .aviso-estancadas {
   border-left: 4px solid var(--color-error);
 }
+.aviso-estancadas h2,
 .aviso-estancadas h3 {
   color: var(--color-error);
   margin-top: 0;

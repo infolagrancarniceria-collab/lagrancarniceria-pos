@@ -3187,5 +3187,50 @@ sin quedar guardado como un fallo real; "Quitar" limpia la configuración y
 el aviso puntual correctamente — datos y carpetas de prueba limpiados
 después.
 
-**Pendiente**: los avisos críticos proactivos (ej. caja del día sin
-cerrar, stock crítico) que el usuario pidió abordar después de esto.
+## Avisos críticos proactivos
+A pedido del usuario, tras el respaldo automático (ver arriba). Antes de
+programar se preguntó qué situaciones debían avisar y cómo — respuestas:
+las cuatro sugeridas (caja de un día anterior sin cerrar, stock bajo,
+cajas de cámara estancadas, ajustes pendientes de cámara) y "ambas" formas
+de aviso (uno visible en el programa + notificación nativa de Windows).
+
+- **Nueva pantalla "Avisos"** (`web/src/pages/Avisos.tsx`, ruta `/avisos`,
+  primer ítem del menú): una tarjeta por cada aviso activo, con el detalle
+  y un botón que lleva directo a la pantalla correspondiente para
+  resolverlo (Caja, Inventario con el filtro de stock bajo ya marcado,
+  Existencias de Cámara, Ajustes pendientes). Si no hay ninguno, muestra
+  "Todo al día".
+- **Contador en el menú**: el ítem "🔔 Avisos" muestra un número en rojo
+  con la cantidad de avisos activos (no aparece si es cero) — se actualiza
+  solo cada 5 minutos (`Layout.tsx`), sin tener que entrar a la pantalla.
+  No se agregó a "modo caja exclusiva" (el PC del mesón), a propósito,
+  para no contradecir esa simplificación ya pedida antes.
+- **Notificación nativa de Windows**: usa el `Notification` del navegador
+  (Electron la muestra como notificación real del sistema operativo, sin
+  necesitar ningún código nuevo de Electron) — como máximo una vez por
+  tipo de aviso por día (guardado en `localStorage`, `web/src/lib/
+  avisos.ts`), para no repetir la misma notificación cada 5 minutos; si
+  sigue sin resolverse al día siguiente, se vuelve a notificar.
+- **Backend**: nuevo `server/lib/avisos.ts` (`calcularAvisosCriticos`) y
+  `GET /api/avisos` (`server/routes/avisos.ts`). "Caja sin cerrar" compara
+  la fecha de apertura contra hoy en hora **local** (reutiliza
+  `fechaLocalYMD`, exportada de `server/lib/respaldos.ts` — mismo criterio
+  ya usado ahí). Los otros tres reutilizan el mismo criterio ya usado en
+  sus pantallas de origen (umbral de stock bajo de Inventario, "7+ días sin
+  salida" y "ajuste_pendiente" ya usados en Cámara) sin duplicar sus
+  endpoints completos — son chequeos livianos, pensados para consultarse
+  seguido.
+
+Probado de punta a punta contra el servidor real: con una caja de prueba
+abierta hace varios días, un producto con umbral forzado y ajustes
+pendientes reales ya en la base de datos, el endpoint y la pantalla
+mostraron los tres avisos correctamente (con el texto en plural bien
+escrito); el link "Ver en Inventario" llega con la casilla de stock bajo
+ya marcada; con Playwright (interceptando el constructor `Notification`,
+ya que el entorno de pruebas no tiene notificaciones reales de Windows) se
+confirmó que dispara una notificación por cada aviso activo la primera vez
+y que NO se repite al recargar la página el mismo día (queda guardado en
+`localStorage`) — datos de prueba revertidos después. **Pendiente**:
+confirmación del usuario de que la notificación aparece como un aviso real
+de Windows en su PC (en este entorno solo se pudo probar la lógica, no el
+aviso del sistema operativo en sí).

@@ -32,6 +32,7 @@ import Revisiones from "./pages/Revisiones";
 import Gastos from "./pages/Gastos";
 import Comunas from "./pages/Comunas";
 import Configuracion from "./pages/Configuracion";
+import Avisos from "./pages/Avisos";
 import Asistente from "./pages/Asistente";
 import Balanza from "./pages/Balanza";
 import Camara from "./pages/Camara";
@@ -97,6 +98,7 @@ export default function App() {
             <Route path="/camara/existencias" element={<CamaraExistencias />} />
             <Route path="/camara/reporte-salidas" element={<CamaraReporteSalidas />} />
             <Route path="/configuracion" element={<Configuracion />} />
+            <Route path="/avisos" element={<Avisos />} />
           </Route>
         </Route>
         <Route path="/" element={<Navigate to={inicio} replace />} />

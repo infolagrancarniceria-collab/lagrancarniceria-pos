@@ -25,6 +25,7 @@ import { balanzaRouter } from "./routes/balanza";
 import { gastosRouter } from "./routes/gastos";
 import { comunasRouter } from "./routes/comunas";
 import { camaraRouter } from "./routes/camara";
+import { avisosRouter } from "./routes/avisos";
 import { aplicarMigracionesPendientes, reconstruirLotesCamaraFaltantes } from "./lib/migraciones";
 import { ejecutarRespaldoAutomaticoSiCorresponde } from "./lib/respaldos";
 
@@ -92,6 +93,7 @@ app.use("/api/balanza", balanzaRouter);
 app.use("/api/gastos", gastosRouter);
 app.use("/api/comunas", comunasRouter);
 app.use("/api/camara", camaraRouter);
+app.use("/api/avisos", avisosRouter);
 
 // En producción, el mismo servidor sirve la interfaz web ya compilada
 // (así la tablet/celular en la red del local también puede entrar por navegador).
