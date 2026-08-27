@@ -94,6 +94,7 @@ export default function Layout() {
               <Item to="/avisos" emoji="🔔" etiqueta="Avisos" badge={totalAvisos} />
               <Item to="/productos" emoji="🥩" etiqueta="Productos" />
               <Item to="/productos/margenes" emoji="🧩" etiqueta="Combos" />
+              <Item to="/productos/control-precios" emoji="📈" etiqueta="Control de precios" />
               <Item to="/cambio-masivo" emoji="💲" etiqueta="Cambio masivo" />
               <Item to="/historial" emoji="🕘" etiqueta="Historial" />
               <Item to="/categorias" emoji="🗂️" etiqueta="Categorías" />

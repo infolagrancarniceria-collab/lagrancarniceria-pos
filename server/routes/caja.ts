@@ -239,9 +239,23 @@ cajaRouter.post("/sesiones/:id/cerrar", async (req, res) => {
   if (!sesion) return res.status(404).json({ error: "Sesión no encontrada" });
   if (sesion.estado !== "abierta") return res.status(400).json({ error: "Esta caja ya está cerrada" });
 
-  const ventaAbierta = await prisma.venta.findFirst({ where: { sesionCajaId: id, estado: "abierta" } });
+  // Punto de Venta deja siempre un "carrito vacío" listo para la próxima
+  // venta (ver iniciarVenta en PuntoDeVenta.tsx) — al final del día eso
+  // deja casi siempre una Venta "abierta" sin ningún producto, que no es
+  // una venta real pendiente. Si es genuinamente vacía (nunca se le agregó
+  // nada), se descarta sola acá, sin pedir nada — no hay ningún dato real
+  // que perder. Solo bloquea el cierre si tiene algún ítem real (aunque
+  // esté anulado, porque ahí sí hubo actividad que alguien ya autorizó).
+  const ventaAbierta = await prisma.venta.findFirst({
+    where: { sesionCajaId: id, estado: "abierta" },
+    include: { items: true },
+  });
   if (ventaAbierta) {
-    return res.status(400).json({ error: "Hay una venta sin terminar — confírmala o cancélala antes de cerrar la caja" });
+    if (ventaAbierta.items.length === 0) {
+      await prisma.venta.delete({ where: { id: ventaAbierta.id } });
+    } else {
+      return res.status(400).json({ error: "Hay una venta sin terminar — confírmala o cancélala antes de cerrar la caja" });
+    }
   }
 
   await prisma.sesionCaja.update({

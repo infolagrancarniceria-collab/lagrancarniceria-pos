@@ -13,14 +13,33 @@ interface LineaForm {
   resultados: Producto[];
   cantidad: string;
   costoUnitario: string;
+  // Precargado con Producto.aplicaIvaCarne al elegir el producto, pero se
+  // puede destildar por línea si ese producto puntual no lleva el impuesto
+  // (ver ProductoForm.tsx — se marca a mano por producto, no se adivina).
+  aplicaIvaCarne: boolean;
 }
+
+// Impuestos de la factura, para poder comparar el total contra el papel
+// real del proveedor — el neto ya se usaba para armar la entrada de
+// inventario, esto es solo una calculadora en pantalla, no se guarda en
+// ningún lado.
+const TASA_IVA = 0.19;
+const TASA_IVA_CARNE = 0.05;
 
 function hoy(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
 function lineaVacia(id: number): LineaForm {
-  return { id, producto: null, buscarProducto: "", resultados: [], cantidad: "", costoUnitario: "" };
+  return {
+    id,
+    producto: null,
+    buscarProducto: "",
+    resultados: [],
+    cantidad: "",
+    costoUnitario: "",
+    aplicaIvaCarne: false,
+  };
 }
 
 // Formulario manual para cargar una factura completa de una sola vez — a
@@ -77,7 +96,18 @@ export default function CargarFactura() {
     setLineas((actual) => (actual.length > 1 ? actual.filter((l) => l.id !== id) : actual));
   }
 
-  const totalFactura = lineas.reduce((s, l) => s + (Number(l.cantidad) || 0) * (Number(l.costoUnitario) || 0), 0);
+  function subtotalLinea(l: LineaForm): number {
+    return (Number(l.cantidad) || 0) * (Number(l.costoUnitario) || 0);
+  }
+
+  const totalNeto = lineas.reduce((s, l) => s + subtotalLinea(l), 0);
+  const subtotalCarne = lineas.filter((l) => l.aplicaIvaCarne).reduce((s, l) => s + subtotalLinea(l), 0);
+  const iva = Math.round(totalNeto * TASA_IVA);
+  const ivaCarne = Math.round(subtotalCarne * TASA_IVA_CARNE);
+  const totalFacturaConImpuestos = totalNeto + iva + ivaCarne;
+  // Se mantiene por compatibilidad con el resto del archivo (toast al
+  // guardar) — es el mismo total neto de siempre, sin impuestos.
+  const totalFactura = totalNeto;
 
   async function guardar(e: React.FormEvent) {
     e.preventDefault();
@@ -199,6 +229,7 @@ export default function CargarFactura() {
                 <th>Cantidad</th>
                 <th>Costo unitario</th>
                 <th>Subtotal</th>
+                <th>IVA carne (5%)</th>
                 <th>Margen</th>
                 <th></th>
               </tr>
@@ -228,7 +259,14 @@ export default function CargarFactura() {
                                 key={p.id}
                                 type="button"
                                 className="resultado-item"
-                                onClick={() => actualizarLinea(l.id, { producto: p, buscarProducto: "", resultados: [] })}
+                                onClick={() =>
+                                  actualizarLinea(l.id, {
+                                    producto: p,
+                                    buscarProducto: "",
+                                    resultados: [],
+                                    aplicaIvaCarne: p.aplicaIvaCarne,
+                                  })
+                                }
                               >
                                 {p.plu} — {p.descripcion}
                               </button>
@@ -257,7 +295,17 @@ export default function CargarFactura() {
                         onChange={(e) => actualizarLinea(l.id, { costoUnitario: e.target.value })}
                       />
                     </td>
-                    <td>{formatoCLP((Number(l.cantidad) || 0) * (Number(l.costoUnitario) || 0))}</td>
+                    <td>{formatoCLP(subtotalLinea(l))}</td>
+                    <td>
+                      {l.producto && (
+                        <input
+                          type="checkbox"
+                          checked={l.aplicaIvaCarne}
+                          onChange={(e) => actualizarLinea(l.id, { aplicaIvaCarne: e.target.checked })}
+                          title="Aplicar el IVA adicional a la carne (5%) a esta línea"
+                        />
+                      )}
+                    </td>
                     <td>
                       {margen != null ? (
                         <span className={`margen-destacado ${margen < 0 ? "margen-negativo" : ""}`}>
@@ -282,9 +330,18 @@ export default function CargarFactura() {
           </button>
         </div>
 
-        <p>
-          <strong>Total de la factura: {formatoCLP(totalFactura)}</strong>
-        </p>
+        <div className="tarjeta" style={{ maxWidth: "320px" }}>
+          <p>Total neto: {formatoCLP(totalNeto)}</p>
+          <p>IVA (19%): {formatoCLP(iva)}</p>
+          <p>
+            IVA carne (5%): {formatoCLP(ivaCarne)}
+            {subtotalCarne === 0 && <span className="ayuda"> (ninguna línea marcada)</span>}
+          </p>
+          <p>
+            <strong>TOTAL factura: {formatoCLP(totalFacturaConImpuestos)}</strong>
+          </p>
+          <p className="ayuda">Compara este total contra el de la factura en papel para verificar que calcen.</p>
+        </div>
 
         <div className="acciones-formulario">
           <button type="submit" className="boton boton-primario" disabled={guardando}>

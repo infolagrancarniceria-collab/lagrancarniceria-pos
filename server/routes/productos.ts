@@ -184,6 +184,7 @@ const productoBaseSchema = z.object({
   codigoProveedor: z.string().trim().optional().nullable(),
   umbralStockBajo: z.number().min(0).optional().nullable(),
   precioMayor: z.number().positive().optional().nullable(),
+  aplicaIvaCarne: z.boolean().optional(),
 });
 
 function validarCodigoBarrasVsFlag(data: {

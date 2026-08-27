@@ -45,6 +45,9 @@ export default function MejorMargen() {
     <div>
       <div className="encabezado-pantalla">
         <h1>Mejor margen</h1>
+        <Link to="/productos/control-precios" className="boton">
+          📈 Ver Control de precios
+        </Link>
       </div>
       <p className="ayuda">
         Productos ordenados de mayor a menor margen (%) — para encontrar rápido qué conviene combinar en una

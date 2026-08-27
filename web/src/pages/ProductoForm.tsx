@@ -24,6 +24,7 @@ interface FormState {
   duracion: string;
   codigoProveedor: string;
   umbralStockBajo: string;
+  aplicaIvaCarne: boolean;
 }
 
 const formVacio: FormState = {
@@ -43,6 +44,7 @@ const formVacio: FormState = {
   duracion: "",
   codigoProveedor: "",
   umbralStockBajo: "",
+  aplicaIvaCarne: false,
 };
 
 export default function ProductoForm() {
@@ -98,6 +100,7 @@ export default function ProductoForm() {
           duracion: p.duracion ?? "",
           codigoProveedor: p.codigoProveedor ?? "",
           umbralStockBajo: p.umbralStockBajo != null ? String(p.umbralStockBajo) : "",
+          aplicaIvaCarne: p.aplicaIvaCarne,
         });
       })
       .catch((e) => setError(e.message));
@@ -133,6 +136,7 @@ export default function ProductoForm() {
       codigoProveedor: form.codigoProveedor.trim() || null,
       umbralStockBajo: form.umbralStockBajo ? Number(form.umbralStockBajo) : null,
       precioMayor: form.precioMayor ? Number(form.precioMayor) : null,
+      aplicaIvaCarne: form.aplicaIvaCarne,
     };
 
     setGuardando(true);
@@ -342,6 +346,14 @@ export default function ProductoForm() {
             value={form.impuestoAdicional}
             onChange={(e) => actualizarCampo("impuestoAdicional", e.target.value)}
           />
+        </label>
+        <label className="fila-inline">
+          <input
+            type="checkbox"
+            checked={form.aplicaIvaCarne}
+            onChange={(e) => actualizarCampo("aplicaIvaCarne", e.target.checked)}
+          />
+          Aplica IVA carne (5%) — para vacuno/cerdo
         </label>
         <label>
           Duración

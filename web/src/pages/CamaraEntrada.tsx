@@ -34,7 +34,17 @@ interface LineaForm {
   modoPeso: "total" | "individual";
   pesoValor: string;
   costoNetoKg: string;
+  // Precargado con Producto.aplicaIvaCarne al elegir el producto (ver
+  // elegirProducto) — se puede destildar por línea si ese producto puntual
+  // no lleva el impuesto.
+  aplicaIvaCarne: boolean;
 }
+
+// Impuestos de la factura, para poder comparar el total contra el papel
+// real del proveedor — el neto ya se usaba para armar las cajas, esto es
+// solo una calculadora en pantalla, no se guarda en ningún lado.
+const TASA_IVA = 0.19;
+const TASA_IVA_CARNE = 0.05;
 
 function hoy(): string {
   return new Date().toISOString().slice(0, 10);
@@ -55,6 +65,7 @@ function lineaVacia(id: number): LineaForm {
     modoPeso: "individual",
     pesoValor: "",
     costoNetoKg: "",
+    aplicaIvaCarne: false,
   };
 }
 
@@ -131,7 +142,12 @@ export default function CamaraEntrada() {
   }
 
   function elegirProducto(id: number, producto: Producto) {
-    actualizarLinea(id, { producto, buscarProducto: "", resultados: [] });
+    actualizarLinea(id, {
+      producto,
+      buscarProducto: "",
+      resultados: [],
+      aplicaIvaCarne: producto.aplicaIvaCarne,
+    });
     api.productos
       .obtener(producto.id)
       .then((info) => actualizarLinea(id, { info }))
@@ -182,6 +198,10 @@ export default function CamaraEntrada() {
   }
 
   const totalFactura = lineas.reduce((s, l) => s + subtotalLinea(l), 0);
+  const subtotalCarne = lineas.filter((l) => l.aplicaIvaCarne).reduce((s, l) => s + subtotalLinea(l), 0);
+  const iva = Math.round(totalFactura * TASA_IVA);
+  const ivaCarne = Math.round(subtotalCarne * TASA_IVA_CARNE);
+  const totalFacturaConImpuestos = totalFactura + iva + ivaCarne;
 
   function nuevaFactura() {
     setCajasCreadas(null);
@@ -618,6 +638,15 @@ export default function CamaraEntrada() {
                 />
               </label>
 
+              <label className="fila-inline">
+                <input
+                  type="checkbox"
+                  checked={l.aplicaIvaCarne}
+                  onChange={(e) => actualizarLinea(l.id, { aplicaIvaCarne: e.target.checked })}
+                />
+                Aplica IVA carne (5%)
+              </label>
+
               <p>
                 <strong>Subtotal línea:</strong> {formatoCLP(subtotalLinea(l))}
               </p>
@@ -628,9 +657,18 @@ export default function CamaraEntrada() {
           </button>
         </div>
 
-        <p>
-          <strong>Neto total de la factura: {formatoCLP(totalFactura)}</strong>
-        </p>
+        <div className="tarjeta" style={{ maxWidth: "320px" }}>
+          <p>Neto total de la factura: {formatoCLP(totalFactura)}</p>
+          <p>IVA (19%): {formatoCLP(iva)}</p>
+          <p>
+            IVA carne (5%): {formatoCLP(ivaCarne)}
+            {subtotalCarne === 0 && <span className="ayuda"> (ninguna línea marcada)</span>}
+          </p>
+          <p>
+            <strong>TOTAL factura: {formatoCLP(totalFacturaConImpuestos)}</strong>
+          </p>
+          <p className="ayuda">Compara este total contra el de la factura en papel para verificar que calcen.</p>
+        </div>
 
         <div className="acciones-formulario">
           <button type="submit" className="boton boton-primario" disabled={guardando}>

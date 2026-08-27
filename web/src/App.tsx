@@ -33,6 +33,7 @@ import Gastos from "./pages/Gastos";
 import Comunas from "./pages/Comunas";
 import Configuracion from "./pages/Configuracion";
 import Avisos from "./pages/Avisos";
+import ControlPrecios from "./pages/ControlPrecios";
 import Asistente from "./pages/Asistente";
 import Balanza from "./pages/Balanza";
 import Camara from "./pages/Camara";
@@ -63,6 +64,7 @@ export default function App() {
             <Route path="/productos/:id" element={<ProductoForm />} />
             <Route path="/cambio-masivo" element={<CambioMasivo />} />
             <Route path="/productos/margenes" element={<MejorMargen />} />
+            <Route path="/productos/control-precios" element={<ControlPrecios />} />
             <Route path="/historial" element={<Historial />} />
             <Route path="/categorias" element={<Categorias />} />
             <Route path="/inventario" element={<Inventario />} />

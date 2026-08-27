@@ -3234,3 +3234,123 @@ y que NO se repite al recargar la página el mismo día (queda guardado en
 confirmación del usuario de que la notificación aparece como un aviso real
 de Windows en su PC (en este entorno solo se pudo probar la lógica, no el
 aviso del sistema operativo en sí).
+
+## Bug: cerrar caja se bloqueaba por un carrito vacío; Control de precios; IVA de la carne en facturas
+Tres pedidos del usuario de una vez. Antes de programar se hicieron varias
+preguntas (Control de precios tiene bastante superficie de diseño) — ver
+las decisiones abajo.
+
+### Cerrar caja ya no se bloquea por una venta vacía
+El usuario reportó: "como la caja queda constantemente abierta para seguir
+comprando, al momento de cerrar la caja del día marca una caja 'vacía'
+como venta pendiente". Causa encontrada: Punto de Venta deja siempre un
+carrito vacío listo para la próxima venta (`iniciarVenta()`, tanto al
+entrar a la pantalla como después de cada venta confirmada — ver
+"Confirmar una venta se queda en Punto de Venta" más arriba), así que casi
+siempre queda una `Venta` en estado "abierta" sin ningún producto. El
+endpoint de cerrar caja (`POST /api/caja/sesiones/:id/cerrar`) rechazaba
+el cierre apenas encontraba *cualquier* venta "abierta", sin distinguir
+ese carrito vacío de una venta real a medias.
+
+**Arreglado en `server/routes/caja.ts`:** si la única venta "abierta" de la
+sesión no tiene ningún ítem (ni siquiera uno anulado — ahí sí hubo
+actividad real que alguien ya autorizó, y se sigue bloqueando el cierre
+como antes), se borra sola al cerrar, sin pedir nada — no hay ningún dato
+real que perder. Probado de punta a punta contra el servidor real: crear
+un carrito vacío y cerrar la caja ahora funciona (antes rechazaba con
+"Hay una venta sin terminar"), confirmando además que la venta vacía
+efectivamente desaparece de la base de datos; una venta con un producto
+real agregado sigue bloqueando el cierre exactamente igual que antes.
+
+### Nueva pantalla "Control de precios"
+A pedido del usuario, para tener de un vistazo la salud general de los
+precios del catálogo. Antes de programar se confirmaron con el usuario:
+la relación con "Combos" (pantallas separadas pero enlazadas entre sí, no
+una reemplaza a la otra), la definición de "precio activo" (producto
+activo con precio mayor a $0), dónde va el detalle de cada cambio de
+precio (dentro de esta pantalla nueva, no en "Historial"), y cómo
+identificar productos de vacuno/cerdo para el IVA de la carne (ver más
+abajo).
+
+- **Nueva pantalla** (`web/src/pages/ControlPrecios.tsx`, ruta
+  `/productos/control-precios`, ítem "📈 Control de precios" en el menú,
+  junto a "Combos"): arriba, un resumen con **cantidad de productos con
+  precio activo**, **recargo promedio** y **margen real promedio** más una
+  "Guía de rentabilidad" explicando la diferencia (texto pedido tal cual
+  por el usuario: "el recargo se calcula sobre el costo; el margen real se
+  calcula sobre la venta neta"); una casilla **"Ver todos los productos
+  (incluso sin precio activo)"** para ampliar la tabla principal a
+  productos con precio $0 o sin costo conocido (ocultos por defecto); y
+  una sección aparte, **"Registro de cambios de precio"**, con cada fila
+  del historial de precios mostrando costo efectivo, precio de venta,
+  margen aplicado y margen real. Un botón "🧩 Ver Combos (Mejor margen)"
+  lleva a la pantalla existente de armar combos, que a su vez ahora tiene
+  un botón "📈 Ver Control de precios" de vuelta — quedan enlazadas, no
+  fusionadas.
+- **Dos fórmulas, mismo número base** (`web/src/api.ts`): `calcularMargen`
+  (ya existía) es el **recargo** — cuánto se le sumó al costo para llegar
+  al precio; se agrega `calcularMargenReal`, una función nueva que divide
+  esa misma diferencia (venta neta − costo) sobre la **venta neta** en vez
+  de sobre el costo — el "margen real". Verificado con el caso ya conocido
+  del sistema (CHURRASCO DE VACUNO, costo $9.200, precio $14.500): recargo
+  32,4% (el mismo número ya verificado antes en Mejor margen/Productos) y
+  margen real 24,5% (calzando con el cálculo manual:
+  (12.184,87−9.200)/12.184,87×100).
+- **Los promedios son simples, no ponderados por kilos vendidos** (tal
+  como lo pidió el usuario) — se calculan solo sobre productos con precio
+  activo Y costo conocido, para no promediar un margen inventado.
+- **"Costo efectivo" en el registro de cambios usa el costo más reciente
+  de HOY**, no una foto histórica del costo exacto en el momento de cada
+  cambio pasado (el sistema no guarda esa foto) — mismo criterio
+  simplificado que ya usa el resto de la app para mostrar "margen" en
+  cualquier pantalla, aclarado en un texto de ayuda en la propia pantalla
+  para que quede claro qué se está mostrando.
+- Reutiliza datos ya existentes sin agregar ningún endpoint nuevo:
+  `GET /api/productos?incluirCosto=true` (la tabla principal) y
+  `GET /api/historial` (el registro de cambios) — todo el cálculo de
+  recargo/margen real/promedios se hace en el frontend.
+
+Probado de punta a punta con Playwright contra el servidor real: el
+resumen mostró 190 productos con precio activo, 27,6% de recargo promedio
+y 21,5% de margen real promedio (calzando con los datos reales de prueba);
+la casilla "Ver todos" reveló un producto de prueba con precio $0 que
+antes no aparecía (190 → 191 filas); el link a Combos y de vuelta funciona
+en ambos sentidos — datos de prueba limpiados después.
+
+### IVA de la carne (5%) en "Cargar factura" y "Entrada de cámara"
+El usuario pidió, en ambas pantallas de carga de factura: mostrar además
+del total neto (que ya se mostraba) el IVA (19%), el IVA adicional a la
+carne (vacuno y cerdo, 5%) y el TOTAL de la factura con todo incluido —
+"esto nos permitirá comparar con la factura real y que todos los datos
+calcen". Antes de programar se confirmó con el usuario la tasa exacta
+(5%) y cómo identificar qué líneas son vacuno/cerdo — como el catálogo
+general de Productos no tenía ninguna clasificación confiable para eso
+(a diferencia de Cámara, que sí tiene "Familia"), se optó por un **campo
+nuevo en la ficha del producto** en vez de adivinar por categoría.
+
+- **Campo nuevo `Producto.aplicaIvaCarne`** (booleano, `false` por
+  defecto): casilla "Aplica IVA carne (5%) — para vacuno/cerdo" en
+  Productos → editar producto, junto al resto de los datos. Se marca a
+  mano una vez por producto — no se deduce de la categoría.
+- **En ambas pantallas de factura** (`CargarFactura.tsx` e
+  `CamaraEntrada.tsx`), cada línea tiene su propia casilla "IVA carne
+  (5%)", **precargada sola** con el valor de `producto.aplicaIvaCarne` al
+  elegir el producto, pero **se puede destildar por línea** si ese
+  producto puntual no lleva el impuesto esa vez — tal como lo pidió el
+  usuario. El resumen de totales pasó de mostrar solo "Total de la
+  factura" a mostrar las cuatro cifras: Total neto, IVA (19%), IVA carne
+  (5%, solo sobre las líneas marcadas) y **TOTAL factura** — con una nota
+  invitando a comparar contra el papel real.
+- Es una calculadora en pantalla, igual que ya lo era el total neto — no
+  se guarda ningún desglose de impuestos en la base de datos, solo se usa
+  para verificar que los números calcen antes de registrar la factura
+  (que se sigue guardando igual que antes, por su valor neto).
+
+Probado de punta a punta con Playwright contra el servidor real, en ambas
+pantallas: elegir un producto con `aplicaIvaCarne: true` precarga sola la
+casilla de esa línea; con 10kg/unidades a $1.000 neto cada una, el
+resumen mostró exactamente Total neto $10.000, IVA (19%) $1.900, IVA carne
+(5%) $500 y TOTAL factura $12.400 — calzando con el cálculo manual en
+ambas pantallas — datos y cambios de prueba revertidos después (ninguna
+factura de prueba llegó a guardarse, solo se completó el formulario para
+verificar los cálculos en pantalla).

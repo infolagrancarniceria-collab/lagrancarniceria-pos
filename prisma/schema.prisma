@@ -107,6 +107,14 @@ model Producto {
   duracion          String?
   codigoProveedor   String?
 
+  // Marca los productos de vacuno/cerdo a los que les corresponde el IVA
+  // adicional a la carne (5%) — a pedido del usuario, para que "Cargar
+  // factura" y "Entrada de cámara" puedan precargar solas ese impuesto por
+  // línea (igual se puede destildar por línea si un producto puntual no
+  // lo tiene). Se marca a mano en la ficha del producto, no se deduce de
+  // la categoría.
+  aplicaIvaCarne Boolean @default(false)
+
   activo        Boolean  @default(true)
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt

@@ -32,6 +32,7 @@ export interface Producto {
   impuestoAdicional: number | null;
   duracion: string | null;
   codigoProveedor: string | null;
+  aplicaIvaCarne: boolean;
   activo: boolean;
   stockActual: number;
   umbralStockBajo: number | null;
@@ -319,6 +320,19 @@ export function calcularMargen(precioVenta: number, costo: number | null): numbe
   if (!costo || costo <= 0) return null;
   const precioVentaNeto = precioVenta / IVA;
   return ((precioVentaNeto - costo) / costo) * 100;
+}
+
+// "Margen real" (guía de rentabilidad, Control de Precios) — misma resta
+// que calcularMargen (venta neta − costo), pero dividida sobre la VENTA
+// neta en vez del costo: el recargo (calcularMargen) dice cuánto se le
+// sumó al costo para llegar al precio; el margen real dice qué porción del
+// precio de venta neto es utilidad. Son dos lentes del mismo número, no
+// dos cálculos independientes.
+export function calcularMargenReal(precioVenta: number, costo: number | null): number | null {
+  if (!costo || costo <= 0) return null;
+  const precioVentaNeto = precioVenta / IVA;
+  if (precioVentaNeto <= 0) return null;
+  return ((precioVentaNeto - costo) / precioVentaNeto) * 100;
 }
 
 // Redondeo de pagos en efectivo a la decena más cercana (Ley N° 21.131,
