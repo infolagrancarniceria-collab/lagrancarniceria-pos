@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import {
   api,
   formatoCLP,
-  calcularMargen,
   redondearA10,
   TOLERANCIA_REDONDEO_EFECTIVO,
   type Comuna,
@@ -70,12 +69,6 @@ export default function PuntoDeVenta() {
   const [itemEditandoPrecio, setItemEditandoPrecio] = useState<number | null>(null);
   const [precioNuevoValor, setPrecioNuevoValor] = useState("");
   const [itemAutorizandoPrecio, setItemAutorizandoPrecio] = useState<number | null>(null);
-  // Costo (última compra) por producto, para mostrar el margen (%) de cada
-  // línea del carrito — a pedido del usuario. Se pide de a uno (no hay un
-  // endpoint que traiga varios productos por id a la vez) y se guarda en
-  // caché acá mismo, para no volver a pedirlo si el mismo producto aparece
-  // más de una vez o la venta se vuelve a renderizar.
-  const [costosPorProducto, setCostosPorProducto] = useState<Record<number, number | null>>({});
 
   const inputCantidadRef = useRef<HTMLInputElement>(null);
   const inputMontoPagoRef = useRef<HTMLInputElement>(null);
@@ -100,22 +93,6 @@ export default function PuntoDeVenta() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [venta?.id]);
 
-  // Trae el costo (última compra) de cada producto nuevo que aparece en el
-  // carrito, para poder mostrar el margen (%) por línea — a pedido del
-  // usuario. Solo pide los que todavía no están en la caché.
-  useEffect(() => {
-    const idsFaltantes = [...new Set((venta?.items ?? []).map((i) => i.productoId))].filter(
-      (id) => !(id in costosPorProducto)
-    );
-    if (idsFaltantes.length === 0) return;
-    idsFaltantes.forEach((id) => {
-      api.productos
-        .obtener(id)
-        .then((p) => setCostosPorProducto((prev) => ({ ...prev, [id]: p.ultimoCosto })))
-        .catch(() => setCostosPorProducto((prev) => ({ ...prev, [id]: null })));
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [venta?.items]);
 
   // Imprime el vale de la venta que se acaba de confirmar, sin salir de
   // Punto de Venta — el vale se renderiza oculto en pantalla (ver
@@ -448,6 +425,20 @@ export default function PuntoDeVenta() {
       if (vueltoAEntregar > 0) {
         setVueltoAMostrar({ vuelto: vueltoAEntregar, entregado: monto, venta: montoACobrar });
       }
+      // Si este pago ya deja los pagos cubriendo el total completo (el caso
+      // normal: un solo pago que paga toda la venta), se confirma sola — a
+      // pedido del usuario, para no tener que cerrar esta ventana y apretar
+      // "Confirmar venta" aparte cada vez. Se recalcula acá con los datos
+      // recién llegados del servidor (actualizada), no con el estado
+      // "venta" viejo que todavía no se actualizó en este mismo render.
+      const totalPagadoAhora = actualizada.pagos.reduce((s, p) => s + p.monto, 0);
+      const faltaAhora = Math.round((actualizada.total - totalPagadoAhora) * 100) / 100;
+      const hayEfectivoAhora = actualizada.pagos.some((p) => p.medio === "efectivo");
+      const cubiertoAhora =
+        faltaAhora === 0 || (hayEfectivoAhora && Math.abs(faltaAhora) <= TOLERANCIA_REDONDEO_EFECTIVO);
+      if (cubiertoAhora) {
+        await ejecutarConfirmarVenta(actualizada.id);
+      }
     } catch (e) {
       setError((e as Error).message);
     }
@@ -559,28 +550,39 @@ export default function PuntoDeVenta() {
     }
   }
 
-  async function confirmarVenta() {
-    if (!venta || !usuario) return;
+  // Lógica real de confirmar una venta — compartida entre el botón manual
+  // "Confirmar venta" (con su propio window.confirm antes de llamar acá) y
+  // el auto-confirmado que dispara agregarPago cuando un pago recién
+  // agregado ya cubre el total completo (ver más abajo): en ese caso no
+  // hace falta preguntar de nuevo, ya quedó claro con el pago mismo.
+  async function ejecutarConfirmarVenta(ventaId: number) {
+    if (!usuario) return;
     setError(null);
-    const confirmado = window.confirm(`¿Confirmar venta por ${formatoCLP(totalVenta)}?`);
-    if (!confirmado) return;
     setProcesando(true);
     try {
-      await api.caja.confirmarVenta(venta.id, usuario.id);
+      await api.caja.confirmarVenta(ventaId, usuario.id);
       // A pedido del usuario: en vez de saltar a "Buscar venta" para
       // imprimir, el vale se imprime solo en segundo plano (ver el efecto
       // que observa ventaParaImprimir) y la pantalla se queda en Punto de
       // Venta lista para la siguiente venta, para no perder tiempo yendo y
       // volviendo entre pantallas.
-      const ventaConfirmada = await api.caja.obtenerVenta(venta.id);
+      const ventaConfirmada = await api.caja.obtenerVenta(ventaId);
       setVentaParaImprimir(ventaConfirmada);
+      setMostrarModalPago(false);
       await iniciarVenta();
-      setMensaje(`Venta #${venta.id} confirmada — imprimiendo vale...`);
+      setMensaje(`Venta #${ventaId} confirmada — imprimiendo vale...`);
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setProcesando(false);
     }
+  }
+
+  async function confirmarVenta() {
+    if (!venta || !usuario) return;
+    const confirmado = window.confirm(`¿Confirmar venta por ${formatoCLP(totalVenta)}?`);
+    if (!confirmado) return;
+    await ejecutarConfirmarVenta(venta.id);
   }
 
   // Igual que anular un ítem, cancelar toda la venta pide clave de
@@ -729,7 +731,15 @@ export default function PuntoDeVenta() {
                   <button
                     type="button"
                     className={`medio-pago-tile ${medioPago === "efectivo" ? "activo" : ""}`}
-                    onClick={() => setMedioPago("efectivo")}
+                    onClick={() => {
+                      setMedioPago("efectivo");
+                      // Igual que Tarjeta/Crédito: deja el foco listo en el campo
+                      // que falta llenar (acá no hay monto para autocompletar,
+                      // el cajero escribe lo que el cliente entregó) — antes se
+                      // quedaba en el botón y Enter no hacía nada, obligando a
+                      // hacer clic a mano en el campo.
+                      setTimeout(() => inputMontoPagoRef.current?.focus(), 0);
+                    }}
                   >
                     <span className="medio-pago-icono">💵</span>
                     Efectivo
@@ -910,17 +920,6 @@ export default function PuntoDeVenta() {
                               </button>
                             </span>
                           )}
-                          {(() => {
-                            const costo = costosPorProducto[item.productoId];
-                            if (costo == null) return null;
-                            const margen = calcularMargen(item.precioUnitario, costo);
-                            if (margen == null) return null;
-                            return (
-                              <div className={margen < 0 ? "error" : "exito"} style={{ fontSize: "0.8rem" }}>
-                                Margen: {margen.toFixed(1)}%
-                              </div>
-                            );
-                          })()}
                         </td>
                         <td>
                           {formatoCLP(item.subtotal)}

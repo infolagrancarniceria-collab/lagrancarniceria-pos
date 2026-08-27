@@ -3085,3 +3085,49 @@ CHURRASCO DE VACUNO (costo $9.200, precio $14.500 — el mismo caso ya
 verificado en la ficha de producto y en Mejor margen) sin mostrar nada para
 un producto sin costo de Inventario registrado — datos y ventas de prueba
 limpiados después.
+
+## Sacado el margen del carrito de Punto de venta, y dos bugs corregidos en "Ir a pagar"
+A pedido del usuario: el margen (%) agregado al carrito en el cambio
+anterior se sacó — "nos dimos cuenta que no es necesario que vaya allí".
+Se mantiene en Existencias de Cámara y Ventas por mayor, que sí lo pidió
+mantener. Además, dos bugs reales reportados probando la Caja:
+
+- **Enter en Efectivo no hacía nada**: al abrir "Ir a pagar", el foco
+  arranca en el botón del medio de pago activo (Efectivo, el que viene
+  por defecto) — Tarjeta y Crédito ya movían el foco al campo
+  correspondiente apenas se elegían (con clic o con Enter sobre el botón),
+  pero Efectivo no tenía ese mismo `onClick` con el cambio de foco, así
+  que apretar Enter sobre "Efectivo" ya activo no hacía nada visible y
+  había que hacer clic a mano en el campo "Efectivo recibido". Corregido
+  agregándole el mismo cambio de foco que ya tenían los otros dos
+  (sin autocompletar ningún monto — a diferencia de Tarjeta/Crédito, acá
+  el cajero sigue escribiendo a mano lo que el cliente entrega).
+- **La venta no se confirmaba sola después de pagar**: registrar un pago
+  que ya cubre el total (el caso normal: un solo pago en efectivo, con o
+  sin vuelto) dejaba la venta "abierta" — había que cerrar la ventana de
+  "Ir a pagar" y apretar "Confirmar venta" aparte (con su propio cuadro de
+  confirmación del navegador), un paso extra e innecesario ya que agregar
+  un pago que cubre el total ya deja claro que la venta terminó. Corregido
+  en `PuntoDeVenta.tsx`: `agregarPago` ahora revisa, con los datos recién
+  llegados del servidor, si los pagos ya cubren el total completo — de ser
+  así, confirma la venta sola (misma lógica que ya usaba el botón manual,
+  extraída a una función compartida `ejecutarConfirmarVenta`, pero sin el
+  cuadro de confirmación del navegador, innecesario en este camino
+  automático) y cierra la ventana de "Ir a pagar". Si hubo vuelto, el
+  aviso emergente se sigue mostrando igual — pero para cuando el cajero lo
+  cierra con "Entendido", la venta ya está confirmada, el vale ya se mandó
+  a imprimir solo y el carrito ya quedó vacío, listo para el siguiente
+  cliente, sin ningún clic extra.
+
+Probado de punta a punta con Playwright contra el servidor real: abrir "Ir
+a pagar" y presionar Enter sobre Efectivo mueve el foco al campo "Efectivo
+recibido"; escribir un monto mayor al total y confirmar el pago con Enter
+agrega el pago, muestra el vuelto correcto, y confirma la venta sola (se ve
+"Venta #N confirmada" de fondo mientras el vuelto sigue en pantalla); cerrar
+el aviso de vuelto deja el carrito en $0 y "0 items", sin necesitar tocar
+"Confirmar venta"; el mismo flujo con Tarjeta (llegando con las flechas
+←/→, que a propósito dejan el foco en el botón para poder seguir
+encadenando flechas — documentado más arriba en "Comentario opcional...")
+también paga y confirma sola con un segundo Enter, sin vuelto de por medio;
+y ya no aparece ningún texto "Margen:" en Punto de venta — datos de prueba
+limpiados después.
