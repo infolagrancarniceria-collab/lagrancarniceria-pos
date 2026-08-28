@@ -294,6 +294,7 @@ Todo corre **local**, en el PC de la carnicería, sin depender de internet:
 7. **Gastos generales** — listo: registro de gastos del negocio (sueldos, luz, agua, etc., separado de las compras de mercadería) con resumen por categoría y total por rango de fechas. Ver "Módulo de gastos generales" más abajo.
 8. **Despachos a domicilio** — listo: comunas con costo de envío fijo, marcar una venta como despacho (suma el costo al total), y reporte por comuna. Ver "Módulo de despachos a domicilio" más abajo.
 9. **Cámara frigorífica** — listo (las 7 etapas: entrada de cajas con etiqueta impresa, salida con aviso FIFO y venta por mayor, inventario por escaneo con conciliación de faltantes, importador del sistema anterior, modo sin conexión del celular, y pruebas de punta a punta de todo junto). Ver "Módulo de cámara frigorífica" más abajo para el detalle completo. **Pendiente:** prueba con la impresora Gainscha real y confirmación del usuario usando el flujo completo con datos y hardware reales del local.
+10. **Sincronización con la página web** — listo (catálogo/comunas/opciones de corte hacia lagrancarniceria.com, y pedidos web hacia el panel "Pedidos web"). Ver "Sincronización con la página web (lagrancarniceria.com)" más abajo. **Pendiente:** el usuario todavía no cargó el catálogo real completo (falta confirmar los PLU de Pollo y de algunos productos de Artesanales — ver esa sección) ni configuró la sync desde una instalación real (todo probado contra `dev.db` local).
 
 ## Instalador de Windows
 Armado con `electron-builder` (`npm run dist:win`, ver README para el
@@ -3432,3 +3433,79 @@ Control de precios muestran el costo, el margen calculado y la etiqueta
 "Importar costos desde CSV" se despliega y muestra su formulario — datos
 de prueba (producto y cambios a productos reales) revertidos/eliminados
 después.
+
+## Sincronización con la página web (lagrancarniceria.com)
+Se construyó para que la página web (repo aparte, `lagrancarniceria.com`,
+Next.js + Postgres) muestre el catálogo, las tarifas de despacho y las
+opciones de corte siempre al día con el POS, sin que nadie tenga que
+actualizarlos a mano en dos lugares — y para que los pedidos que un
+cliente arma en la web (cotización por WhatsApp, no un pago) lleguen de
+vuelta acá para gestionarlos. Trabajado en la rama `claude/conexion-web-pos`.
+
+**Diseño clave: la web es la única pieza que toca la base de datos
+compartida.** El POS nunca se conecta directo a ese Postgres — le habla
+por HTTPS a las rutas `/api/sync/*` de la web, autenticado con una llave
+acotada (`SYNC_API_KEY`), nunca con la contraseña de la base de datos. Así,
+si esa llave se filtra desde un instalador del POS, el daño posible queda
+acotado a "puede escribir catálogo/leer pedidos", nunca a la base
+completa. Cada sync reemplaza el catálogo público entero (no hace
+diffs) — más simple y sin bugs de diff, y el volumen de datos (~100
+productos) no lo justifica.
+
+- **`ConfiguracionSyncWeb`** (tabla en `datos.db`, no un `.env`): la app
+  empaquetada no tiene archivo de configuración editable a mano, así que
+  la URL de la web y la llave de sync se guardan en la base local y se
+  configuran desde una pantalla (`GET/POST /api/configuracion/sync-web`).
+  Como esto vive en `datos.db` (carpeta de usuario, no en los archivos del
+  instalador), sobrevive a las actualizaciones del programa sin que el
+  usuario tenga que reconfigurar nada cada vez que se instala una versión
+  nueva.
+- **`server/lib/syncWeb.ts`**: `iniciarSyncWeb()` arranca un intervalo de 5
+  minutos apenas levanta el servidor (siempre, no solo si ya está
+  configurado) que llama a `sincronizarCatalogoConWeb()` (manda productos
+  visibles en la web + comunas + opciones de corte) y
+  `traerPedidosWebPendientes()` (trae pedidos nuevos de la web, los guarda
+  en `PedidoWeb`, y confirma a la web cuáles quedaron guardados para que
+  no los reenvíe). Filosofía "best effort": un fallo de sync (sin
+  internet, web caída) nunca bloquea la operación normal del POS — se
+  llama con `void` y solo queda un `console.warn`.
+- **Campos web en `Producto`**: `visibleEnWeb`, `disponibilidadWeb`
+  ("disponible"/"agotado"/"proximamente"), `featured`, `lowStock`, `marca`,
+  `descripcionCorta`, `familiaCorte` (para el selector de corte en la web —
+  las opciones válidas de cada familia viven en `CorteOpcion`, editable
+  desde Comunas → "Opciones de corte"), y una promo por volumen
+  (`promoPrecioUnitario`/`promoGramosMinimos`/`promoEtiqueta`, los tres
+  juntos o ninguno). Todo esto es independiente de `activo` (que es el
+  estado general del POS): un producto puede seguir activo en el POS pero
+  no publicarse en la web. Editable desde la ficha del producto, o con
+  toggles rápidos (Oculto/Disponibilidad/Destacado/Pocas unidades) directo
+  en la tabla de Productos.
+- **`PedidoWeb`** + pantalla "Pedidos web": cada pedido trae `tipoEntrega`
+  ("retiro" o "despacho" — dirección/comuna/costo de envío solo aplican y
+  son obligatorios si es despacho), `fechaEntrega`, `medioPago`
+  (informativo, no hay pasarela de pago), y el detalle de ítems con corte,
+  envasado (Tradicional/Al vacío) e instrucciones especiales del cliente.
+  Se marcan "atendido" a mano desde el panel.
+
+**Catálogo real:** el prompt de rediseño de la web traía el catálogo real
+(precios, PLU, marca) de la carnicería, pero **16 productos de Pollo no
+tenían PLU** (esa tabla del documento no tenía columna de PLU) y algunos de
+Artesanales tenían PLU repetido entre variantes (Choripán/Longaniza
+Tradicional vs. Picante) o tampoco traían uno (Butifarra, las 3
+hamburguesas). Como el PLU es único en la base y es el código real de
+pesaje/balanza, no se inventó ninguno de esos ~25 — quedaron afuera de la
+carga a propósito. `scripts/cargar-catalogo-real.ts` carga los 55 productos
+que sí tenían un PLU confiable (con marca, familia de corte y destacados ya
+configurados), crea las categorías y las opciones de corte estándar de
+Vacuno/Cerdo/Pollo — corre en modo simulación por defecto, solo escribe
+con `--confirmar` (`npm run catalogo:real -- --confirmar`). El reporte de
+los ~25 productos que quedaron fuera, y por qué, lo imprime el script mismo
+al final de cada corrida.
+
+Probado (dry-run y typecheck) contra el `dev.db` local — **no probado
+contra una instalación real** ni contra el Postgres real de la web
+(sandbox de desarrollo sin acceso a internet a ese dominio). Pendiente que
+el usuario: (1) configure la sync en su instalación real con la
+`SYNC_API_KEY` real, (2) confirme los PLU reales de los ~25 productos que
+quedaron fuera de la carga, y (3) corra `cargar-catalogo-real.ts
+--confirmar` una vez revisado.

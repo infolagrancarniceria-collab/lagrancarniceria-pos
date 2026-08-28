@@ -5,6 +5,7 @@ import { z } from "zod";
 import { prisma } from "../db";
 import { obtenerIdsCategoriaYDescendientes } from "../lib/categorias";
 import { verificarClaveConLimite } from "../lib/clave";
+import { sincronizarCatalogoConWeb } from "../lib/syncWeb";
 
 export const preciosRouter = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -71,6 +72,7 @@ preciosRouter.post("/individual", async (req, res) => {
     }),
   ]);
 
+  void sincronizarCatalogoConWeb();
   res.json(productoActualizado);
 });
 
@@ -131,6 +133,7 @@ preciosRouter.post("/masivo-categoria", async (req, res) => {
     ])
   );
 
+  void sincronizarCatalogoConWeb();
   res.json({ previsualizacion: false, cambios });
 });
 
@@ -225,5 +228,6 @@ preciosRouter.post("/masivo-csv", upload.single("archivo"), async (req, res) => 
     ])
   );
 
+  void sincronizarCatalogoConWeb();
   res.json({ previsualizacion: false, filas, aplicados: filasValidas.length });
 });

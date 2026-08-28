@@ -103,6 +103,7 @@ export default function Layout() {
               <Item to="/gastos" emoji="🧾" etiqueta="Gastos" />
               <Item to="/caja" emoji="🧮" etiqueta="Caja" />
               <Item to="/caja/creditos" emoji="🤝" etiqueta="Créditos" />
+              <Item to="/pedidos-web" emoji="🛵" etiqueta="Pedidos web" />
               <Item to="/camara" emoji="❄️" etiqueta="Cámara" />
               <Item to="/asistente" emoji="🤖" etiqueta="Asistente" />
               <Item to="/balanza" emoji="⚖️" etiqueta="Balanza" />

@@ -1,6 +1,14 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { api, calcularMargen, formatoCLP, type Categoria, type FlagBalanza, type ProductoConCosto } from "../api";
+import {
+  api,
+  calcularMargen,
+  formatoCLP,
+  FAMILIAS_CAMARA,
+  type Categoria,
+  type FlagBalanza,
+  type ProductoConCosto,
+} from "../api";
 import SelectorCategoria from "../components/SelectorCategoria";
 import { useUsuario } from "../context/UsuarioContext";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
@@ -26,6 +34,11 @@ interface FormState {
   umbralStockBajo: string;
   aplicaIvaCarne: boolean;
   costoReferencia: string;
+  familiaCorte: string;
+  descripcionCorta: string;
+  promoPrecioUnitario: string;
+  promoGramosMinimos: string;
+  promoEtiqueta: string;
 }
 
 const formVacio: FormState = {
@@ -47,6 +60,11 @@ const formVacio: FormState = {
   umbralStockBajo: "",
   aplicaIvaCarne: false,
   costoReferencia: "",
+  familiaCorte: "",
+  descripcionCorta: "",
+  promoPrecioUnitario: "",
+  promoGramosMinimos: "",
+  promoEtiqueta: "",
 };
 
 export default function ProductoForm() {
@@ -104,6 +122,11 @@ export default function ProductoForm() {
           umbralStockBajo: p.umbralStockBajo != null ? String(p.umbralStockBajo) : "",
           aplicaIvaCarne: p.aplicaIvaCarne,
           costoReferencia: p.costoReferencia != null ? String(p.costoReferencia) : "",
+          familiaCorte: p.familiaCorte ?? "",
+          descripcionCorta: p.descripcionCorta ?? "",
+          promoPrecioUnitario: p.promoPrecioUnitario != null ? String(p.promoPrecioUnitario) : "",
+          promoGramosMinimos: p.promoGramosMinimos != null ? String(p.promoGramosMinimos) : "",
+          promoEtiqueta: p.promoEtiqueta ?? "",
         });
       })
       .catch((e) => setError(e.message));
@@ -120,6 +143,13 @@ export default function ProductoForm() {
 
     if (!form.categoriaId) {
       setError("Falta elegir una categoría");
+      return;
+    }
+
+    const promoCompleta = form.promoPrecioUnitario && form.promoGramosMinimos && form.promoEtiqueta.trim();
+    const promoVacia = !form.promoPrecioUnitario && !form.promoGramosMinimos && !form.promoEtiqueta.trim();
+    if (!promoCompleta && !promoVacia) {
+      setError("La promoción por volumen necesita los tres datos (precio, gramos mínimos y etiqueta), o ninguno");
       return;
     }
 
@@ -141,6 +171,11 @@ export default function ProductoForm() {
       precioMayor: form.precioMayor ? Number(form.precioMayor) : null,
       aplicaIvaCarne: form.aplicaIvaCarne,
       costoReferencia: form.costoReferencia ? Number(form.costoReferencia) : null,
+      familiaCorte: form.familiaCorte || null,
+      descripcionCorta: form.descripcionCorta.trim() || null,
+      promoPrecioUnitario: form.promoPrecioUnitario ? Number(form.promoPrecioUnitario) : null,
+      promoGramosMinimos: form.promoGramosMinimos ? Number(form.promoGramosMinimos) : null,
+      promoEtiqueta: form.promoEtiqueta.trim() || null,
     };
 
     setGuardando(true);
@@ -394,6 +429,62 @@ export default function ProductoForm() {
             onChange={(e) => actualizarCampo("umbralStockBajo", e.target.value)}
           />
         </label>
+        <label>
+          Familia de corte (página web)
+          <select value={form.familiaCorte} onChange={(e) => actualizarCampo("familiaCorte", e.target.value)}>
+            <option value="">Sin selector de corte</option>
+            {FAMILIAS_CAMARA.map((f) => (
+              <option key={f} value={f}>
+                {f}
+              </option>
+            ))}
+          </select>
+          <span className="ayuda">
+            Si eliges una familia, en la web este producto muestra las opciones de corte configuradas para esa
+            familia (Bifes, Trozo entero, Molida, etc. — ver Comunas → Opciones de corte).
+          </span>
+        </label>
+        <label>
+          Descripción corta (página web)
+          <input
+            value={form.descripcionCorta}
+            onChange={(e) => actualizarCampo("descripcionCorta", e.target.value)}
+            placeholder="Frase corta para la tarjeta de producto (opcional)"
+          />
+        </label>
+        <fieldset className="tarjeta formulario">
+          <legend>Promoción por volumen (página web)</legend>
+          <p className="ayuda">
+            Los tres campos van juntos (o se llenan los tres, o se dejan los tres vacíos). Ej. "Pechuga Entera":
+            precio 3980, gramos mínimos 3000, etiqueta "$3.980/kg al llevar 3 kilos o más".
+          </p>
+          <label>
+            Precio promocional por kilo
+            <input
+              type="number"
+              min="1"
+              value={form.promoPrecioUnitario}
+              onChange={(e) => actualizarCampo("promoPrecioUnitario", e.target.value)}
+            />
+          </label>
+          <label>
+            Gramos mínimos para la promoción
+            <input
+              type="number"
+              min="1"
+              value={form.promoGramosMinimos}
+              onChange={(e) => actualizarCampo("promoGramosMinimos", e.target.value)}
+            />
+          </label>
+          <label>
+            Etiqueta de la promoción
+            <input
+              value={form.promoEtiqueta}
+              onChange={(e) => actualizarCampo("promoEtiqueta", e.target.value)}
+              placeholder='ej. "$3.980/kg al llevar 3 kilos o más"'
+            />
+          </label>
+        </fieldset>
 
         <div className="acciones-formulario">
           <button type="submit" className="boton boton-primario" disabled={guardando}>

@@ -52,6 +52,32 @@ export default function Productos() {
       .finally(() => setCargando(false));
   }
 
+  async function alternarWeb(p: ProductoConUltimoCosto, campo: "visibleEnWeb" | "featured" | "lowStock", valor: boolean) {
+    // Optimista: se ve el cambio al tiro, y se revierte solo si el servidor lo rechaza —
+    // son casillas de uso frecuente, esperar la respuesta antes de marcarlas se siente lento.
+    setProductos((actual) => actual.map((x) => (x.id === p.id ? { ...x, [campo]: valor } : x)));
+    try {
+      await api.productos.actualizarVisibilidadWeb(p.id, { [campo]: valor });
+    } catch (e) {
+      setProductos((actual) => actual.map((x) => (x.id === p.id ? { ...x, [campo]: !valor } : x)));
+      setError((e as Error).message);
+    }
+  }
+
+  async function cambiarDisponibilidadWeb(
+    p: ProductoConUltimoCosto,
+    disponibilidadWeb: "disponible" | "agotado" | "proximamente"
+  ) {
+    const anterior = p.disponibilidadWeb;
+    setProductos((actual) => actual.map((x) => (x.id === p.id ? { ...x, disponibilidadWeb } : x)));
+    try {
+      await api.productos.actualizarVisibilidadWeb(p.id, { disponibilidadWeb });
+    } catch (e) {
+      setProductos((actual) => actual.map((x) => (x.id === p.id ? { ...x, disponibilidadWeb: anterior } : x)));
+      setError((e as Error).message);
+    }
+  }
+
   async function reactivar(p: ProductoConUltimoCosto) {
     const confirmado = window.confirm(`¿Reactivar "${p.descripcion}" (PLU ${p.plu})?`);
     if (!confirmado) return;
@@ -421,6 +447,10 @@ export default function Productos() {
             <th>Costo</th>
             <th>Precio de venta</th>
             <th>Margen (%)</th>
+            <th>Oculto en web</th>
+            <th>Disponibilidad web</th>
+            <th>Destacado</th>
+            <th>Pocas unidades</th>
             {mostrarEliminados && <th>Estado</th>}
           </tr>
         </thead>
@@ -452,6 +482,42 @@ export default function Productos() {
                     "—"
                   )}
                 </td>
+                <td>
+                  <input
+                    type="checkbox"
+                    title="Ocultar de la página web (el producto sigue disponible en el POS normalmente)"
+                    checked={!p.visibleEnWeb}
+                    onChange={(e) => alternarWeb(p, "visibleEnWeb", !e.target.checked)}
+                  />
+                </td>
+                <td>
+                  <select
+                    value={p.disponibilidadWeb}
+                    onChange={(e) =>
+                      cambiarDisponibilidadWeb(p, e.target.value as "disponible" | "agotado" | "proximamente")
+                    }
+                  >
+                    <option value="disponible">Disponible</option>
+                    <option value="agotado">Agotado</option>
+                    <option value="proximamente">Próximamente</option>
+                  </select>
+                </td>
+                <td>
+                  <input
+                    type="checkbox"
+                    title="Destacado (aparece en el filtro 'Destacados' de la web)"
+                    checked={p.featured}
+                    onChange={(e) => alternarWeb(p, "featured", e.target.checked)}
+                  />
+                </td>
+                <td>
+                  <input
+                    type="checkbox"
+                    title="Pocas unidades (muestra el badge en la web)"
+                    checked={p.lowStock}
+                    onChange={(e) => alternarWeb(p, "lowStock", e.target.checked)}
+                  />
+                </td>
                 {mostrarEliminados && (
                   <td>
                     {p.activo ? (
@@ -471,7 +537,7 @@ export default function Productos() {
           })}
           {productos.length === 0 && !cargando && (
             <tr>
-              <td colSpan={(modoCategorizar ? 8 : 7) + (mostrarEliminados ? 1 : 0)}>
+              <td colSpan={(modoCategorizar ? 12 : 11) + (mostrarEliminados ? 1 : 0)}>
                 No hay productos que coincidan con la búsqueda.
               </td>
             </tr>

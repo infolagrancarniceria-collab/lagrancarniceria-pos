@@ -41,6 +41,7 @@ model Usuario {
   escaneosCamara              EscaneoInventarioCamara[]
   salidasMayoristaRegistradas SalidaMayorista[]
   salidasMayoristaAnuladas    SalidaMayorista[] @relation("SalidasMayoristasAnuladasPorUsuario")
+  pedidosWebAtendidos         PedidoWeb[]
 }
 
 // Gastos generales del negocio (sueldos, luz, agua, arriendo, etc.) —
@@ -127,6 +128,46 @@ model Producto {
   activo        Boolean  @default(true)
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
+
+  // --- Página web (lagrancarniceria.com) ---
+  // Independiente de "activo" (que es el estado general del POS): un
+  // producto puede seguir activo en el POS pero no publicarse en la web.
+  visibleEnWeb Boolean @default(true)
+
+  // Toggle manual e independiente del stock interno (stockActual) — el
+  // conteo de inventario no es lo bastante granular/inmediato para todos
+  // los productos como para decidir solo, así que la disponibilidad en la
+  // web la marca el cajero a mano. "disponible" | "agotado" |
+  // "proximamente" — string en vez de enum por lo mismo que familiaCorte
+  // (SQLite no soporta enums nativos).
+  disponibilidadWeb String @default("disponible")
+
+  // Destacado: aparece en el filtro "Destacados" de la web (no es un badge
+  // en la tarjeta, es un filtro aparte).
+  featured Boolean @default(false)
+  // Pocas unidades: badge en la tarjeta, independiente de disponibilidadWeb
+  // (un producto puede estar "disponible" y a la vez "con pocas unidades").
+  lowStock Boolean @default(false)
+
+  // Promoción por volumen (ej. "$3.980/kg al llevar 3 kilos o más") — los
+  // tres campos van juntos: si promoPrecioUnitario tiene valor, el
+  // producto muestra el badge "Oferta" y la etiqueta en la tarjeta.
+  promoPrecioUnitario Float?
+  promoGramosMinimos  Int?
+  promoEtiqueta       String?
+
+  // Texto corto opcional para la tarjeta de producto en la web (distinto
+  // de "descripcion", que es el nombre del producto) — null si no se ha
+  // escrito ninguno todavía.
+  descripcionCorta String?
+
+  // Familia para el selector de corte en la web (Bifes, trozo entero,
+  // medallones, picada, molida, parrilla, otros) — mismo patrón de string
+  // libre que familiaNombre en Cámara (ver CajaCamara/LoteCamara), en vez
+  // de un enum: SQLite no los soporta nativamente. Null = el producto no
+  // muestra selector de corte. Las opciones válidas para cada familia
+  // viven en CorteOpcion.
+  familiaCorte String?
 
   // Se actualiza solo con cada movimiento de inventario (entrada/salida);
   // no se edita a mano desde la ficha del producto.
@@ -255,6 +296,21 @@ model ConfiguracionRespaldo {
   actualizadoEn DateTime @updatedAt
 }
 
+// URL de la web y llave de sync (ver server/lib/syncWeb.ts) — vive acá, no
+// solo en variables de entorno, porque el instalador que llega al PC de la
+// carnicería no trae ningún archivo .env: sin esto no habría forma de
+// configurar el sync desde una instalación real. syncApiKey se guarda tal
+// cual (no hasheada, a diferencia de ClaveSupervisor) porque hay que poder
+// volver a mandarla en cada sync — nunca se muestra de vuelta al frontend
+// una vez guardada, mismo patrón que ConfiguracionIA. Siempre hay como
+// máximo una fila.
+model ConfiguracionSyncWeb {
+  id            Int      @id @default(autoincrement())
+  webSyncUrl    String?
+  syncApiKey    String?
+  actualizadoEn DateTime @updatedAt
+}
+
 // Solo puede haber una sesión de caja "abierta" a la vez (una sola persona
 // usa el sistema a la vez, según la arquitectura del proyecto).
 model SesionCaja {
@@ -284,6 +340,20 @@ model SesionCaja {
 
   ventas          Venta[]
   cobrosDeCredito PagoVenta[] @relation("CobrosDeCredito")
+}
+
+// Opciones de corte que se muestran en la web para una familia de producto
+// (ej. familia "Vacuno": Bifes, Trozo entero, Medallones, Picada, Molida,
+// Parrilla, Otros). Estándar por familia, no por producto individual — se
+// asignan a un producto a través de Producto.familiaCorte.
+model CorteOpcion {
+  id      Int     @id @default(autoincrement())
+  familia String
+  nombre  String
+  orden   Int     @default(0)
+  activo  Boolean @default(true)
+
+  @@unique([familia, nombre])
 }
 
 // Lista fija de comunas a las que se hace despacho, con su costo de envío
@@ -388,6 +458,49 @@ model PagoVenta {
   usuarioCobroId    Int?
   usuarioCobro      Usuario?    @relation("CobrosDeCreditoRegistradosPorUsuario", fields: [usuarioCobroId], references: [id])
   fechaCobro        DateTime?
+}
+
+// Copia local de los pedidos armados en la página web (cotización de
+// despacho) — se trae mediante el módulo de sync (no se generan acá). No
+// reemplaza a Venta ni se liquida contra Producto: es solo el registro de
+// lo que el cliente pidió por la web, para que el equipo lo revise y
+// coordine, igual que antes se revisaba a mano la planilla de Google
+// Sheets. "idWeb" evita duplicar un pedido si el sync se reintenta.
+model PedidoWeb {
+  id    Int    @id @default(autoincrement())
+  idWeb String @unique
+
+  fecha DateTime
+
+  clienteNombre   String
+  clienteTelefono String
+
+  // "retiro" | "despacho" — clienteDireccion/comunaNombre/costoEnvio solo
+  // vienen si es despacho (mismo criterio que el modelo Pedido de la web).
+  tipoEntrega      String  @default("despacho")
+  clienteDireccion String?
+  comunaNombre     String?
+  costoEnvio       Float?
+
+  fechaEntrega String?
+  // Solo informativo — el pago real se coordina aparte, no hay pasarela.
+  medioPago    String?
+
+  // JSON con el detalle de productos pedidos (nombre, corte elegido,
+  // envasado, instrucciones, cantidad aproximada en kg/unidad) — solo para
+  // mostrar, no hay relación con Producto porque el pedido puede referirse
+  // a un catálogo que ya cambió para cuando se revisa.
+  itemsJson String
+
+  comentario String?
+
+  estado String @default("pendiente") // "pendiente" | "atendido" | "anulado"
+
+  atendidoPorId Int?
+  atendidoPor   Usuario?  @relation(fields: [atendidoPorId], references: [id])
+  atendidoEn    DateTime?
+
+  sincronizadoEn DateTime @default(now())
 }
 
 // --- Módulo de Cámara Frigorífica ---

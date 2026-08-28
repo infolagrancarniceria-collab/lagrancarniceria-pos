@@ -18,6 +18,7 @@
     "prisma:migrate": "prisma migrate dev",
     "typecheck": "tsc --noEmit -p server/tsconfig.json && tsc --noEmit -p web/tsconfig.json",
     "db:plantilla": "node scripts/generar-plantilla-db.js",
+    "catalogo:real": "tsx scripts/cargar-catalogo-real.ts",
     "dist:win": "npm run build && npm run db:plantilla && electron-builder --win --publish never"
   },
   "build": {

@@ -139,9 +139,14 @@ async function ejecutarPropuesta(accion: PropuestaAsistente["accion"], usuarioId
         duracion: null,
         codigoProveedor: null,
         umbralStockBajo: null,
+        familiaCorte: null,
         precioMayor: null,
         aplicaIvaCarne: false,
         costoReferencia: null,
+        descripcionCorta: null,
+        promoPrecioUnitario: null,
+        promoGramosMinimos: null,
+        promoEtiqueta: null,
       });
       return;
     case "proponer_desactivar_producto":

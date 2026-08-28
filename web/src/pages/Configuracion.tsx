@@ -15,6 +15,12 @@ export default function Configuracion() {
   const [error, setError] = useState<string | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
+  const [syncWebConfigurada, setSyncWebConfigurada] = useState<boolean | null>(null);
+  const [syncWebUrl, setSyncWebUrl] = useState("");
+  const [syncWebClave, setSyncWebClave] = useState("");
+  const [errorSyncWeb, setErrorSyncWeb] = useState<string | null>(null);
+  const [mensajeSyncWeb, setMensajeSyncWeb] = useState<string | null>(null);
+  const [guardandoSyncWeb, setGuardandoSyncWeb] = useState(false);
   const [direccionRed, setDireccionRed] = useState<{ direcciones: string[]; puerto: number } | null>(null);
   const [modoCaja, setModoCaja] = useState(() => modoCajaActivo());
   const [impresoras, setImpresoras] = useState<ImpresoraDisponible[] | null>(null);
@@ -60,6 +66,13 @@ export default function Configuracion() {
     api.configuracion.direccionRed().then(setDireccionRed).catch(() => {});
     window.electronAPI?.listarImpresoras().then(setImpresoras).catch(() => setImpresoras([]));
     cargarEstadoRespaldo();
+    api.configuracion
+      .estadoSyncWeb()
+      .then((r) => {
+        setSyncWebConfigurada(r.configurada);
+        if (r.webSyncUrl) setSyncWebUrl(r.webSyncUrl);
+      })
+      .catch((e) => setErrorSyncWeb(e.message));
   }, []);
 
   async function elegirCarpetaUsb() {
@@ -111,6 +124,27 @@ export default function Configuracion() {
   function formatoFechaHora(iso: string | null): string {
     if (!iso) return "nunca";
     return new Date(iso).toLocaleString("es-CL");
+  }
+
+  async function guardarSyncWeb(e: React.FormEvent) {
+    e.preventDefault();
+    setErrorSyncWeb(null);
+    setMensajeSyncWeb(null);
+    if (!syncWebUrl.trim() || !syncWebClave.trim()) {
+      setErrorSyncWeb("Completa la URL de la web y la llave de sync");
+      return;
+    }
+    setGuardandoSyncWeb(true);
+    try {
+      await api.configuracion.guardarSyncWeb({ webSyncUrl: syncWebUrl.trim(), syncApiKey: syncWebClave.trim() });
+      setSyncWebConfigurada(true);
+      setSyncWebClave("");
+      setMensajeSyncWeb("Guardado — sincronizando el catálogo ahora mismo.");
+    } catch (e) {
+      setErrorSyncWeb((e as Error).message);
+    } finally {
+      setGuardandoSyncWeb(false);
+    }
   }
 
   async function guardar(e: React.FormEvent) {
@@ -358,6 +392,48 @@ export default function Configuracion() {
           <div className="acciones-formulario">
             <button type="submit" className="boton boton-primario" disabled={guardando}>
               {guardando ? "Guardando..." : "Guardar"}
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <section className="tarjeta">
+        <h2>Sincronización con la página web</h2>
+        <p className="ayuda">
+          Conecta este POS con lagrancarniceria.cl: manda el catálogo de productos visibles, las comunas de
+          despacho y las opciones de corte, y trae los pedidos que los clientes arman en la web (pantalla
+          "Pedidos web"). La llave se guarda solo en este computador.
+        </p>
+        {syncWebConfigurada != null && (
+          <p className={syncWebConfigurada ? "exito" : "error"}>
+            {syncWebConfigurada ? "Ya está conectado con la web." : "Todavía no está conectado con la web."}
+          </p>
+        )}
+        {errorSyncWeb && <ModalAlerta mensaje={errorSyncWeb} onCerrar={() => setErrorSyncWeb(null)} />}
+        {mensajeSyncWeb && <p className="exito">{mensajeSyncWeb}</p>}
+
+        <form onSubmit={guardarSyncWeb} onKeyDown={manejarEnterComoTab} className="formulario">
+          <label>
+            URL de la web
+            <input
+              value={syncWebUrl}
+              onChange={(e) => setSyncWebUrl(e.target.value)}
+              placeholder="https://lagrancarniceria.cl"
+            />
+          </label>
+          <label>
+            {syncWebConfigurada ? "Reemplazar llave de sync" : "Llave de sync"}
+            <input
+              type="password"
+              value={syncWebClave}
+              onChange={(e) => setSyncWebClave(e.target.value)}
+              placeholder="La llave que te dieron al conectar la web"
+              autoComplete="off"
+            />
+          </label>
+          <div className="acciones-formulario">
+            <button type="submit" className="boton boton-primario" disabled={guardandoSyncWeb}>
+              {guardandoSyncWeb ? "Guardando..." : "Guardar"}
             </button>
           </div>
         </form>

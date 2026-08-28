@@ -39,6 +39,52 @@ export interface Producto {
   activo: boolean;
   stockActual: number;
   umbralStockBajo: number | null;
+  // --- Página web ---
+  visibleEnWeb: boolean;
+  disponibilidadWeb: "disponible" | "agotado" | "proximamente";
+  featured: boolean;
+  lowStock: boolean;
+  promoPrecioUnitario: number | null;
+  promoGramosMinimos: number | null;
+  promoEtiqueta: string | null;
+  descripcionCorta: string | null;
+  familiaCorte: string | null;
+}
+
+export interface CorteOpcion {
+  id: number;
+  familia: string;
+  nombre: string;
+  orden: number;
+}
+
+export interface PedidoWebItem {
+  descripcion: string;
+  corte: string | null;
+  envasado: "Tradicional" | "Al vacío" | null;
+  instrucciones: string | null;
+  cantidad: number;
+  unidad: "kg" | "unidad";
+}
+
+export interface PedidoWeb {
+  id: number;
+  idWeb: string;
+  fecha: string;
+  clienteNombre: string;
+  clienteTelefono: string;
+  tipoEntrega: "retiro" | "despacho";
+  clienteDireccion: string | null;
+  comunaNombre: string | null;
+  costoEnvio: number | null;
+  fechaEntrega: string | null;
+  medioPago: string | null;
+  items: PedidoWebItem[];
+  comentario: string | null;
+  estado: "pendiente" | "atendido" | "anulado";
+  atendidoPorId: number | null;
+  atendidoEn: string | null;
+  sincronizadoEn: string;
 }
 
 export type FamiliaCamara = "Vacuno" | "Cerdo" | "Pollo" | "Otros";
@@ -763,13 +809,37 @@ export const api = {
       const query = qs.toString();
       return get<ProductoConCosto[]>(`/api/productos/margenes${query ? `?${query}` : ""}`);
     },
-    crear: (data: Omit<Producto, "id" | "categoria" | "activo" | "stockActual">) =>
-      post<Producto>("/api/productos", data),
+    crear: (
+      data: Omit<
+        Producto,
+        "id" | "categoria" | "activo" | "stockActual" | "visibleEnWeb" | "disponibilidadWeb" | "featured" | "lowStock"
+      >
+    ) => post<Producto>("/api/productos", data),
     actualizar: (
       id: number,
-      data: Omit<Producto, "id" | "categoria" | "activo" | "precio" | "stockActual">
+      data: Omit<
+        Producto,
+        | "id"
+        | "categoria"
+        | "activo"
+        | "precio"
+        | "stockActual"
+        | "visibleEnWeb"
+        | "disponibilidadWeb"
+        | "featured"
+        | "lowStock"
+      >
     ) => put<Producto>(`/api/productos/${id}`, data),
     eliminar: (id: number) => del<void>(`/api/productos/${id}`),
+    actualizarVisibilidadWeb: (
+      id: number,
+      data: {
+        visibleEnWeb?: boolean;
+        disponibilidadWeb?: "disponible" | "agotado" | "proximamente";
+        featured?: boolean;
+        lowStock?: boolean;
+      }
+    ) => put<Producto>(`/api/productos/${id}/web`, data),
     categorizarMasivo: (productoIds: number[], categoriaId: number) =>
       post<{ actualizados: number }>("/api/productos/categorizar-masivo", { productoIds, categoriaId }),
     eliminarMasivo: (productoIds: number[]) =>
@@ -855,6 +925,20 @@ export const api = {
     actualizar: (id: number, data: { nombre: string; costoEnvio: number }) =>
       put<Comuna>(`/api/comunas/${id}`, data),
     eliminar: (id: number) => del<void>(`/api/comunas/${id}`),
+  },
+  cortes: {
+    listar: () => get<CorteOpcion[]>("/api/cortes"),
+    crear: (data: { familia: string; nombre: string; orden?: number }) =>
+      post<CorteOpcion>("/api/cortes", data),
+    actualizar: (id: number, data: { familia: string; nombre: string; orden?: number }) =>
+      put<CorteOpcion>(`/api/cortes/${id}`, data),
+    eliminar: (id: number) => del<void>(`/api/cortes/${id}`),
+  },
+  pedidosWeb: {
+    listar: (estado?: "pendiente" | "atendido" | "anulado") =>
+      get<PedidoWeb[]>(`/api/pedidos-web${estado ? `?estado=${estado}` : ""}`),
+    marcarAtendido: (id: number, usuarioId: number) =>
+      put<PedidoWeb>(`/api/pedidos-web/${id}/atender`, { usuarioId }),
   },
   inventario: {
     stock: (soloBajo = false, categoriaId?: number) => {
@@ -1009,6 +1093,10 @@ export const api = {
     guardarRutaUsbRespaldo: (rutaUsb: string | null) =>
       put<void>("/api/configuracion/respaldo/ruta-usb", { rutaUsb }),
     respaldarAhora: () => post<ResultadoRespaldo>("/api/configuracion/respaldo/ahora", {}),
+    estadoSyncWeb: () =>
+      get<{ configurada: boolean; webSyncUrl: string | null }>("/api/configuracion/sync-web/estado"),
+    guardarSyncWeb: (data: { webSyncUrl: string; syncApiKey: string }) =>
+      post<void>("/api/configuracion/sync-web", data),
   },
   avisos: {
     obtener: () => get<AvisosCriticos>("/api/avisos"),
@@ -1190,4 +1278,14 @@ export const api = {
 
 export function formatoCLP(valor: number): string {
   return valor.toLocaleString("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 });
+}
+
+// Los ítems de PedidoWeb con unidad "kg" traen la cantidad en gramos (mismo
+// criterio que usa la web en su carrito) — gramos bajo 1 kg, kilos con coma
+// decimal desde 1 kg.
+export function formatoPeso(gramos: number): string {
+  if (gramos < 1000) return `${gramos} g`;
+  const kilos = gramos / 1000;
+  const texto = kilos.toFixed(1).replace(".", ",").replace(",0", "");
+  return `${texto} kg`;
 }

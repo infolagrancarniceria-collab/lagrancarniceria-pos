@@ -4,6 +4,7 @@ import { parse } from "csv-parse/sync";
 import { z } from "zod";
 import { prisma } from "../db";
 import { obtenerIdsCategoriaYDescendientes } from "../lib/categorias";
+import { sincronizarCatalogoConWeb } from "../lib/syncWeb";
 
 export const productosRouter = Router();
 
@@ -212,6 +213,16 @@ const productoBaseSchema = z.object({
   precioMayor: z.number().positive().optional().nullable(),
   aplicaIvaCarne: z.boolean().optional(),
   costoReferencia: z.number().positive().optional().nullable(),
+  // Familia para el selector de corte en la web (ej. "Vacuno", "Cerdo") —
+  // null si el producto no debe mostrar selector de corte.
+  familiaCorte: z.string().trim().optional().nullable(),
+  // Texto corto para la tarjeta de producto en la web (opcional).
+  descripcionCorta: z.string().trim().optional().nullable(),
+  // Promoción por volumen en la web — los tres van juntos: si se llena uno
+  // hay que llenar los tres (se valida en el frontend, ver ProductoForm).
+  promoPrecioUnitario: z.number().positive().optional().nullable(),
+  promoGramosMinimos: z.number().int().positive().optional().nullable(),
+  promoEtiqueta: z.string().trim().optional().nullable(),
 });
 
 function validarCodigoBarrasVsFlag(data: {
@@ -255,6 +266,7 @@ productosRouter.post("/", async (req, res) => {
     data: { ...data, codigoBarras: data.codigoBarras || null },
     include: { categoria: true },
   });
+  void sincronizarCatalogoConWeb();
   res.status(201).json(producto);
 });
 
@@ -293,6 +305,7 @@ productosRouter.put("/:id", async (req, res) => {
     data: { ...data, codigoBarras: data.codigoBarras || null },
     include: { categoria: true },
   });
+  void sincronizarCatalogoConWeb();
   res.json(producto);
 });
 
@@ -302,6 +315,7 @@ productosRouter.delete("/:id", async (req, res) => {
   if (!existente) return res.status(404).json({ error: "Producto no encontrado" });
 
   await prisma.producto.update({ where: { id }, data: { activo: false } });
+  void sincronizarCatalogoConWeb();
   res.status(204).send();
 });
 
@@ -319,6 +333,37 @@ productosRouter.post("/:id/reactivar", async (req, res) => {
     data: { activo: true },
     include: { categoria: true },
   });
+  void sincronizarCatalogoConWeb();
+  res.json(producto);
+});
+
+// Toggle rápido de visibilidad en la web (pantalla "Productos" — casillas
+// "Oculto", "Destacado", "Pocas unidades" + selector de disponibilidad).
+// Separado del PUT normal a propósito, para no obligar a mandar todos los
+// demás campos del producto solo para tildar una casilla.
+const webVisibilidadSchema = z.object({
+  visibleEnWeb: z.boolean().optional(),
+  disponibilidadWeb: z.enum(["disponible", "agotado", "proximamente"]).optional(),
+  featured: z.boolean().optional(),
+  lowStock: z.boolean().optional(),
+});
+
+productosRouter.put("/:id/web", async (req, res) => {
+  const id = Number(req.params.id);
+  const existente = await prisma.producto.findUnique({ where: { id } });
+  if (!existente) return res.status(404).json({ error: "Producto no encontrado" });
+
+  const parsed = webVisibilidadSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0].message });
+  }
+
+  const producto = await prisma.producto.update({
+    where: { id },
+    data: parsed.data,
+    include: { categoria: true },
+  });
+  void sincronizarCatalogoConWeb();
   res.json(producto);
 });
 
@@ -367,6 +412,7 @@ productosRouter.post("/categorizar-masivo", async (req, res) => {
     where: { id: { in: productoIds } },
     data: { categoriaId },
   });
+  void sincronizarCatalogoConWeb();
   res.json({ actualizados: resultado.count });
 });
 
@@ -388,6 +434,7 @@ productosRouter.post("/eliminar-masivo", async (req, res) => {
     where: { id: { in: parsed.data.productoIds } },
     data: { activo: false },
   });
+  void sincronizarCatalogoConWeb();
   res.json({ eliminados: resultado.count });
 });
 
@@ -507,6 +554,7 @@ productosRouter.post("/importar-csv", upload.single("archivo"), async (req, res)
     )
   );
 
+  void sincronizarCatalogoConWeb();
   res.json({ previsualizacion: false, filas, creados: creados.length });
 });
 
