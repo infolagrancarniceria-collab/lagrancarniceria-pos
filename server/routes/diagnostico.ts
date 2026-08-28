@@ -60,8 +60,13 @@ diagnosticoRouter.get("/", async (_req, res) => {
 
     let totalProductos: unknown = null;
     try {
-      const total = await prisma.$queryRawUnsafe<{ c: number }[]>(`SELECT COUNT(*) as c FROM Producto`);
-      totalProductos = total[0]?.c ?? null;
+      // COUNT(*) en una consulta cruda a SQLite le llega a Prisma como
+      // BigInt, no como number — JSON.stringify (y por lo tanto res.json)
+      // no sabe serializar BigInt y tira, así que se convierte acá antes
+      // de que llegue a la respuesta (nunca va a acercarse al límite de un
+      // number normal, es la cantidad de productos de una carnicería).
+      const total = await prisma.$queryRawUnsafe<{ c: bigint }[]>(`SELECT COUNT(*) as c FROM Producto`);
+      totalProductos = total[0] ? Number(total[0].c) : null;
     } catch (e) {
       totalProductos = { error: (e as Error).message };
     }
