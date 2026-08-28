@@ -142,25 +142,78 @@ export async function aplicarMigracionesPendientes(carpetaMigraciones: string): 
   }
 }
 
-// En una instalación real, la columna Producto.costoReferencia (agregada
-// el mismo día que esta función, migración "producto_costo_referencia")
-// terminó con el string "costoReferencia" guardado como valor en vez de un
-// número — el nombre de la columna en lugar de un dato, probablemente
-// arrastrado de un intento de reparación manual anterior sobre esa misma
-// columna. Como es REAL en el schema, Prisma no puede convertir ese texto
-// al leerlo, y como esta columna es parte de CUALQUIER consulta a
-// Producto, una sola fila así tira abajo TODAS las pantallas que listan
-// productos (Productos, Historial, Inventario, Reportes), no solo las que
-// usan el costo de referencia. Se limpia sola en cada arranque — segura de
-// repetir, porque solo toca filas donde el valor guardado no es numérico
-// (typeof(...) = 'text'); una fila con un costo real (NULL o un número) no
-// se toca nunca.
-export async function repararCostoReferenciaCorrupto(): Promise<void> {
-  const filas = await prisma.$executeRawUnsafe(
-    `UPDATE Producto SET costoReferencia = NULL WHERE typeof(costoReferencia) = 'text'`
-  );
-  if (filas > 0) {
-    console.log(`Producto: se limpiaron ${filas} valor(es) de costoReferencia corrupto(s) (texto en vez de número).`);
+// En una instalación real aparecieron, en más de una columna, filas con el
+// NOMBRE de la columna guardado como si fuera el dato (costoReferencia =
+// "costoReferencia", después aplicaIvaCarne = "aplicaIvaCarne") — no fue
+// una sola columna suelta, es un patrón que se repitió en columnas
+// distintas, así que probablemente viene de un script de reparación
+// manual anterior que armó mal un UPDATE dinámico (algo como poner el
+// nombre de la columna también como el valor, en vez del dato real).
+// Prisma no puede convertir un texto a REAL/INTEGER/BOOLEAN/DATETIME al
+// leerlo, y como Producto entra en CUALQUIER consulta que lo toque, una
+// sola fila así tira abajo TODAS las pantallas que listan productos
+// (Productos, Historial, Inventario, Reportes), sin importar qué columna
+// sea la corrupta.
+//
+// En vez de ir agregando una reparación por columna cada vez que aparece
+// una nueva, esto recorre TODAS las columnas de Producto (vía
+// pragma_table_info, no una lista a mano) y limpia cualquiera de tipo
+// INTEGER/REAL/BOOLEAN que tenga guardado un valor de tipo texto — eso es
+// imposible que pase con un dato real en esas columnas. OJO: no alcanza
+// con "cualquier columna que no sea TEXT" — DATETIME también usa
+// almacenamiento de texto en SQLite (así guarda Prisma una fecha real,
+// ej. "2026-08-28 18:02:27"), así que se deja afuera a propósito: tratarla
+// igual habría borrado la fecha de creación/actualización de cada
+// producto, dato real, no corrupto.
+//
+// Las columnas NOT NULL (ej. aplicaIvaCarne, activo) no pueden limpiarse a
+// NULL — se reponen a su propio valor por defecto (el mismo que tomaría un
+// producto nuevo) en vez de eso. Si una columna es NOT NULL y ni siquiera
+// tiene un valor por defecto declarado, se deja sin tocar (no hay ningún
+// valor seguro para poner) y queda un aviso en la consola. Cada columna se
+// repara en su propio try/catch: si una fallara por algo imprevisto, no
+// debe impedir que el servidor termine de arrancar ni que se reparen las
+// demás. Segura de repetir: una fila con un valor legítimo no se toca.
+export async function repararColumnasCorruptas(): Promise<void> {
+  // pragma_table_info, igual que un COUNT(*) crudo, le devuelve a Prisma
+  // las columnas enteras (acá "notnull") como BigInt, no como number — hay
+  // que convertirlas antes de comparar, si no cualquier "=== 1" da
+  // siempre false (1n !== 1 en JS) y el chequeo de NOT NULL queda inútil.
+  const columnasCrudas = await prisma.$queryRawUnsafe<
+    { name: string; type: string; notnull: bigint; dflt_value: string | null }[]
+  >(`SELECT name, type, "notnull", dflt_value FROM pragma_table_info('Producto')`);
+  const columnas = columnasCrudas.map((c) => ({ ...c, notnull: Number(c.notnull) }));
+
+  for (const columna of columnas) {
+    const esColumnaNumericaOBooleana = /^(INTEGER|REAL|BOOLEAN)$/i.test(columna.type);
+    if (!esColumnaNumericaOBooleana) continue;
+
+    const esNotNullSinDefault = columna.notnull === 1 && columna.dflt_value == null;
+    if (esNotNullSinDefault) {
+      const filasAfectadas = await prisma.$queryRawUnsafe<{ c: bigint }[]>(
+        `SELECT COUNT(*) as c FROM "Producto" WHERE typeof("${columna.name}") = 'text'`
+      );
+      if (Number(filasAfectadas[0]?.c ?? 0) > 0) {
+        console.error(
+          `Producto.${columna.name}: hay valores corruptos (texto) pero es NOT NULL sin default — necesita revisión manual, no se tocó.`
+        );
+      }
+      continue;
+    }
+
+    const valorDeReemplazo = columna.notnull === 1 ? columna.dflt_value : "NULL";
+    try {
+      const filas = await prisma.$executeRawUnsafe(
+        `UPDATE "Producto" SET "${columna.name}" = ${valorDeReemplazo} WHERE typeof("${columna.name}") = 'text'`
+      );
+      if (filas > 0) {
+        console.log(
+          `Producto.${columna.name}: se limpiaron ${filas} valor(es) corrupto(s) (texto guardado en vez de ${columna.type}).`
+        );
+      }
+    } catch (e) {
+      console.error(`No se pudo reparar Producto.${columna.name}:`, (e as Error).message);
+    }
   }
 }
 
