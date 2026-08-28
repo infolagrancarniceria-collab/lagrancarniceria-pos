@@ -142,6 +142,28 @@ export async function aplicarMigracionesPendientes(carpetaMigraciones: string): 
   }
 }
 
+// En una instalación real, la columna Producto.costoReferencia (agregada
+// el mismo día que esta función, migración "producto_costo_referencia")
+// terminó con el string "costoReferencia" guardado como valor en vez de un
+// número — el nombre de la columna en lugar de un dato, probablemente
+// arrastrado de un intento de reparación manual anterior sobre esa misma
+// columna. Como es REAL en el schema, Prisma no puede convertir ese texto
+// al leerlo, y como esta columna es parte de CUALQUIER consulta a
+// Producto, una sola fila así tira abajo TODAS las pantallas que listan
+// productos (Productos, Historial, Inventario, Reportes), no solo las que
+// usan el costo de referencia. Se limpia sola en cada arranque — segura de
+// repetir, porque solo toca filas donde el valor guardado no es numérico
+// (typeof(...) = 'text'); una fila con un costo real (NULL o un número) no
+// se toca nunca.
+export async function repararCostoReferenciaCorrupto(): Promise<void> {
+  const filas = await prisma.$executeRawUnsafe(
+    `UPDATE Producto SET costoReferencia = NULL WHERE typeof(costoReferencia) = 'text'`
+  );
+  if (filas > 0) {
+    console.log(`Producto: se limpiaron ${filas} valor(es) de costoReferencia corrupto(s) (texto en vez de número).`);
+  }
+}
+
 // Ventana de tiempo dentro de la cual se asume que un grupo de cajas se
 // creó de una sola vez (mismo lote) — la entrada de un lote real crea sus
 // cajas en un for-loop dentro de una transacción, así que quedan a pocos
