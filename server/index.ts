@@ -112,8 +112,32 @@ if (fs.existsSync(webDist)) {
   });
 }
 
-const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
+// Carpeta donde vive datos.db — mismo criterio que server/lib/migraciones.ts
+// y server/lib/respaldos.ts para encontrar la base de datos real a partir
+// de DATABASE_URL.
+function carpetaBaseDeDatos(): string {
+  const url = process.env.DATABASE_URL ?? "";
+  const ruta = url.startsWith("file:") ? url.slice("file:".length) : "";
+  return ruta ? path.dirname(path.resolve(ruta)) : ".";
+}
+
+// Registra el detalle técnico de CUALQUIER error 500 (no solo migraciones)
+// al lado de datos.db — así se puede ver qué pantalla/ruta falló y por qué
+// sin depender de que alguien tenga abiertas las herramientas de
+// desarrollador en el momento exacto en que pasó. Se lee desde
+// GET /api/diagnostico.
+const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   console.error(err);
+  try {
+    const ruta = path.join(carpetaBaseDeDatos(), "error-servidor.log");
+    const detalle = err instanceof Error ? (err.stack ?? err.message) : String(err);
+    const linea = `[${new Date().toISOString()}] ${req.method} ${req.originalUrl}\n${detalle}\n\n`;
+    fs.appendFileSync(ruta, linea);
+  } catch {
+    // si ni siquiera se puede escribir el log, no bloquear la respuesta de
+    // error igual — el usuario ya se queda sin el detalle, pero al menos
+    // recibe la respuesta.
+  }
   res.status(500).json({ error: "Error interno del servidor" });
 };
 app.use(errorHandler);

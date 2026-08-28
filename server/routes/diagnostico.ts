@@ -74,6 +74,11 @@ diagnosticoRouter.get("/", async (_req, res) => {
     const carpetaDatos = rutaCarpetaDatos();
     const logArranque = carpetaDatos ? leerSiExiste(path.join(carpetaDatos, "arranque.log")) : null;
     const logErrores = carpetaDatos ? leerSiExiste(path.join(carpetaDatos, "error-migraciones.log")) : null;
+    // Detalle técnico de cualquier error 500 que haya pasado en cualquier
+    // pantalla (lo escribe el errorHandler de server/index.ts) — para poder
+    // ver la causa real de un error sin depender de las herramientas de
+    // desarrollador del navegador.
+    const logErroresServidor = carpetaDatos ? leerSiExiste(path.join(carpetaDatos, "error-servidor.log")) : null;
 
     res.json({
       databaseUrl: process.env.DATABASE_URL ?? null,
@@ -83,6 +88,7 @@ diagnosticoRouter.get("/", async (_req, res) => {
       totalProductos,
       logArranque,
       logErrores,
+      logErroresServidor,
     });
   } catch (e) {
     res.json({ errorDelDiagnosticoMismo: (e as Error).message, stack: (e as Error).stack ?? null });
