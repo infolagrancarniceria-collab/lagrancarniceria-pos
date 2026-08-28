@@ -5,11 +5,26 @@ import { prisma } from "../db";
 
 export const diagnosticoRouter = Router();
 
+function rutaCarpetaDatos(): string | null {
+  const url = process.env.DATABASE_URL ?? "";
+  const rutaDb = url.startsWith("file:") ? url.slice("file:".length) : "";
+  return rutaDb ? path.dirname(path.resolve(rutaDb)) : null;
+}
+
+function leerSiExiste(rutaArchivo: string): string | null {
+  try {
+    return fs.existsSync(rutaArchivo) ? fs.readFileSync(rutaArchivo, "utf-8") : null;
+  } catch (e) {
+    return `(no se pudo leer: ${(e as Error).message})`;
+  }
+}
+
 // Pantalla de diagnóstico temporal — para poder ver el estado real de una
 // instalación (qué migraciones quedaron aplicadas, qué columnas tiene la
-// tabla Producto de verdad, y el log de errores de migración si hay uno)
-// sin depender de las herramientas de desarrollador ni de acceso remoto al
-// PC. No expone datos de clientes/ventas, solo metadata de esquema.
+// tabla Producto de verdad, y los logs de arranque/error si hay) sin
+// depender de las herramientas de desarrollador ni de acceso remoto al PC.
+// No expone datos de clientes/ventas, solo metadata de esquema y logs
+// técnicos.
 diagnosticoRouter.get("/", async (_req, res) => {
   // Cada consulta va por separado y con su propio try/catch — si algo está
   // roto de verdad (ej. la tabla Producto ni siquiera existe), igual se
@@ -42,17 +57,17 @@ diagnosticoRouter.get("/", async (_req, res) => {
     totalProductos = { error: (e as Error).message };
   }
 
-  let logErrores: string | null = null;
-  try {
-    const url = process.env.DATABASE_URL ?? "";
-    const rutaDb = url.startsWith("file:") ? url.slice("file:".length) : "";
-    if (rutaDb) {
-      const rutaLog = path.join(path.dirname(path.resolve(rutaDb)), "error-migraciones.log");
-      if (fs.existsSync(rutaLog)) logErrores = fs.readFileSync(rutaLog, "utf-8");
-    }
-  } catch {
-    // si no se puede leer el log, se informa igual el resto del diagnóstico
-  }
+  const carpetaDatos = rutaCarpetaDatos();
+  const logArranque = carpetaDatos ? leerSiExiste(path.join(carpetaDatos, "arranque.log")) : null;
+  const logErrores = carpetaDatos ? leerSiExiste(path.join(carpetaDatos, "error-migraciones.log")) : null;
 
-  res.json({ migracionesAplicadas, columnasProducto, totalProductos, logErrores });
+  res.json({
+    databaseUrl: process.env.DATABASE_URL ?? null,
+    resourcesPath: (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath ?? null,
+    migracionesAplicadas,
+    columnasProducto,
+    totalProductos,
+    logArranque,
+    logErrores,
+  });
 });

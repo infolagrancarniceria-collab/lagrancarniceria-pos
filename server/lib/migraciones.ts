@@ -27,6 +27,23 @@ function carpetaBaseDeDatos(): string {
   return ruta ? path.dirname(path.resolve(ruta)) : ".";
 }
 
+// Registro de cada arranque (no solo errores) — qué carpeta de migraciones
+// se usó, qué había en ella, qué ya estaba aplicado y qué se intentó. Vive
+// al lado de datos.db. Pensado para poder diagnosticar una instalación real
+// a distancia (que alguien mande este archivo) sin depender de que las
+// herramientas de desarrollador estén abiertas justo en el momento en que
+// pasó algo.
+function registrarArranque(lineas: string[]): void {
+  try {
+    const ruta = path.join(carpetaBaseDeDatos(), "arranque.log");
+    const encabezado = `\n===== ${new Date().toISOString()} =====\n`;
+    fs.appendFileSync(ruta, encabezado + lineas.join("\n") + "\n");
+  } catch {
+    // si ni siquiera se puede escribir el log, seguir igual — no bloquear
+    // el arranque del programa por esto.
+  }
+}
+
 // Si una migración falla a mitad de camino, esto queda escrito al lado de
 // datos.db — así hay algo que revisar sin depender de que alguien tenga
 // abiertas las herramientas de desarrollador en el momento exacto en que
@@ -43,63 +60,85 @@ function registrarErrorMigracion(nombre: string, error: Error): void {
 }
 
 export async function aplicarMigracionesPendientes(carpetaMigraciones: string): Promise<void> {
-  if (!fs.existsSync(carpetaMigraciones)) return;
+  const registro: string[] = [];
+  registro.push(`Carpeta de migraciones: ${carpetaMigraciones}`);
+  const carpetaExiste = fs.existsSync(carpetaMigraciones);
+  registro.push(`¿Existe esa carpeta?: ${carpetaExiste}`);
+
+  if (!carpetaExiste) {
+    registrarArranque(registro);
+    return;
+  }
 
   const aplicadas = await prisma.$queryRawUnsafe<{ migration_name: string }[]>(
     `SELECT migration_name FROM _prisma_migrations WHERE finished_at IS NOT NULL`
   );
   const nombresAplicados = new Set(aplicadas.map((m) => m.migration_name));
+  registro.push(`Migraciones ya registradas como aplicadas (${nombresAplicados.size}): ${[...nombresAplicados].join(", ")}`);
 
   const carpetas = fs
     .readdirSync(carpetaMigraciones, { withFileTypes: true })
     .filter((entrada) => entrada.isDirectory())
     .map((entrada) => entrada.name)
     .sort();
+  registro.push(`Carpetas de migración encontradas (${carpetas.length}): ${carpetas.join(", ")}`);
 
-  for (const nombre of carpetas) {
-    if (nombresAplicados.has(nombre)) continue;
+  const pendientes = carpetas.filter((nombre) => !nombresAplicados.has(nombre));
+  registro.push(`Pendientes por aplicar (${pendientes.length}): ${pendientes.join(", ") || "(ninguna)"}`);
 
-    const rutaSql = path.join(carpetaMigraciones, nombre, "migration.sql");
-    if (!fs.existsSync(rutaSql)) continue;
-    const contenido = fs.readFileSync(rutaSql, "utf-8");
+  try {
+    for (const nombre of carpetas) {
+      if (nombresAplicados.has(nombre)) continue;
 
-    const sentencias = contenido
-      .split(";")
-      .map(limpiarComentarios)
-      .filter((s) => s.length > 0);
+      const rutaSql = path.join(carpetaMigraciones, nombre, "migration.sql");
+      if (!fs.existsSync(rutaSql)) {
+        registro.push(`"${nombre}": se salta, no tiene migration.sql`);
+        continue;
+      }
+      const contenido = fs.readFileSync(rutaSql, "utf-8");
 
-    // Todo en una sola transacción interactiva (no llamadas sueltas a
-    // prisma.$executeRawUnsafe): eso garantiza que las sentencias de una
-    // misma migración corran sobre la MISMA conexión — importante para las
-    // migraciones que hacen "RedefineTables" (recrear una tabla para
-    // agregar/quitar columnas, que es como SQLite obliga a hacerlo), que
-    // empiezan con PRAGMA foreign_keys=OFF y dependen de que siga activo
-    // hasta el PRAGMA foreign_keys=ON del final. Si algo falla a mitad de
-    // camino, se revierte todo (nunca queda una tabla a medio reconstruir)
-    // y la migración no se marca como aplicada, así se reintenta sola en el
-    // próximo arranque.
-    try {
-      await prisma.$transaction(
-        async (tx) => {
-          for (const sentencia of sentencias) {
-            await tx.$executeRawUnsafe(sentencia);
-          }
-          const checksum = crypto.createHash("sha256").update(contenido).digest("hex");
-          await tx.$executeRawUnsafe(
-            `INSERT INTO _prisma_migrations (id, checksum, migration_name, started_at, finished_at, applied_steps_count) VALUES (?, ?, ?, datetime('now'), datetime('now'), 1)`,
-            crypto.randomUUID(),
-            checksum,
-            nombre
-          );
-        },
-        { timeout: 60000 }
-      );
-    } catch (e) {
-      registrarErrorMigracion(nombre, e as Error);
-      throw new Error(`No se pudo aplicar la migración "${nombre}": ${(e as Error).message}`);
+      const sentencias = contenido
+        .split(";")
+        .map(limpiarComentarios)
+        .filter((s) => s.length > 0);
+
+      // Todo en una sola transacción interactiva (no llamadas sueltas a
+      // prisma.$executeRawUnsafe): eso garantiza que las sentencias de una
+      // misma migración corran sobre la MISMA conexión — importante para
+      // las migraciones que hacen "RedefineTables" (recrear una tabla para
+      // agregar/quitar columnas, que es como SQLite obliga a hacerlo), que
+      // empiezan con PRAGMA foreign_keys=OFF y dependen de que siga activo
+      // hasta el PRAGMA foreign_keys=ON del final. Si algo falla a mitad de
+      // camino, se revierte todo (nunca queda una tabla a medio reconstruir)
+      // y la migración no se marca como aplicada, así se reintenta sola en
+      // el próximo arranque.
+      try {
+        await prisma.$transaction(
+          async (tx) => {
+            for (const sentencia of sentencias) {
+              await tx.$executeRawUnsafe(sentencia);
+            }
+            const checksum = crypto.createHash("sha256").update(contenido).digest("hex");
+            await tx.$executeRawUnsafe(
+              `INSERT INTO _prisma_migrations (id, checksum, migration_name, started_at, finished_at, applied_steps_count) VALUES (?, ?, ?, datetime('now'), datetime('now'), 1)`,
+              crypto.randomUUID(),
+              checksum,
+              nombre
+            );
+          },
+          { timeout: 60000 }
+        );
+      } catch (e) {
+        registro.push(`"${nombre}": FALLÓ — ${(e as Error).message}`);
+        registrarErrorMigracion(nombre, e as Error);
+        throw new Error(`No se pudo aplicar la migración "${nombre}": ${(e as Error).message}`);
+      }
+
+      registro.push(`"${nombre}": aplicada OK`);
+      console.log(`Migración aplicada: ${nombre}`);
     }
-
-    console.log(`Migración aplicada: ${nombre}`);
+  } finally {
+    registrarArranque(registro);
   }
 }
 
