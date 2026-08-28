@@ -19,6 +19,29 @@ function limpiarComentarios(sql: string): string {
     .trim();
 }
 
+// Carpeta donde vive datos.db — mismo criterio que usa server/lib/respaldos.ts
+// para encontrar la base de datos real a partir de DATABASE_URL.
+function carpetaBaseDeDatos(): string {
+  const url = process.env.DATABASE_URL ?? "";
+  const ruta = url.startsWith("file:") ? url.slice("file:".length) : "";
+  return ruta ? path.dirname(path.resolve(ruta)) : ".";
+}
+
+// Si una migración falla a mitad de camino, esto queda escrito al lado de
+// datos.db — así hay algo que revisar sin depender de que alguien tenga
+// abiertas las herramientas de desarrollador en el momento exacto en que
+// pasó (que solo están disponibles con la ventana abierta, no después).
+function registrarErrorMigracion(nombre: string, error: Error): void {
+  try {
+    const ruta = path.join(carpetaBaseDeDatos(), "error-migraciones.log");
+    const linea = `[${new Date().toISOString()}] Falló la migración "${nombre}": ${error.message}\n${error.stack ?? ""}\n\n`;
+    fs.appendFileSync(ruta, linea);
+  } catch {
+    // Si ni siquiera se puede escribir el log, no hay mucho más que hacer acá
+    // — el error original ya se relanza de todas formas.
+  }
+}
+
 export async function aplicarMigracionesPendientes(carpetaMigraciones: string): Promise<void> {
   if (!fs.existsSync(carpetaMigraciones)) return;
 
@@ -45,17 +68,36 @@ export async function aplicarMigracionesPendientes(carpetaMigraciones: string): 
       .map(limpiarComentarios)
       .filter((s) => s.length > 0);
 
-    for (const sentencia of sentencias) {
-      await prisma.$executeRawUnsafe(sentencia);
+    // Todo en una sola transacción interactiva (no llamadas sueltas a
+    // prisma.$executeRawUnsafe): eso garantiza que las sentencias de una
+    // misma migración corran sobre la MISMA conexión — importante para las
+    // migraciones que hacen "RedefineTables" (recrear una tabla para
+    // agregar/quitar columnas, que es como SQLite obliga a hacerlo), que
+    // empiezan con PRAGMA foreign_keys=OFF y dependen de que siga activo
+    // hasta el PRAGMA foreign_keys=ON del final. Si algo falla a mitad de
+    // camino, se revierte todo (nunca queda una tabla a medio reconstruir)
+    // y la migración no se marca como aplicada, así se reintenta sola en el
+    // próximo arranque.
+    try {
+      await prisma.$transaction(
+        async (tx) => {
+          for (const sentencia of sentencias) {
+            await tx.$executeRawUnsafe(sentencia);
+          }
+          const checksum = crypto.createHash("sha256").update(contenido).digest("hex");
+          await tx.$executeRawUnsafe(
+            `INSERT INTO _prisma_migrations (id, checksum, migration_name, started_at, finished_at, applied_steps_count) VALUES (?, ?, ?, datetime('now'), datetime('now'), 1)`,
+            crypto.randomUUID(),
+            checksum,
+            nombre
+          );
+        },
+        { timeout: 60000 }
+      );
+    } catch (e) {
+      registrarErrorMigracion(nombre, e as Error);
+      throw new Error(`No se pudo aplicar la migración "${nombre}": ${(e as Error).message}`);
     }
-
-    const checksum = crypto.createHash("sha256").update(contenido).digest("hex");
-    await prisma.$executeRawUnsafe(
-      `INSERT INTO _prisma_migrations (id, checksum, migration_name, started_at, finished_at, applied_steps_count) VALUES (?, ?, ?, datetime('now'), datetime('now'), 1)`,
-      crypto.randomUUID(),
-      checksum,
-      nombre
-    );
 
     console.log(`Migración aplicada: ${nombre}`);
   }

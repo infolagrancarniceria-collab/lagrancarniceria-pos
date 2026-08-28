@@ -28,6 +28,7 @@ import { camaraRouter } from "./routes/camara";
 import { avisosRouter } from "./routes/avisos";
 import { cortesRouter } from "./routes/cortes";
 import { pedidosWebRouter } from "./routes/pedidosWeb";
+import { diagnosticoRouter } from "./routes/diagnostico";
 import { aplicarMigracionesPendientes, reconstruirLotesCamaraFaltantes } from "./lib/migraciones";
 import { ejecutarRespaldoAutomaticoSiCorresponde } from "./lib/respaldos";
 import { iniciarSyncWeb } from "./lib/syncWeb";
@@ -99,6 +100,7 @@ app.use("/api/camara", camaraRouter);
 app.use("/api/avisos", avisosRouter);
 app.use("/api/cortes", cortesRouter);
 app.use("/api/pedidos-web", pedidosWebRouter);
+app.use("/api/diagnostico", diagnosticoRouter);
 
 // En producción, el mismo servidor sirve la interfaz web ya compilada
 // (así la tablet/celular en la red del local también puede entrar por navegador).
