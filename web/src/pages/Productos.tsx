@@ -5,6 +5,7 @@ import {
   calcularMargen,
   formatoCLP,
   type Categoria,
+  type FilaImportacionCosto,
   type FilaImportacionProductos,
   type ProductoConUltimoCosto,
 } from "../api";
@@ -27,6 +28,15 @@ export default function Productos() {
   const [previewImportar, setPreviewImportar] = useState<FilaImportacionProductos[] | null>(null);
   const [mensajeImportar, setMensajeImportar] = useState<string | null>(null);
   const [errorImportar, setErrorImportar] = useState<string | null>(null);
+
+  // Importar costos (CSV) — a diferencia de "Importar productos (CSV)"
+  // arriba, esto actualiza el costo de referencia de productos que YA
+  // existen, para poder cargar de una vez los costos del sistema anterior.
+  const [mostrarImportarCostos, setMostrarImportarCostos] = useState(false);
+  const [archivoImportarCostos, setArchivoImportarCostos] = useState<File | null>(null);
+  const [previewImportarCostos, setPreviewImportarCostos] = useState<FilaImportacionCosto[] | null>(null);
+  const [mensajeImportarCostos, setMensajeImportarCostos] = useState<string | null>(null);
+  const [errorImportarCostos, setErrorImportarCostos] = useState<string | null>(null);
 
   const [modoCategorizar, setModoCategorizar] = useState(false);
   const [seleccionados, setSeleccionados] = useState<Set<number>>(new Set());
@@ -81,6 +91,36 @@ export default function Productos() {
       mostrarToast("Productos importados", `${resultado.creados} producto(s) creado(s) desde el archivo.`);
     } catch (e) {
       setErrorImportar((e as Error).message);
+    }
+  }
+
+  async function previsualizarImportarCostos(e: React.FormEvent) {
+    e.preventDefault();
+    setErrorImportarCostos(null);
+    setMensajeImportarCostos(null);
+    if (!archivoImportarCostos) return;
+    try {
+      const resultado = await api.productos.importarCostosCsv(archivoImportarCostos, false);
+      setPreviewImportarCostos(resultado.filas);
+    } catch (e) {
+      setErrorImportarCostos((e as Error).message);
+    }
+  }
+
+  async function aplicarImportarCostos() {
+    if (!archivoImportarCostos) return;
+    const validas = previewImportarCostos?.filter((f) => !f.error).length ?? 0;
+    const confirmado = window.confirm(`¿Actualizar el costo de referencia de ${validas} producto(s)?`);
+    if (!confirmado) return;
+    try {
+      const resultado = await api.productos.importarCostosCsv(archivoImportarCostos, true);
+      setMensajeImportarCostos(`Costos actualizados: ${resultado.actualizados}`);
+      setPreviewImportarCostos(null);
+      setArchivoImportarCostos(null);
+      recargarProductos();
+      mostrarToast("Costos importados", `${resultado.actualizados} producto(s) actualizado(s) desde el archivo.`);
+    } catch (e) {
+      setErrorImportarCostos((e as Error).message);
     }
   }
 
@@ -159,6 +199,9 @@ export default function Productos() {
         <div className="fila-inline">
           <button type="button" onClick={() => setMostrarImportar((v) => !v)}>
             {mostrarImportar ? "Cerrar importar" : "Importar productos (CSV)"}
+          </button>
+          <button type="button" onClick={() => setMostrarImportarCostos((v) => !v)}>
+            {mostrarImportarCostos ? "Cerrar importar costos" : "Importar costos (CSV)"}
           </button>
           <button
             type="button"
@@ -266,6 +309,58 @@ export default function Productos() {
         </section>
       )}
 
+      {mostrarImportarCostos && (
+        <section className="tarjeta">
+          <h2>Importar costos desde CSV</h2>
+          <p className="ayuda">
+            Actualiza el costo de referencia de productos que <strong>ya existen</strong> (no crea productos nuevos)
+            — pensado para cargar de una vez los costos del sistema anterior en productos de los que todavía no se
+            tiene la factura real. Columnas: <code>plu,costo</code>. Este costo solo se usa mientras no haya
+            ninguna compra real registrada; apenas la haya, esa manda por sobre este valor.
+          </p>
+          {errorImportarCostos && <ModalAlerta mensaje={errorImportarCostos} onCerrar={() => setErrorImportarCostos(null)} />}
+          {mensajeImportarCostos && <p className="exito">{mensajeImportarCostos}</p>}
+          <form onSubmit={previsualizarImportarCostos} onKeyDown={manejarEnterComoTab} className="fila-inline">
+            <input type="file" accept=".csv" onChange={(e) => setArchivoImportarCostos(e.target.files?.[0] ?? null)} />
+            <button type="submit" disabled={!archivoImportarCostos}>
+              Previsualizar
+            </button>
+          </form>
+
+          {previewImportarCostos && (
+            <>
+              <table className="tabla">
+                <thead>
+                  <tr>
+                    <th>Fila</th>
+                    <th>PLU</th>
+                    <th>Producto</th>
+                    <th>Costo</th>
+                    <th>Estado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {previewImportarCostos.map((f) => (
+                    <tr key={f.fila} className={f.error ? "fila-error" : ""}>
+                      <td>{f.fila}</td>
+                      <td>{f.plu}</td>
+                      <td>{f.descripcion ?? "—"}</td>
+                      <td>{f.costo != null ? formatoCLP(f.costo) : "—"}</td>
+                      <td>{f.error ?? "OK"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {previewImportarCostos.some((f) => !f.error) && (
+                <button type="button" className="boton boton-primario" onClick={aplicarImportarCostos}>
+                  Confirmar y actualizar costos válidos
+                </button>
+              )}
+            </>
+          )}
+        </section>
+      )}
+
       <div className="chips-categoria">
         {categorias
           .filter((c) => c.padreId === null)
@@ -323,7 +418,7 @@ export default function Productos() {
             <th>Descripción</th>
             <th>Categoría</th>
             <th>Flag balanza</th>
-            <th>Costo (último)</th>
+            <th>Costo</th>
             <th>Precio de venta</th>
             <th>Margen (%)</th>
             {mostrarEliminados && <th>Estado</th>}
@@ -331,7 +426,7 @@ export default function Productos() {
         </thead>
         <tbody>
           {productos.map((p) => {
-            const margen = calcularMargen(p.precio, p.ultimoCosto);
+            const margen = calcularMargen(p.precio, p.costoEfectivo);
             return (
               <tr key={p.id}>
                 {modoCategorizar && (
@@ -345,7 +440,10 @@ export default function Productos() {
                 <td>{p.descripcion}</td>
                 <td>{p.categoria.nombre}</td>
                 <td>{p.flagBalanza}</td>
-                <td>{p.ultimoCosto != null ? formatoCLP(p.ultimoCosto) : "—"}</td>
+                <td>
+                  {p.costoEfectivo != null ? formatoCLP(p.costoEfectivo) : "—"}
+                  {p.costoEsEstimado && <span className="ayuda"> (estimado)</span>}
+                </td>
                 <td>{formatoCLP(p.precio)}</td>
                 <td>
                   {margen != null ? (

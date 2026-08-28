@@ -25,6 +25,7 @@ interface FormState {
   codigoProveedor: string;
   umbralStockBajo: string;
   aplicaIvaCarne: boolean;
+  costoReferencia: string;
 }
 
 const formVacio: FormState = {
@@ -45,6 +46,7 @@ const formVacio: FormState = {
   codigoProveedor: "",
   umbralStockBajo: "",
   aplicaIvaCarne: false,
+  costoReferencia: "",
 };
 
 export default function ProductoForm() {
@@ -101,6 +103,7 @@ export default function ProductoForm() {
           codigoProveedor: p.codigoProveedor ?? "",
           umbralStockBajo: p.umbralStockBajo != null ? String(p.umbralStockBajo) : "",
           aplicaIvaCarne: p.aplicaIvaCarne,
+          costoReferencia: p.costoReferencia != null ? String(p.costoReferencia) : "",
         });
       })
       .catch((e) => setError(e.message));
@@ -137,6 +140,7 @@ export default function ProductoForm() {
       umbralStockBajo: form.umbralStockBajo ? Number(form.umbralStockBajo) : null,
       precioMayor: form.precioMayor ? Number(form.precioMayor) : null,
       aplicaIvaCarne: form.aplicaIvaCarne,
+      costoReferencia: form.costoReferencia ? Number(form.costoReferencia) : null,
     };
 
     setGuardando(true);
@@ -192,10 +196,10 @@ export default function ProductoForm() {
     }
   }
 
-  const margenActual = productoActual ? calcularMargen(productoActual.precio, productoActual.ultimoCosto) : null;
+  const margenActual = productoActual ? calcularMargen(productoActual.precio, productoActual.costoEfectivo) : null;
   const margenNuevo =
     productoActual && precioNuevo && Number(precioNuevo) > 0
-      ? calcularMargen(Number(precioNuevo), productoActual.ultimoCosto)
+      ? calcularMargen(Number(precioNuevo), productoActual.costoEfectivo)
       : null;
 
   return (
@@ -207,14 +211,17 @@ export default function ProductoForm() {
       {!esNuevo && productoActual && (
         <div className="tarjeta cambio-precio">
           <h2>Precio actual: {formatoCLP(productoActual.precio)}</h2>
-          {productoActual.ultimoCosto == null ? (
+          {productoActual.costoEfectivo == null ? (
             <p className="ayuda">
-              Sin costo registrado — registra una entrada de compra para este producto en Inventario para ver el
-              margen (%).
+              Sin costo registrado — registra una entrada de compra para este producto en Inventario, o escribe un
+              costo de referencia más abajo, para ver el margen (%).
             </p>
           ) : (
             <div>
-              <p className="ayuda">Costo: {formatoCLP(productoActual.ultimoCosto)}</p>
+              <p className="ayuda">
+                Costo: {formatoCLP(productoActual.costoEfectivo)}
+                {productoActual.costoEsEstimado && " (estimado — sin ninguna compra real registrada todavía)"}
+              </p>
               <div className="fila-inline">
                 <span className={`margen-destacado ${margenActual! < 0 ? "margen-negativo" : ""}`}>
                   <span className="margen-etiqueta">Margen actual</span> {margenActual?.toFixed(2)}%
@@ -354,6 +361,20 @@ export default function ProductoForm() {
             onChange={(e) => actualizarCampo("aplicaIvaCarne", e.target.checked)}
           />
           Aplica IVA carne (5%) — para vacuno/cerdo
+        </label>
+        <label>
+          Costo de referencia
+          <input
+            type="number"
+            min="0"
+            placeholder="ej. 6500 (del sistema anterior, si no hay factura real todavía)"
+            value={form.costoReferencia}
+            onChange={(e) => actualizarCampo("costoReferencia", e.target.value)}
+          />
+          <span className="ayuda">
+            Solo se usa para calcular el margen mientras no haya ninguna compra real registrada en Inventario o
+            Cámara — apenas se registre una, esa manda por sobre este valor.
+          </span>
         </label>
         <label>
           Duración

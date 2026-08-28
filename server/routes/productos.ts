@@ -6,6 +6,18 @@ import { prisma } from "../db";
 import { obtenerIdsCategoriaYDescendientes } from "../lib/categorias";
 
 export const productosRouter = Router();
+
+// El costo "efectivo" para calcular margen: el real (de una compra
+// registrada) manda siempre que exista; el costo de referencia ingresado
+// a mano (Producto.costoReferencia) es solo un respaldo para cuando
+// todavía no hay ninguna compra real — así se puede ver el margen
+// reflejado mientras se junta el dato real, sin perder la prioridad de
+// este último apenas se registre.
+function calcularCostoEfectivo(ultimoCosto: number | null, costoReferencia: number | null) {
+  const costoEfectivo = ultimoCosto ?? costoReferencia ?? null;
+  const costoEsEstimado = ultimoCosto == null && costoReferencia != null;
+  return { costoEfectivo, costoEsEstimado };
+}
 // Límite de tamaño explícito (antes no había ninguno, sin querer permitía
 // subir un archivo de cualquier tamaño a memoria) — 10mb cubre con margen
 // un CSV real de todo el catálogo.
@@ -69,7 +81,12 @@ productosRouter.get("/", async (req, res) => {
     }
   }
 
-  res.json(productos.map((p) => ({ ...p, ultimoCosto: ultimoCostoPorProducto.get(p.id) ?? null })));
+  res.json(
+    productos.map((p) => {
+      const ultimoCosto = ultimoCostoPorProducto.get(p.id) ?? null;
+      return { ...p, ultimoCosto, ...calcularCostoEfectivo(ultimoCosto, p.costoReferencia) };
+    })
+  );
 });
 
 // Sugerencia de PLU al crear un producto nuevo — el siguiente número libre
@@ -121,9 +138,15 @@ productosRouter.get("/margenes", async (req, res) => {
   const resultado = productos
     .map((p) => {
       const ultima = ultimaCompraPorProducto.get(p.id);
-      return { ...p, ultimoCosto: ultima?.costoUnitario ?? null, ultimoCostoFecha: ultima?.fecha ?? null };
+      const ultimoCosto = ultima?.costoUnitario ?? null;
+      return {
+        ...p,
+        ultimoCosto,
+        ultimoCostoFecha: ultima?.fecha ?? null,
+        ...calcularCostoEfectivo(ultimoCosto, p.costoReferencia),
+      };
     })
-    .filter((p) => p.ultimoCosto != null);
+    .filter((p) => p.costoEfectivo != null);
 
   res.json(resultado);
 });
@@ -154,14 +177,17 @@ productosRouter.get("/:id", async (req, res) => {
     orderBy: { fechaIngreso: "desc" },
   });
 
+  const ultimoCosto = ultimasCompras[0]?.costoUnitario ?? null;
+
   res.json({
     ...producto,
-    ultimoCosto: ultimasCompras[0]?.costoUnitario ?? null,
+    ultimoCosto,
     ultimoCostoFecha: ultimasCompras[0]?.fecha ?? null,
     penultimoCosto: ultimasCompras[1]?.costoUnitario ?? null,
     penultimoCostoFecha: ultimasCompras[1]?.fecha ?? null,
     ultimoCostoCamaraKg: ultimoLoteCamara?.costoNetoKg ?? null,
     ultimoCostoCamaraFecha: ultimoLoteCamara?.fechaIngreso ?? null,
+    ...calcularCostoEfectivo(ultimoCosto, producto.costoReferencia),
   });
 });
 
@@ -185,6 +211,7 @@ const productoBaseSchema = z.object({
   umbralStockBajo: z.number().min(0).optional().nullable(),
   precioMayor: z.number().positive().optional().nullable(),
   aplicaIvaCarne: z.boolean().optional(),
+  costoReferencia: z.number().positive().optional().nullable(),
 });
 
 function validarCodigoBarrasVsFlag(data: {
@@ -481,4 +508,79 @@ productosRouter.post("/importar-csv", upload.single("archivo"), async (req, res)
   );
 
   res.json({ previsualizacion: false, filas, creados: creados.length });
+});
+
+// --- Importar costos por CSV (plu,costo) — a diferencia del importador de
+// arriba, este actualiza productos que YA existen (no crea ninguno) — a
+// pedido del usuario, para poder cargar de una vez los costos del sistema
+// anterior en productos de los que todavía no se tiene la factura real. ---
+
+interface FilaImportacionCosto {
+  fila: number;
+  plu: string;
+  costo: number | null;
+  productoId: number | null;
+  descripcion: string | null;
+  error: string | null;
+}
+
+async function procesarCsvImportacionCostos(buffer: Buffer): Promise<FilaImportacionCosto[]> {
+  let registros: Record<string, string>[];
+  try {
+    registros = parse(buffer, { columns: true, skip_empty_lines: true, trim: true });
+  } catch {
+    throw new Error("No se pudo leer el archivo. Debe ser un CSV con columnas: plu,costo");
+  }
+
+  const resultado: FilaImportacionCosto[] = [];
+  for (let i = 0; i < registros.length; i++) {
+    const fila = i + 2;
+    const plu = (registros[i].plu ?? "").trim();
+    const costoTexto = (registros[i].costo ?? "").trim();
+
+    if (!plu) {
+      resultado.push({ fila, plu, costo: null, productoId: null, descripcion: null, error: "Falta el PLU" });
+      continue;
+    }
+    const costo = Number(costoTexto);
+    if (!costoTexto || Number.isNaN(costo) || costo <= 0) {
+      resultado.push({ fila, plu, costo: null, productoId: null, descripcion: null, error: "costo inválido" });
+      continue;
+    }
+
+    const producto = await prisma.producto.findUnique({ where: { plu } });
+    if (!producto) {
+      resultado.push({ fila, plu, costo, productoId: null, descripcion: null, error: "No existe ningún producto con ese PLU" });
+      continue;
+    }
+
+    resultado.push({ fila, plu, costo, productoId: producto.id, descripcion: producto.descripcion, error: null });
+  }
+  return resultado;
+}
+
+productosRouter.post("/importar-costos-csv", upload.single("archivo"), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: "Falta el archivo CSV" });
+  const confirmar = req.body.confirmar === "true";
+
+  let filas: FilaImportacionCosto[];
+  try {
+    filas = await procesarCsvImportacionCostos(req.file.buffer);
+  } catch (err) {
+    return res.status(400).json({ error: (err as Error).message });
+  }
+
+  if (!confirmar) {
+    return res.json({ previsualizacion: true, filas });
+  }
+
+  const filasValidas = filas.filter((f) => !f.error && f.productoId != null && f.costo != null);
+
+  await prisma.$transaction(
+    filasValidas.map((f) =>
+      prisma.producto.update({ where: { id: f.productoId! }, data: { costoReferencia: f.costo! } })
+    )
+  );
+
+  res.json({ previsualizacion: false, filas, actualizados: filasValidas.length });
 });

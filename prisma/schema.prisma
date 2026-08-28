@@ -94,6 +94,15 @@ model Producto {
   // consultarlo rápido al armar una factura o cotizar.
   precioMayor Float?
 
+  // Costo ingresado a mano (ej. desde datos del sistema anterior, cuando
+  // todavía no hay una factura real cargada para ese producto) — a pedido
+  // del usuario, para poder ver el margen reflejado mientras se junta el
+  // respaldo real. Es solo un respaldo: en cuanto haya una compra real
+  // registrada en Inventario/Cámara, esa manda por sobre este valor en
+  // todas las pantallas de margen (ver costoEfectivo, calculado en el
+  // servidor, nunca guardado).
+  costoReferencia Float?
+
   flagBalanza String @default("NORMAL")
 
   // Solo aplica cuando flagBalanza = NORMAL: la balanza imprime su propio

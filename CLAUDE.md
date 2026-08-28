@@ -3354,3 +3354,81 @@ resumen mostró exactamente Total neto $10.000, IVA (19%) $1.900, IVA carne
 ambas pantallas — datos y cambios de prueba revertidos después (ninguna
 factura de prueba llegó a guardarse, solo se completó el formulario para
 verificar los cálculos en pantalla).
+
+## Costo de referencia manual por producto (para ver el margen sin factura real)
+A pedido del usuario: "necesito que agregues una opción de ingresar/
+modificar el precio de costo de cada producto. Ya que no tenemos las
+facturas de todos, usaremos los datos del sistema anterior para ingresar
+el precio de costo (cuando lo compramos) y así poder ver reflejado los
+márgenes". Antes de programar se confirmaron dos puntos con el usuario:
+dónde editarlo — **"Ambas"** (un campo en la ficha del producto, y también
+un importador CSV masivo) — y la prioridad frente a una compra real ya
+registrada — **"Solo se usa si no hay ninguna compra real"** (el costo
+manual es únicamente un respaldo, nunca pisa un dato real).
+
+- **Campo nuevo `Producto.costoReferencia`** (`Float?`, opcional): costo
+  ingresado a mano, pensado para volcar los datos de costo que existen en
+  el sistema anterior (Gexus) mientras no se tenga la factura real
+  correspondiente cargada en Inventario o Cámara.
+- **`costoEfectivo`/`costoEsEstimado`, calculados en el servidor**
+  (`calcularCostoEfectivo()`, nuevo helper compartido en
+  `server/routes/productos.ts`): `costoEfectivo = ultimoCosto ??
+  costoReferencia ?? null` — el costo real de la compra más reciente manda
+  siempre que exista; el costo de referencia solo se usa como respaldo
+  cuando no hay ninguna compra real. `costoEsEstimado` avisa cuándo el
+  valor mostrado viene del costo a mano en vez de una compra real, para
+  poder marcarlo "(estimado)" en pantalla sin mostrarlo como un dato real.
+  **A propósito no se tocó ningún significado existente**: `ultimoCosto`/
+  `penultimoCosto` (usados por "Registrar entrada"/"Entrada de cámara" para
+  comparar el costo actual vs. el anterior de una compra real) siguen
+  siendo estrictamente el costo de compras reales, sin mezclarse con el
+  costo de referencia — los campos nuevos (`costoEfectivo`/
+  `costoEsEstimado`) son exclusivos para calcular y mostrar margen.
+  Agregado a los tres endpoints que ya devolvían costo para calcular
+  margen: `GET /api/productos?incluirCosto=true` (tabla de Productos),
+  `GET /api/productos/margenes` (Combos — y su filtro de "costo conocido"
+  pasó de exigir `ultimoCosto` a exigir `costoEfectivo`, para que un
+  producto con solo costo de referencia también pueda aparecer) y
+  `GET /api/productos/:id` (ficha de producto).
+- **Campo editable en la ficha del producto** (`ProductoForm.tsx`): "Costo
+  de referencia", junto al resto de los datos — con una nota explicando
+  que solo se usa mientras no haya ninguna compra real. El preview de
+  margen de esa misma pantalla (al cambiar el precio) también pasó a usar
+  `costoEfectivo` en vez de solo el costo real, y el mensaje de "Sin costo
+  registrado" solo aparece cuando de verdad no hay ninguno de los dos.
+- **Importador CSV masivo** (`GET`/`POST /api/productos/importar-costos-csv`,
+  mismo patrón de dos pasos "previsualizar → confirmar" ya usado para
+  crear productos desde CSV): columnas `plu,costo` — **actualiza productos
+  que ya existen, no crea productos nuevos** (si el PLU no existe, esa fila
+  queda marcada con error "No existe ningún producto con ese PLU" en vez de
+  crear uno). Botón "Importar costos (CSV)" nuevo en Productos, junto al ya
+  existente "Importar productos (CSV)".
+- **Mostrado en las 3 pantallas de margen** (`Productos.tsx`,
+  `MejorMargen.tsx`/Combos, `ControlPrecios.tsx`), todas actualizadas para
+  usar `costoEfectivo`/`costoEsEstimado` en vez del costo real puro —
+  columna "Costo" (antes "Costo (último)"/"Último costo", renombrada porque
+  ahora puede no ser de una compra) con la etiqueta "(estimado)" junto al
+  valor cuando corresponde. En Control de precios, el "Registro de cambios
+  de precio" (que usa el costo actual de cada producto para mostrar el
+  margen histórico) también hereda automáticamente este respaldo.
+
+Probado de punta a punta contra el servidor real: un producto de prueba sin
+ninguna compra registrada mostraba costo/margen vacíos; al escribir un
+costo de referencia ($10.000) pasó a mostrar `costoEfectivo: 10000,
+costoEsEstimado: true` en los tres endpoints (ficha, listado con costo,
+margenes); al registrarle una compra real ($12.000) el costo efectivo
+cambió solo al valor real y `costoEsEstimado` pasó a `false` — confirmando
+que la compra real manda por sobre el costo a mano. El importador CSV
+(`plu,costo`) actualizó correctamente 2 de 3 filas de prueba (una con PLU
+inexistente quedó marcada con el error esperado, sin crear nada) y,
+probado también contra un producto real con compra ya registrada
+(CHURRASCO DE VACUNO), confirmó que escribirle un costo de referencia por
+CSV no cambia su `costoEfectivo` (se queda con el costo real) — exactamente
+el comportamiento de "solo respaldo" pedido. Con Playwright contra las
+pantallas reales: el campo "Costo de referencia" en la ficha guarda y
+refleja "(estimado)" tras recargar; la tabla de Productos, Combos y
+Control de precios muestran el costo, el margen calculado y la etiqueta
+"(estimado)" correctamente para el mismo producto de prueba; el panel
+"Importar costos desde CSV" se despliega y muestra su formulario — datos
+de prueba (producto y cambios a productos reales) revertidos/eliminados
+después.

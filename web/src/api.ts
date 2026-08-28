@@ -24,6 +24,9 @@ export interface Producto {
   categoria: Categoria;
   precio: number;
   precioMayor: number | null;
+  // Costo ingresado a mano, solo usado como respaldo cuando no hay ninguna
+  // compra real registrada — ver costoEfectivo en ProductoConCosto.
+  costoReferencia: number | null;
   flagBalanza: FlagBalanza;
   codigoBarras: string | null;
   contenido: string | null;
@@ -293,10 +296,23 @@ export interface FilaImportacionProductos {
   error: string | null;
 }
 
+export interface FilaImportacionCosto {
+  fila: number;
+  plu: string;
+  costo: number | null;
+  productoId: number | null;
+  descripcion: string | null;
+  error: string | null;
+}
+
 export interface ProductoConStock extends Producto {
   bajoStock: boolean;
 }
 
+// costoEfectivo: el costo real de la última compra si existe; si no, cae al
+// costoReferencia ingresado a mano (ver Producto.costoReferencia) — es lo
+// que hay que usar para calcular margen. costoEsEstimado avisa cuándo ese
+// valor viene del costo a mano en vez de una compra real.
 export interface ProductoConCosto extends Producto {
   ultimoCosto: number | null;
   ultimoCostoFecha: string | null;
@@ -304,10 +320,14 @@ export interface ProductoConCosto extends Producto {
   penultimoCostoFecha: string | null;
   ultimoCostoCamaraKg: number | null;
   ultimoCostoCamaraFecha: string | null;
+  costoEfectivo: number | null;
+  costoEsEstimado: boolean;
 }
 
 export interface ProductoConUltimoCosto extends Producto {
   ultimoCosto: number | null;
+  costoEfectivo: number | null;
+  costoEsEstimado: boolean;
 }
 
 // Margen (%) al estilo del sistema anterior (Gexus): markup sobre el costo,
@@ -763,6 +783,20 @@ export const api = {
         previsualizacion: boolean;
         creados?: number;
         filas: FilaImportacionProductos[];
+      }>(res);
+    },
+    // Actualiza el costo de referencia de productos que YA existen (a
+    // diferencia de importarCsv, que solo crea productos nuevos) — para
+    // cargar de una vez los costos del sistema anterior.
+    importarCostosCsv: async (archivo: File, confirmar: boolean) => {
+      const form = new FormData();
+      form.append("archivo", archivo);
+      form.append("confirmar", String(confirmar));
+      const res = await fetch("/api/productos/importar-costos-csv", { method: "POST", body: form });
+      return manejarRespuesta<{
+        previsualizacion: boolean;
+        actualizados?: number;
+        filas: FilaImportacionCosto[];
       }>(res);
     },
   },

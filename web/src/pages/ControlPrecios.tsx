@@ -38,8 +38,8 @@ export default function ControlPrecios() {
   // como lo pidió el usuario.
   const conMargenConocido = productosConPrecioActivo
     .map((p) => ({
-      recargo: calcularMargen(p.precio, p.ultimoCosto),
-      margenReal: calcularMargenReal(p.precio, p.ultimoCosto),
+      recargo: calcularMargen(p.precio, p.costoEfectivo),
+      margenReal: calcularMargenReal(p.precio, p.costoEfectivo),
     }))
     .filter((x): x is { recargo: number; margenReal: number } => x.recargo != null && x.margenReal != null);
 
@@ -50,11 +50,15 @@ export default function ControlPrecios() {
     ? conMargenConocido.reduce((s, x) => s + x.margenReal, 0) / conMargenConocido.length
     : null;
 
-  // Para el registro de cambios de precio: el costo más reciente conocido
-  // de cada producto AHORA (no hay forma de saber cuál era el costo en el
-  // momento exacto de un cambio pasado, mismo criterio simplificado que ya
-  // usa el resto del sistema al mostrar "margen" en cualquier pantalla).
-  const costoActualPorProducto = new Map((productos ?? []).map((p) => [p.id, p.ultimoCosto]));
+  // Para el registro de cambios de precio: el costo efectivo más reciente
+  // conocido de cada producto AHORA (no hay forma de saber cuál era el
+  // costo en el momento exacto de un cambio pasado, mismo criterio
+  // simplificado que ya usa el resto del sistema al mostrar "margen" en
+  // cualquier pantalla) — real si hay una compra registrada, o el costo de
+  // referencia ingresado a mano como respaldo si no.
+  const costoActualPorProducto = new Map(
+    (productos ?? []).map((p) => [p.id, { costo: p.costoEfectivo, estimado: p.costoEsEstimado }]),
+  );
 
   return (
     <div>
@@ -98,7 +102,7 @@ export default function ControlPrecios() {
             <th>PLU</th>
             <th>Producto</th>
             <th>Categoría</th>
-            <th>Costo (último)</th>
+            <th>Costo</th>
             <th>Precio de venta</th>
             <th>Recargo (%)</th>
             <th>Margen real (%)</th>
@@ -116,8 +120,8 @@ export default function ControlPrecios() {
             </tr>
           )}
           {productosMostrados.map((p) => {
-            const recargo = calcularMargen(p.precio, p.ultimoCosto);
-            const margenReal = calcularMargenReal(p.precio, p.ultimoCosto);
+            const recargo = calcularMargen(p.precio, p.costoEfectivo);
+            const margenReal = calcularMargenReal(p.precio, p.costoEfectivo);
             return (
               <tr key={p.id} className={p.precio <= 0 ? "fila-error" : ""}>
                 <td>
@@ -125,7 +129,10 @@ export default function ControlPrecios() {
                 </td>
                 <td>{p.descripcion}</td>
                 <td>{p.categoria.nombre}</td>
-                <td>{p.ultimoCosto != null ? formatoCLP(p.ultimoCosto) : "—"}</td>
+                <td>
+                  {p.costoEfectivo != null ? formatoCLP(p.costoEfectivo) : "—"}
+                  {p.costoEsEstimado && <span className="ayuda"> (estimado)</span>}
+                </td>
                 <td>{p.precio > 0 ? formatoCLP(p.precio) : "Sin precio"}</td>
                 <td>
                   {recargo != null ? (
@@ -149,8 +156,9 @@ export default function ControlPrecios() {
 
       <h2>Registro de cambios de precio</h2>
       <p className="ayuda">
-        Costo y márgenes calculados con el costo más reciente registrado hoy, no con el costo que había en el
-        momento exacto del cambio (el sistema no guarda esa foto histórica).
+        Costo y márgenes calculados con el costo efectivo más reciente hoy (una compra real si existe, o el
+        costo de referencia ingresado a mano como respaldo — marcado "(estimado)"), no con el costo que había en
+        el momento exacto del cambio (el sistema no guarda esa foto histórica).
       </p>
       <table className="tabla">
         <thead>
@@ -175,7 +183,8 @@ export default function ControlPrecios() {
             </tr>
           )}
           {(historial ?? []).map((h) => {
-            const costo = costoActualPorProducto.get(h.productoId) ?? null;
+            const info = costoActualPorProducto.get(h.productoId);
+            const costo = info?.costo ?? null;
             const recargo = calcularMargen(h.precioNuevo, costo);
             const margenReal = calcularMargenReal(h.precioNuevo, costo);
             return (
@@ -184,7 +193,10 @@ export default function ControlPrecios() {
                 <td>
                   {h.producto.plu} — {h.producto.descripcion}
                 </td>
-                <td>{costo != null ? formatoCLP(costo) : "—"}</td>
+                <td>
+                  {costo != null ? formatoCLP(costo) : "—"}
+                  {info?.estimado && <span className="ayuda"> (estimado)</span>}
+                </td>
                 <td>{formatoCLP(h.precioNuevo)}</td>
                 <td>{recargo != null ? `${recargo.toFixed(1)}%` : "—"}</td>
                 <td>{margenReal != null ? `${margenReal.toFixed(1)}%` : "—"}</td>

@@ -11,8 +11,9 @@ interface FilaMargen extends ProductoConCosto {
 // Pantalla para encontrar rápido qué productos convienen más para armar
 // combos: ordena por margen (%) de mayor a menor, usando la misma fórmula
 // ya usada en la ficha de producto (calcularMargen) — markup sobre el
-// costo de la última compra, con el precio de venta sin IVA. Solo se
-// muestran productos con costo conocido (al menos una compra registrada);
+// costo efectivo (la última compra real si existe, o el costo de
+// referencia ingresado a mano como respaldo — ver costoEfectivo), con el
+// precio de venta sin IVA. Solo se muestran productos con costo conocido;
 // los que no lo tienen quedan afuera, con un aviso de cuántos son, en vez
 // de mostrar un margen inventado.
 export default function MejorMargen() {
@@ -37,7 +38,7 @@ export default function MejorMargen() {
   }, [categoriaId]);
 
   const filas: FilaMargen[] = productos
-    .map((p) => ({ ...p, margen: calcularMargen(p.precio, p.ultimoCosto) ?? 0 }))
+    .map((p) => ({ ...p, margen: calcularMargen(p.precio, p.costoEfectivo) ?? 0 }))
     .filter((p) => !margenMinimo || p.margen >= Number(margenMinimo))
     .sort((a, b) => b.margen - a.margen);
 
@@ -51,8 +52,9 @@ export default function MejorMargen() {
       </div>
       <p className="ayuda">
         Productos ordenados de mayor a menor margen (%) — para encontrar rápido qué conviene combinar en una
-        promoción. Solo se muestran productos con al menos una compra registrada en Inventario (para saber su
-        costo real); los que no tienen ninguna quedan fuera de esta lista.
+        promoción. Solo se muestran productos con costo conocido (una compra real registrada, o un costo de
+        referencia ingresado a mano como respaldo — marcado "(estimado)"); los que no tienen ninguno de los dos
+        quedan fuera de esta lista.
       </p>
 
       {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
@@ -85,7 +87,7 @@ export default function MejorMargen() {
             <th>PLU</th>
             <th>Descripción</th>
             <th>Categoría</th>
-            <th>Último costo</th>
+            <th>Costo</th>
             <th>Precio de venta</th>
             <th>Margen (%)</th>
           </tr>
@@ -98,7 +100,10 @@ export default function MejorMargen() {
               </td>
               <td>{p.descripcion}</td>
               <td>{p.categoria.nombre}</td>
-              <td>{formatoCLP(p.ultimoCosto ?? 0)}</td>
+              <td>
+                {formatoCLP(p.costoEfectivo ?? 0)}
+                {p.costoEsEstimado && <span className="ayuda"> (estimado)</span>}
+              </td>
               <td>{formatoCLP(p.precio)}</td>
               <td>
                 <strong className={p.margen < 0 ? "error" : "exito"}>{p.margen.toFixed(2)}%</strong>
