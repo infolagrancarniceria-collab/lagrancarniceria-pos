@@ -3,6 +3,7 @@ import { Prisma, type Producto } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../db";
 import { verificarClaveConLimite } from "../lib/clave";
+import { traerPedidosWebPendientes } from "../lib/syncWeb";
 
 export const pedidosWebRouter = Router();
 
@@ -44,6 +45,16 @@ pedidosWebRouter.get("/", async (req, res) => {
     include: CON_RELACIONES,
   });
   res.json(pedidos.map(serializar));
+});
+
+// Fuerza un ciclo de sincronización con la web ahora mismo, en vez de
+// esperar al próximo automático (cada 5 minutos, ver iniciarSyncWeb) — para
+// el botón "Actualizar" de la pantalla, así el equipo no tiene que cerrar y
+// volver a abrir el programa entero (que sí fuerza un ciclo, al arrancar)
+// solo para ver un pedido recién llegado.
+pedidosWebRouter.post("/sincronizar", async (_req, res) => {
+  const nuevos = await traerPedidosWebPendientes();
+  res.json({ nuevos });
 });
 
 const atenderSchema = z.object({ usuarioId: z.number().int().positive() });

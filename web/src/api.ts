@@ -992,6 +992,7 @@ export const api = {
       delConBody<PedidoWeb>(`/api/pedidos-web/${id}/regalos/${regaloId}`, { usuarioId }),
     enviarACaja: (id: number, usuarioId: number) =>
       post<{ pedido: PedidoWeb; ventaId: number }>(`/api/pedidos-web/${id}/enviar-a-caja`, { usuarioId }),
+    sincronizar: () => post<{ nuevos: number }>("/api/pedidos-web/sincronizar", {}),
   },
   inventario: {
     stock: (soloBajo = false, categoriaId?: number) => {

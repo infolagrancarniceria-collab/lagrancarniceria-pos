@@ -157,15 +157,22 @@ async function siguienteNumeroDelDia(fecha: Date): Promise<number> {
   return cantidad + 1;
 }
 
+let sincronizandoPedidos = false;
+
 // Trae los pedidos que la web tiene pendientes de entregar al POS, los
 // guarda en PedidoWeb (para el panel "Pedidos web") y le confirma a la web
 // cuáles quedaron guardados, para que no los vuelva a mandar la próxima vez.
 // "idWeb" es la clave para no duplicar un pedido si la confirmación se
-// pierde y la web lo reenvía.
-export async function traerPedidosWebPendientes(): Promise<void> {
+// pierde y la web lo reenvía. Devuelve cuántos pedidos nuevos se guardaron
+// — lo usa el botón "Actualizar" de Pedidos web para avisar si había algo
+// nuevo o no, en vez de forzar a cerrar y volver a abrir el programa entero
+// para que corra el próximo ciclo automático (cada 5 minutos).
+export async function traerPedidosWebPendientes(): Promise<number> {
+  if (sincronizandoPedidos) return 0;
   const config = await obtenerConfig();
-  if (!config) return;
+  if (!config) return 0;
 
+  sincronizandoPedidos = true;
   try {
     const respuesta = await fetch(`${config.url}/api/sync/pedidos-pendientes`, {
       headers: { "x-sync-key": config.clave },
@@ -173,11 +180,12 @@ export async function traerPedidosWebPendientes(): Promise<void> {
     });
     if (!respuesta.ok) {
       console.warn(`[sync-web] la web respondió ${respuesta.status} al pedir pedidos pendientes`);
-      return;
+      return 0;
     }
     const { pedidos } = (await respuesta.json()) as { pedidos: PedidoWebRemoto[] };
-    if (pedidos.length === 0) return;
+    if (pedidos.length === 0) return 0;
 
+    let nuevos = 0;
     const idsGuardados: string[] = [];
     for (const pedido of pedidos) {
       const yaExiste = await prisma.pedidoWeb.findUnique({ where: { idWeb: pedido.idWeb } });
@@ -201,6 +209,7 @@ export async function traerPedidosWebPendientes(): Promise<void> {
             comentario: pedido.comentario ?? null,
           },
         });
+        nuevos++;
       }
       idsGuardados.push(pedido.idWeb);
     }
@@ -211,8 +220,12 @@ export async function traerPedidosWebPendientes(): Promise<void> {
       body: JSON.stringify({ idsWeb: idsGuardados }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
+    return nuevos;
   } catch (err) {
     console.warn("[sync-web] no se pudo traer pedidos pendientes (¿sin internet?):", (err as Error).message);
+    return 0;
+  } finally {
+    sincronizandoPedidos = false;
   }
 }
 

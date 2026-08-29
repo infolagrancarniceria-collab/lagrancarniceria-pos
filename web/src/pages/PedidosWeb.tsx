@@ -36,6 +36,7 @@ export default function PedidosWeb() {
   const [pedidos, setPedidos] = useState<PedidoWeb[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(false);
+  const [sincronizando, setSincronizando] = useState(false);
 
   const [anulando, setAnulando] = useState<PedidoWeb | null>(null);
   const [descuentoEditId, setDescuentoEditId] = useState<number | null>(null);
@@ -68,6 +69,26 @@ export default function PedidosWeb() {
   }
 
   useEffect(cargar, [estado]);
+
+  // El sync automático con la web corre cada 5 minutos (ver iniciarSyncWeb
+  // en el servidor) — antes, la única forma de ver un pedido recién
+  // llegado sin esperar era cerrar y volver a abrir el programa entero
+  // (eso sí fuerza un ciclo, al arrancar). Este botón fuerza ese mismo
+  // ciclo ahora mismo y después recarga la lista.
+  async function actualizar() {
+    setSincronizando(true);
+    try {
+      const { nuevos } = await api.pedidosWeb.sincronizar();
+      if (nuevos > 0) {
+        mostrarToast("Pedidos actualizados", `${nuevos} pedido${nuevos === 1 ? "" : "s"} nuevo${nuevos === 1 ? "" : "s"} desde la web.`);
+      }
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSincronizando(false);
+      cargar();
+    }
+  }
 
   useEffect(() => {
     if (!pedidoParaImprimir) return;
@@ -262,6 +283,9 @@ export default function PedidosWeb() {
             {e === "pendiente" ? "Pendientes" : e === "atendido" ? "Atendidos" : "Anulados"}
           </button>
         ))}
+        <button type="button" onClick={actualizar} disabled={sincronizando || cargando}>
+          {sincronizando ? "Actualizando..." : "Actualizar"}
+        </button>
       </div>
 
       {seleccionRuta.size > 0 && (
