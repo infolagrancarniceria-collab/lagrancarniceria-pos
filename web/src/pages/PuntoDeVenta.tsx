@@ -31,10 +31,16 @@ export default function PuntoDeVenta() {
   const [ventaParaImprimir, setVentaParaImprimir] = useState<Venta | null>(null);
   // Vuelto a mostrar en el aviso emergente (antes un window.alert() del
   // navegador, sin estilo y bloqueante) — null cuando no hay ninguno que
-  // mostrar.
-  const [vueltoAMostrar, setVueltoAMostrar] = useState<{ vuelto: number; entregado: number; venta: number } | null>(
-    null
-  );
+  // mostrar. Mientras este popup esté abierto, la venta con vuelto TODAVÍA
+  // no se confirma ni se imprime — eso pasa recién al apretar el botón
+  // (o Enter), para darle tiempo al cajero de entregar el vuelto en mano
+  // antes de que el ticket salga impreso (ver confirmarVentaConVuelto).
+  const [vueltoAMostrar, setVueltoAMostrar] = useState<{
+    ventaId: number;
+    vuelto: number;
+    entregado: number;
+    venta: number;
+  } | null>(null);
   const [productos, setProductos] = useState<Producto[]>([]);
   const [comunas, setComunas] = useState<Comuna[]>([]);
   const [mostrarSelectorComuna, setMostrarSelectorComuna] = useState(false);
@@ -422,9 +428,6 @@ export default function PuntoDeVenta() {
       setVenta(actualizada);
       setMontoPago("");
       setClienteNombre("");
-      if (vueltoAEntregar > 0) {
-        setVueltoAMostrar({ vuelto: vueltoAEntregar, entregado: monto, venta: montoACobrar });
-      }
       // Si este pago ya deja los pagos cubriendo el total completo (el caso
       // normal: un solo pago que paga toda la venta), se confirma sola — a
       // pedido del usuario, para no tener que cerrar esta ventana y apretar
@@ -436,7 +439,13 @@ export default function PuntoDeVenta() {
       const hayEfectivoAhora = actualizada.pagos.some((p) => p.medio === "efectivo");
       const cubiertoAhora =
         faltaAhora === 0 || (hayEfectivoAhora && Math.abs(faltaAhora) <= TOLERANCIA_REDONDEO_EFECTIVO);
-      if (cubiertoAhora) {
+      if (vueltoAEntregar > 0) {
+        // Con vuelto de por medio, la venta queda pagada pero SIN confirmar
+        // todavía: hay que darle tiempo al cajero de entregar el vuelto al
+        // cliente antes de que salga el ticket. Se confirma recién al
+        // cerrar este popup (ver confirmarVentaConVuelto).
+        setVueltoAMostrar({ ventaId: actualizada.id, vuelto: vueltoAEntregar, entregado: monto, venta: montoACobrar });
+      } else if (cubiertoAhora) {
         await ejecutarConfirmarVenta(actualizada.id);
       }
     } catch (e) {
@@ -583,6 +592,16 @@ export default function PuntoDeVenta() {
     const confirmado = window.confirm(`¿Confirmar venta por ${formatoCLP(totalVenta)}?`);
     if (!confirmado) return;
     await ejecutarConfirmarVenta(venta.id);
+  }
+
+  // Se llama al cerrar el popup de vuelto (botón o Enter, ver autoFocus más
+  // abajo) — recién ahí se confirma la venta y se dispara la impresión, una
+  // vez que el cajero ya le entregó el vuelto en mano al cliente.
+  async function confirmarVentaConVuelto() {
+    if (!vueltoAMostrar) return;
+    const ventaId = vueltoAMostrar.ventaId;
+    setVueltoAMostrar(null);
+    await ejecutarConfirmarVenta(ventaId);
   }
 
   // Igual que anular un ítem, cancelar toda la venta pide clave de
@@ -1228,8 +1247,15 @@ export default function PuntoDeVenta() {
             <p>
               Entregó {formatoCLP(vueltoAMostrar.entregado)} · venta {formatoCLP(vueltoAMostrar.venta)}
             </p>
-            <button type="button" className="boton boton-primario" onClick={() => setVueltoAMostrar(null)} autoFocus>
-              Entendido
+            <p className="ayuda">Entrega el vuelto al cliente y presiona Enter para cerrar la venta e imprimir.</p>
+            <button
+              type="button"
+              className="boton boton-primario"
+              onClick={confirmarVentaConVuelto}
+              disabled={procesando}
+              autoFocus
+            >
+              {procesando ? "Confirmando..." : "Cerrar venta e imprimir (Enter)"}
             </button>
           </div>
         </div>
