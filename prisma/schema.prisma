@@ -151,9 +151,14 @@ model Producto {
   // (un producto puede estar "disponible" y a la vez "con pocas unidades").
   lowStock Boolean @default(false)
 
-  // Promoción por volumen (ej. "$3.980/kg al llevar 3 kilos o más") — los
-  // tres campos van juntos: si promoPrecioUnitario tiene valor, el
-  // producto muestra el badge "Oferta" y la etiqueta en la tarjeta.
+  // Promoción por volumen (ej. "$3.980/kg al llevar 3 kilos o más", o para
+  // un producto Normal "3 unidades a $990 c/u") — los tres campos van
+  // juntos: si promoPrecioUnitario tiene valor, el producto muestra el
+  // badge "Oferta" y la etiqueta en la tarjeta. promoGramosMinimos es la
+  // cantidad mínima para que aplique: gramos si flagBalanza es
+  // PESABLE/IMPORTE, unidades si es NORMAL (mismo campo, se interpreta
+  // según flagBalanza — ver ProductoForm.tsx y CotizadorModal.tsx en la
+  // web).
   promoPrecioUnitario Float?
   promoGramosMinimos  Int?
   promoEtiqueta       String?

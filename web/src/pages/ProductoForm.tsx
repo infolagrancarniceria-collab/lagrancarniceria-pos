@@ -149,7 +149,7 @@ export default function ProductoForm() {
     const promoCompleta = form.promoPrecioUnitario && form.promoGramosMinimos && form.promoEtiqueta.trim();
     const promoVacia = !form.promoPrecioUnitario && !form.promoGramosMinimos && !form.promoEtiqueta.trim();
     if (!promoCompleta && !promoVacia) {
-      setError("La promoción por volumen necesita los tres datos (precio, gramos mínimos y etiqueta), o ninguno");
+      setError("La promoción por volumen necesita los tres datos (precio, cantidad mínima y etiqueta), o ninguno");
       return;
     }
 
@@ -454,12 +454,19 @@ export default function ProductoForm() {
         </label>
         <fieldset className="tarjeta formulario">
           <legend>Promoción por volumen (página web)</legend>
-          <p className="ayuda">
-            Los tres campos van juntos (o se llenan los tres, o se dejan los tres vacíos). Ej. "Pechuga Entera":
-            precio 3980, gramos mínimos 3000, etiqueta "$3.980/kg al llevar 3 kilos o más".
-          </p>
+          {form.flagBalanza === "NORMAL" ? (
+            <p className="ayuda">
+              Los tres campos van juntos (o se llenan los tres, o se dejan los tres vacíos). Ej. "Empanada de Pino":
+              precio 990, unidades mínimas 3, etiqueta "3 unidades a $990 c/u".
+            </p>
+          ) : (
+            <p className="ayuda">
+              Los tres campos van juntos (o se llenan los tres, o se dejan los tres vacíos). Ej. "Pechuga Entera":
+              precio 3980, gramos mínimos 3000, etiqueta "$3.980/kg al llevar 3 kilos o más".
+            </p>
+          )}
           <label>
-            Precio promocional por kilo
+            Precio promocional {form.flagBalanza === "NORMAL" ? "por unidad" : "por kilo"}
             <input
               type="number"
               min="1"
@@ -468,7 +475,7 @@ export default function ProductoForm() {
             />
           </label>
           <label>
-            Gramos mínimos para la promoción
+            {form.flagBalanza === "NORMAL" ? "Unidades mínimas para la promoción" : "Gramos mínimos para la promoción"}
             <input
               type="number"
               min="1"
@@ -481,7 +488,9 @@ export default function ProductoForm() {
             <input
               value={form.promoEtiqueta}
               onChange={(e) => actualizarCampo("promoEtiqueta", e.target.value)}
-              placeholder='ej. "$3.980/kg al llevar 3 kilos o más"'
+              placeholder={
+                form.flagBalanza === "NORMAL" ? 'ej. "3 unidades a $990 c/u"' : 'ej. "$3.980/kg al llevar 3 kilos o más"'
+              }
             />
           </label>
         </fieldset>
