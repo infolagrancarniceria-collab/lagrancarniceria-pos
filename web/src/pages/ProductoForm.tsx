@@ -204,6 +204,60 @@ export default function ProductoForm() {
     }
   }
 
+  // --- Alternativa por componente (reemplazo sugerido si no hay stock del
+  // principal) — solo informativo, no descuenta stock por su cuenta. Se edita
+  // de a un componente a la vez (alternativaEditandoId marca cuál).
+  const [alternativaEditandoId, setAlternativaEditandoId] = useState<number | null>(null);
+  const [alternativaBusqueda, setAlternativaBusqueda] = useState("");
+  const [alternativaResultados, setAlternativaResultados] = useState<Producto[]>([]);
+  const [guardandoAlternativa, setGuardandoAlternativa] = useState(false);
+
+  useEffect(() => {
+    if (!alternativaBusqueda.trim() || alternativaEditandoId == null) {
+      setAlternativaResultados([]);
+      return;
+    }
+    const componente = productoActual?.componentesDelCombo.find((c) => c.id === alternativaEditandoId);
+    api.productos
+      .listar({ buscar: alternativaBusqueda })
+      .then((r) =>
+        setAlternativaResultados(
+          r.filter((p) => !p.esCombo && p.id !== productoActual?.id && p.id !== componente?.componenteProductoId).slice(0, 8)
+        )
+      )
+      .catch(() => setAlternativaResultados([]));
+  }, [alternativaBusqueda, alternativaEditandoId, productoActual]);
+
+  function abrirEdicionAlternativa(componenteId: number) {
+    setAlternativaEditandoId(componenteId);
+    setAlternativaBusqueda("");
+    setAlternativaResultados([]);
+  }
+
+  async function elegirAlternativa(componenteId: number, alternativaProductoId: number | null, descripcion: string) {
+    if (!productoActual) return;
+    setGuardandoAlternativa(true);
+    try {
+      const actualizado = await api.productos.definirAlternativaComponenteCombo(
+        productoActual.id,
+        componenteId,
+        alternativaProductoId
+      );
+      setProductoActual(actualizado);
+      actualizarCampo("descripcionCorta", actualizado.descripcionCorta ?? "");
+      mostrarToast(
+        alternativaProductoId ? "Alternativa guardada" : "Alternativa quitada",
+        alternativaProductoId ? `${descripcion} queda como alternativa.` : "Ya no hay alternativa para este componente."
+      );
+      setAlternativaEditandoId(null);
+      setAlternativaBusqueda("");
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setGuardandoAlternativa(false);
+    }
+  }
+
   async function guardar(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -547,12 +601,62 @@ export default function ProductoForm() {
               <ul className="lista-resultados">
                 {productoActual.componentesDelCombo.map((c) => (
                   <li key={c.id} className="fila-inline">
-                    <span>
-                      {c.cantidad} {etiquetaCantidadProducto(c.componenteProducto)} — {c.componenteProducto.descripcion}
-                    </span>
-                    <button type="button" onClick={() => quitarComponente(c.id, c.componenteProducto.descripcion)}>
-                      Quitar
-                    </button>
+                    <div>
+                      <span>
+                        {c.cantidad} {etiquetaCantidadProducto(c.componenteProducto)} — {c.componenteProducto.descripcion}
+                      </span>
+                      <button type="button" onClick={() => quitarComponente(c.id, c.componenteProducto.descripcion)}>
+                        Quitar
+                      </button>
+                    </div>
+
+                    {c.alternativaProducto ? (
+                      <p className="ayuda">
+                        Alternativa si no hay stock: {c.alternativaProducto.descripcion}{" "}
+                        <button
+                          type="button"
+                          onClick={() => elegirAlternativa(c.id, null, c.alternativaProducto!.descripcion)}
+                          disabled={guardandoAlternativa}
+                        >
+                          Quitar alternativa
+                        </button>
+                      </p>
+                    ) : alternativaEditandoId === c.id ? (
+                      <div className="formulario">
+                        <label>
+                          Buscar alternativa para {c.componenteProducto.descripcion}
+                          <input
+                            type="text"
+                            value={alternativaBusqueda}
+                            onChange={(e) => setAlternativaBusqueda(e.target.value)}
+                            placeholder="Ej: malaya"
+                            autoFocus
+                          />
+                        </label>
+                        {alternativaResultados.length > 0 && (
+                          <ul className="lista-resultados">
+                            {alternativaResultados.map((prod) => (
+                              <li key={prod.id}>
+                                <button
+                                  type="button"
+                                  disabled={guardandoAlternativa}
+                                  onClick={() => elegirAlternativa(c.id, prod.id, prod.descripcion)}
+                                >
+                                  {prod.descripcion} {prod.marca ? `— ${prod.marca}` : ""}
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                        <button type="button" onClick={() => setAlternativaEditandoId(null)}>
+                          Cancelar
+                        </button>
+                      </div>
+                    ) : (
+                      <button type="button" className="ayuda" onClick={() => abrirEdicionAlternativa(c.id)}>
+                        + Agregar alternativa si no hay stock
+                      </button>
+                    )}
                   </li>
                 ))}
               </ul>
