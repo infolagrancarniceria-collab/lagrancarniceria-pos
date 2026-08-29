@@ -54,6 +54,13 @@ export async function calcularReporteVentas(desdeTexto?: unknown, hastaTexto?: u
 
   const totalVentas = ventasEnRango.reduce((s, v) => s + v.total, 0);
 
+  // Ventas que se originaron en "Pedidos web" (botón "Enviar a Caja"), para
+  // poder distinguirlas del resto — a pedido del usuario, para consultar
+  // cuánto se vendió online sin tener que ir a revisar pedido por pedido.
+  const ventasOnline = ventasEnRango.filter((v) => v.origenPedidoWebId != null);
+  const cantidadVentasOnline = ventasOnline.length;
+  const totalVentasOnline = ventasOnline.reduce((s, v) => s + v.total, 0);
+
   const porProducto = new Map<
     number,
     { productoId: number; plu: string; descripcion: string; cantidad: number; ingreso: number }
@@ -82,6 +89,8 @@ export async function calcularReporteVentas(desdeTexto?: unknown, hastaTexto?: u
     hasta: hasta.toISOString(),
     cantidadVentas: ventasEnRango.length,
     totalVentas,
+    cantidadVentasOnline,
+    totalVentasOnline,
     masVendidosPorCantidad,
     masVendidosPorIngreso,
   };

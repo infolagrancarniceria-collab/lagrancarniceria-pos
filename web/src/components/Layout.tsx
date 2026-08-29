@@ -4,7 +4,7 @@ import { api, type AvisosCriticos } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
 import { modoCajaActivo } from "../lib/modoCaja";
 import { modoCamaraActivo } from "../lib/modoCamara";
-import { contarAvisos, notificarNuevosAvisosSiCorresponde } from "../lib/avisos";
+import { contarAvisos, notificarNuevosAvisosSiCorresponde, notificarNuevosPedidosWebSiCorresponde } from "../lib/avisos";
 import { ToastHost } from "./ToastHost";
 
 // Cada cuánto se revisa si hay avisos críticos nuevos (caja sin cerrar,
@@ -33,6 +33,13 @@ export default function Layout() {
           setAvisos(a);
           notificarNuevosAvisosSiCorresponde(a);
         })
+        .catch(() => {});
+      // Aparte de avisosCriticos (que solo trae el conteo) — para poder
+      // avisar "cuál" pedido llegó (nombre del cliente, hora), no solo
+      // cuántos, se trae la lista completa de pendientes acá.
+      api.pedidosWeb
+        .listar("pendiente")
+        .then(notificarNuevosPedidosWebSiCorresponde)
         .catch(() => {});
     }
     chequear();
@@ -103,7 +110,7 @@ export default function Layout() {
               <Item to="/gastos" emoji="🧾" etiqueta="Gastos" />
               <Item to="/caja" emoji="🧮" etiqueta="Caja" />
               <Item to="/caja/creditos" emoji="🤝" etiqueta="Créditos" />
-              <Item to="/pedidos-web" emoji="🛵" etiqueta="Pedidos web" />
+              <Item to="/pedidos-web" emoji="🛵" etiqueta="Pedidos web" badge={avisos?.pedidosWebPendientes.cantidad} />
               <Item to="/camara" emoji="❄️" etiqueta="Cámara" />
               <Item to="/asistente" emoji="🤖" etiqueta="Asistente" />
               <Item to="/balanza" emoji="⚖️" etiqueta="Balanza" />

@@ -59,12 +59,29 @@ export interface CorteOpcion {
 }
 
 export interface PedidoWebItem {
+  plu: string;
   descripcion: string;
   corte: string | null;
   envasado: "Tradicional" | "Al vacío" | null;
   instrucciones: string | null;
   cantidad: number;
   unidad: "kg" | "unidad";
+  // CLP/kg (cantidad en gramos) o CLP/unidad — mismo criterio que el
+  // carrito de la web. Pedidos de antes de este cambio no lo traen: queda
+  // undefined, y la pantalla que lo muestra debe manejar ese caso (no hay
+  // forma de saber el precio de un pedido viejo con certeza).
+  precioUnitario?: number;
+}
+
+export interface PedidoWebRegalo {
+  id: number;
+  pedidoWebId: number;
+  productoId: number;
+  producto: Producto;
+  cantidad: number;
+  agregadoPorId: number;
+  agregadoPor: Usuario;
+  agregadoEn: string;
 }
 
 export interface PedidoWeb {
@@ -84,6 +101,16 @@ export interface PedidoWeb {
   estado: "pendiente" | "atendido" | "anulado";
   atendidoPorId: number | null;
   atendidoEn: string | null;
+  motivoAnulacion: string | null;
+  anuladoPorId: number | null;
+  anuladoEn: string | null;
+  descuentoTipo: "porcentaje" | "monto" | null;
+  descuentoValor: number | null;
+  descuentoMotivo: string | null;
+  regalos: PedidoWebRegalo[];
+  // Id de la venta creada en Caja al enviar este pedido ("Enviar a Caja"),
+  // o null si todavía no se ha enviado — ver Venta.origenPedidoWebId.
+  ventaGeneradaId: number | null;
   sincronizadoEn: string;
 }
 
@@ -514,6 +541,8 @@ export interface ReporteVentas {
   hasta: string;
   cantidadVentas: number;
   totalVentas: number;
+  cantidadVentasOnline: number;
+  totalVentasOnline: number;
   masVendidosPorCantidad: { productoId: number; plu: string; descripcion: string; cantidad: number; ingreso: number }[];
   masVendidosPorIngreso: { productoId: number; plu: string; descripcion: string; cantidad: number; ingreso: number }[];
 }
@@ -584,6 +613,7 @@ export interface Venta {
   usuarioAnulacion?: Usuario | null;
   motivoAnulacion: string | null;
   fechaAnulacion: string | null;
+  origenPedidoWebId: number | null;
   items: ItemVenta[];
   pagos: PagoVenta[];
 }
@@ -670,6 +700,7 @@ export interface AvisosCriticos {
   stockBajo: { cantidad: number };
   cajasEstancadas: { cantidad: number };
   ajustesPendientesCamara: { cantidad: number };
+  pedidosWebPendientes: { cantidad: number };
 }
 
 export interface ResultadoEnvioBalanza {
@@ -939,6 +970,25 @@ export const api = {
       get<PedidoWeb[]>(`/api/pedidos-web${estado ? `?estado=${estado}` : ""}`),
     marcarAtendido: (id: number, usuarioId: number) =>
       put<PedidoWeb>(`/api/pedidos-web/${id}/atender`, { usuarioId }),
+    anular: (id: number, usuarioId: number, clave: string, motivo: string) =>
+      put<PedidoWeb>(`/api/pedidos-web/${id}/anular`, { usuarioId, clave, motivo }),
+    aplicarDescuento: (
+      id: number,
+      usuarioId: number,
+      descuento: { descuentoTipo: "porcentaje" | "monto"; descuentoValor: number; descuentoMotivo: string | null } | null
+    ) =>
+      put<PedidoWeb>(`/api/pedidos-web/${id}/descuento`, {
+        usuarioId,
+        descuentoTipo: descuento?.descuentoTipo ?? null,
+        descuentoValor: descuento?.descuentoValor ?? null,
+        descuentoMotivo: descuento?.descuentoMotivo ?? null,
+      }),
+    agregarRegalo: (id: number, usuarioId: number, productoId: number, cantidad: number) =>
+      post<PedidoWeb>(`/api/pedidos-web/${id}/regalos`, { usuarioId, productoId, cantidad }),
+    quitarRegalo: (id: number, regaloId: number, usuarioId: number) =>
+      delConBody<PedidoWeb>(`/api/pedidos-web/${id}/regalos/${regaloId}`, { usuarioId }),
+    enviarACaja: (id: number, usuarioId: number) =>
+      post<{ pedido: PedidoWeb; ventaId: number }>(`/api/pedidos-web/${id}/enviar-a-caja`, { usuarioId }),
   },
   inventario: {
     stock: (soloBajo = false, categoriaId?: number) => {

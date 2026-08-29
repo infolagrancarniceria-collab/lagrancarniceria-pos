@@ -1,4 +1,4 @@
-import type { AvisosCriticos } from "../api";
+import type { AvisosCriticos, PedidoWeb } from "../api";
 
 export function contarAvisos(a: AvisosCriticos): number {
   return (
@@ -89,6 +89,56 @@ export function notificarNuevosAvisosSiCorresponde(avisos: AvisosCriticos): void
       notificadosHoy[aviso.clave] = hoy;
     }
     localStorage.setItem(CLAVE_LOCALSTORAGE, JSON.stringify(notificadosHoy));
+  }
+
+  if (Notification.permission === "granted") {
+    disparar();
+  } else if (Notification.permission !== "denied") {
+    Notification.requestPermission().then((permiso) => {
+      if (permiso === "granted") disparar();
+    });
+  }
+}
+
+const CLAVE_PEDIDOS_WEB_VISTOS = "pedidosWebVistos";
+
+// A diferencia de notificarNuevosAvisosSiCorresponde (una vez al día por
+// tipo de aviso), acá interesa cada pedido nuevo que llegue — un pedido web
+// es un cliente esperando respuesta, no algo que se pueda dejar acumulado
+// hasta mañana. Se guarda en localStorage el set de ids "pendiente" ya
+// vistos (por navegador/PC, igual que el otro), y se notifica solo lo que
+// no estaba en ese set la vez anterior.
+export function notificarNuevosPedidosWebSiCorresponde(pedidosPendientes: PedidoWeb[]): void {
+  const guardado = localStorage.getItem(CLAVE_PEDIDOS_WEB_VISTOS);
+  const esPrimeraVez = guardado === null;
+
+  let vistos: number[] = [];
+  if (guardado) {
+    try {
+      vistos = JSON.parse(guardado);
+    } catch {
+      vistos = [];
+    }
+  }
+  localStorage.setItem(CLAVE_PEDIDOS_WEB_VISTOS, JSON.stringify(pedidosPendientes.map((p) => p.id)));
+
+  // No avisar del "backlog" que ya estaba pendiente antes de que este PC
+  // abriera el programa por primera vez — solo de pedidos nuevos de ahí en
+  // adelante.
+  if (esPrimeraVez) return;
+
+  const nuevos = pedidosPendientes.filter((p) => !vistos.includes(p.id));
+  if (nuevos.length === 0) return;
+  if (typeof Notification === "undefined") return;
+
+  function disparar() {
+    for (const p of nuevos) {
+      const hora = new Date(p.fecha).toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" });
+      const cantidadProductos = `${p.items.length} producto${p.items.length === 1 ? "" : "s"}`;
+      new Notification("La Gran Carnicería — Nuevo pedido web", {
+        body: `${p.clienteNombre} — ${cantidadProductos} — ${hora}`,
+      });
+    }
   }
 
   if (Notification.permission === "granted") {

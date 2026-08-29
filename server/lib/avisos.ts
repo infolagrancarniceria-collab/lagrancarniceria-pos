@@ -14,6 +14,7 @@ export interface AvisosCriticos {
   stockBajo: { cantidad: number };
   cajasEstancadas: { cantidad: number };
   ajustesPendientesCamara: { cantidad: number };
+  pedidosWebPendientes: { cantidad: number };
 }
 
 // Avisos proactivos — a pedido del usuario, para no depender de entrar a
@@ -21,7 +22,7 @@ export interface AvisosCriticos {
 // en cada pedido (nada se guarda "ya avisado" acá; eso lo maneja el
 // frontend, para decidir cuándo repetir una notificación nativa).
 export async function calcularAvisosCriticos(): Promise<AvisosCriticos> {
-  const [sesionAbierta, productosConUmbral, cajasEnCamara, ajustesPendientesCamara] = await Promise.all([
+  const [sesionAbierta, productosConUmbral, cajasEnCamara, ajustesPendientesCamara, pedidosWebPendientes] = await Promise.all([
     prisma.sesionCaja.findFirst({ where: { estado: "abierta" }, include: { usuarioApertura: true } }),
     prisma.producto.findMany({
       where: { activo: true, umbralStockBajo: { not: null } },
@@ -32,6 +33,7 @@ export async function calcularAvisosCriticos(): Promise<AvisosCriticos> {
       select: { fechaIngreso: true, pesoInicialKg: true, saldoKg: true },
     }),
     prisma.cajaCamara.count({ where: { estado: "ajuste_pendiente" } }),
+    prisma.pedidoWeb.count({ where: { estado: "pendiente" } }),
   ]);
 
   // Una caja abierta es normal mientras sea la de hoy — recién es un aviso
@@ -60,5 +62,6 @@ export async function calcularAvisosCriticos(): Promise<AvisosCriticos> {
     stockBajo: { cantidad: stockBajoCantidad },
     cajasEstancadas: { cantidad: cajasEstancadasCantidad },
     ajustesPendientesCamara: { cantidad: ajustesPendientesCamara },
+    pedidosWebPendientes: { cantidad: pedidosWebPendientes },
   };
 }

@@ -85,6 +85,11 @@ export default function Reportes() {
               <strong>Total vendido:</strong> {formatoCLP(reporteVentas.totalVentas)}
             </div>
           </div>
+          <p className="ayuda">
+            De eso, <strong>{reporteVentas.cantidadVentasOnline}</strong> venta
+            {reporteVentas.cantidadVentasOnline === 1 ? "" : "s"} vinieron de Pedidos web (
+            {formatoCLP(reporteVentas.totalVentasOnline)}).
+          </p>
 
           <h3>Más vendidos por cantidad</h3>
           <table className="tabla">

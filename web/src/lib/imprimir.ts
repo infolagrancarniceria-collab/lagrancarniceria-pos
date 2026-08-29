@@ -40,6 +40,13 @@ export async function imprimirSilencioso() {
   await imprimirConRespaldo(obtenerImpresoraBoletas());
 }
 
+// Mismo mecanismo y misma impresora que el vale de venta — el pedido web
+// también es un ticket angosto de 80mm, no hace falta una impresora ni
+// tamaño de página aparte.
+export async function imprimirPedidoWeb() {
+  await imprimirConRespaldo(obtenerImpresoraBoletas());
+}
+
 // El sistema imprime dos cosas de tamaño de página distinto: el vale
 // (impresora térmica de 80mm, ancho fijo con "size: 80mm auto" definido en
 // styles.css) y la etiqueta de cámara (100×50mm). CSS no permite tener dos

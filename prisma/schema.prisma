@@ -41,7 +41,9 @@ model Usuario {
   escaneosCamara              EscaneoInventarioCamara[]
   salidasMayoristaRegistradas SalidaMayorista[]
   salidasMayoristaAnuladas    SalidaMayorista[] @relation("SalidasMayoristasAnuladasPorUsuario")
-  pedidosWebAtendidos         PedidoWeb[]
+  pedidosWebAtendidos         PedidoWeb[]       @relation("PedidosWebAtendidosPorUsuario")
+  pedidosWebAnulados          PedidoWeb[]       @relation("PedidosWebAnuladosPorUsuario")
+  regalosPedidoWebAgregados   PedidoWebRegalo[]
 }
 
 // Gastos generales del negocio (sueldos, luz, agua, arriendo, etc.) —
@@ -181,6 +183,7 @@ model Producto {
   cajasCamara       CajaCamara[]
   lotesCamara       LoteCamara[]
   salidasMayoristas SalidaMayorista[]
+  regalosPedidoWeb  PedidoWebRegalo[]
 }
 
 model HistorialPrecio {
@@ -229,7 +232,7 @@ model MovimientoInventario {
   usuario   Usuario @relation(fields: [usuarioId], references: [id])
 
   tipo   String // "entrada" | "salida"
-  motivo String // entrada: "compra" | "ajuste" — salida: "venta" | "descarte" | "ajuste"
+  motivo String // entrada: "compra" | "ajuste" | "regalo_revertido" — salida: "venta" | "descarte" | "ajuste" | "regalo_pedido_web"
 
   cantidad Float
 
@@ -407,6 +410,13 @@ model Venta {
   motivoAnulacion    String?
   fechaAnulacion     DateTime?
 
+  // Si esta venta se generó desde "Pedidos web" (botón "Enviar a Caja") en
+  // vez de armarse a mano en Punto de Venta — permite distinguir "ventas
+  // online" del resto en Reportes (mismo total, calculado aparte) y evita
+  // mandar el mismo pedido dos veces a Caja.
+  origenPedidoWebId Int?       @unique
+  origenPedidoWeb   PedidoWeb? @relation(fields: [origenPedidoWebId], references: [id])
+
   items ItemVenta[]
   pagos PagoVenta[]
 }
@@ -486,10 +496,12 @@ model PedidoWeb {
   // Solo informativo — el pago real se coordina aparte, no hay pasarela.
   medioPago    String?
 
-  // JSON con el detalle de productos pedidos (nombre, corte elegido,
-  // envasado, instrucciones, cantidad aproximada en kg/unidad) — solo para
-  // mostrar, no hay relación con Producto porque el pedido puede referirse
-  // a un catálogo que ya cambió para cuando se revisa.
+  // JSON con el detalle de productos pedidos (plu, nombre, corte elegido,
+  // envasado, instrucciones, cantidad aproximada en kg/unidad, precio
+  // unitario al momento de cotizar) — solo para mostrar/calcular el total en
+  // pantalla, no hay relación con Producto porque el pedido puede referirse
+  // a un catálogo que ya cambió para cuando se revisa (y porque el precio
+  // que se muestra es el que el cliente vio al cotizar, no el actual).
   itemsJson String
 
   comentario String?
@@ -497,10 +509,64 @@ model PedidoWeb {
   estado String @default("pendiente") // "pendiente" | "atendido" | "anulado"
 
   atendidoPorId Int?
-  atendidoPor   Usuario?  @relation(fields: [atendidoPorId], references: [id])
+  atendidoPor   Usuario?  @relation("PedidosWebAtendidosPorUsuario", fields: [atendidoPorId], references: [id])
   atendidoEn    DateTime?
 
+  // Requiere clave de supervisor (igual que anular una venta) — a diferencia
+  // de "atendido", que cualquiera puede marcar. motivoAnulacion queda en
+  // texto libre (el cliente se arrepintió, pedido duplicado, no contesta,
+  // etc.), elegido en el mismo modal que pide la clave.
+  motivoAnulacion String?
+  anuladoPorId    Int?
+  anuladoPor      Usuario?  @relation("PedidosWebAnuladosPorUsuario", fields: [anuladoPorId], references: [id])
+  anuladoEn       DateTime?
+
+  // Se aplica sobre el total calculado a partir de itemsJson (cada item ya
+  // trae plu + precioUnitario, ver comentario de itemsJson arriba) — no hay
+  // un campo "total" acá porque el pedido web sigue siendo una cotización,
+  // no una venta: el total con descuento se recalcula al mostrar/imprimir en
+  // vez de guardarse aparte, para que quien lo revise en Caja sepa qué
+  // aplicar al momento de vender de verdad.
+  descuentoTipo   String? // "porcentaje" | "monto"
+  descuentoValor  Float?
+  descuentoMotivo String?
+
+  // Productos que se incluyeron de regalo (ej. longanizas, hamburguesas) —
+  // no le cobran nada al cliente pero sí se descuentan del stock real, a
+  // diferencia de itemsJson que es solo texto sin relación a Producto.
+  regalos PedidoWebRegalo[]
+
+  // Se llena cuando el equipo manda este pedido a Caja como venta a
+  // crédito (botón "Enviar a Caja") — ver Venta.origenPedidoWebId. Null
+  // mientras el pedido siga sin cobrarse en Caja.
+  ventaGenerada Venta?
+
   sincronizadoEn DateTime @default(now())
+}
+
+// Producto real (no solo texto) agregado de regalo a un pedido web — a
+// diferencia de itemsJson (lo que pidió el cliente, sin costo cero posible
+// ni relación a Producto), esto sí descuenta stock de verdad apenas se
+// agrega, independiente de si el pedido después se manda o no a Caja: es
+// una merma real del negocio, no algo que dependa de cobrarse.
+model PedidoWebRegalo {
+  id Int @id @default(autoincrement())
+
+  pedidoWebId Int
+  pedidoWeb   PedidoWeb @relation(fields: [pedidoWebId], references: [id])
+
+  productoId Int
+  producto   Producto @relation(fields: [productoId], references: [id])
+
+  // Mismo criterio de unidad que ItemVenta.cantidad (kg para pesable,
+  // unidades para el resto) — a diferencia de itemsJson, que guarda
+  // gramos: acá lo entra el equipo directo en el POS, no viene del
+  // carrito de la web.
+  cantidad Float
+
+  agregadoPorId Int
+  agregadoPor   Usuario  @relation(fields: [agregadoPorId], references: [id])
+  agregadoEn    DateTime @default(now())
 }
 
 // --- Módulo de Cámara Frigorífica ---
