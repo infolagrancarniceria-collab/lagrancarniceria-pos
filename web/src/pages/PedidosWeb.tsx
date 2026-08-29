@@ -207,7 +207,8 @@ export default function PedidosWeb() {
   }
 
   return (
-    <div>
+    <>
+    <div className="no-imprimir">
       <div className="encabezado-pantalla">
         <h1>Pedidos web</h1>
       </div>
@@ -504,10 +505,11 @@ export default function PedidosWeb() {
           onCancelar={() => setAnulando(null)}
         />
       )}
-
-      <div className="vale-oculto-hasta-imprimir">
-        {pedidoParaImprimir && <ValePedidoWeb pedido={pedidoParaImprimir} />}
-      </div>
     </div>
+
+    <div className="vale-oculto-hasta-imprimir">
+      {pedidoParaImprimir && <ValePedidoWeb pedido={pedidoParaImprimir} />}
+    </div>
+    </>
   );
 }
