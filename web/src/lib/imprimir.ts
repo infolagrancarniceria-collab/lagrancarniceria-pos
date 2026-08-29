@@ -1,4 +1,4 @@
-import { obtenerImpresoraBoletas, obtenerImpresoraEtiquetas } from "./impresoras";
+import { obtenerImpresoraBoletas, obtenerImpresoraEtiquetas, obtenerImpresoraPedidosWeb } from "./impresoras";
 
 // En la app instalada (Electron), imprime directo en la impresora elegida
 // (o la predeterminada de Windows si no se eligió ninguna en Configuración)
@@ -40,11 +40,14 @@ export async function imprimirSilencioso() {
   await imprimirConRespaldo(obtenerImpresoraBoletas());
 }
 
-// Mismo mecanismo y misma impresora que el vale de venta — el pedido web
-// también es un ticket angosto de 80mm, no hace falta una impresora ni
-// tamaño de página aparte.
+// Mismo mecanismo silencioso que el vale de venta, pero con su propia
+// impresora configurable aparte (ver Configuración → Impresoras) — un
+// pedido web suele revisarse/imprimirse desde un PC distinto al de la caja
+// del mesón (ej. el PC servidor, en la trastienda), así que no conviene
+// depender de la impresora de boletas de ESE equipo en particular, que
+// puede no tener ninguna (o no ser la que corresponde).
 export async function imprimirPedidoWeb() {
-  await imprimirConRespaldo(obtenerImpresoraBoletas());
+  await imprimirConRespaldo(obtenerImpresoraPedidosWeb());
 }
 
 // El sistema imprime dos cosas de tamaño de página distinto: el vale

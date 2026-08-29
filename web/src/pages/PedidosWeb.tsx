@@ -63,7 +63,13 @@ export default function PedidosWeb() {
 
   useEffect(() => {
     if (!pedidoParaImprimir) return;
-    imprimirPedidoWeb().finally(() => setPedidoParaImprimir(null));
+    imprimirPedidoWeb()
+      .catch(() =>
+        setError(
+          "No se pudo imprimir — revisa que este PC tenga una impresora elegida en Configuración → Impresoras (Pedidos web) y que esté conectada."
+        )
+      )
+      .finally(() => setPedidoParaImprimir(null));
   }, [pedidoParaImprimir]);
 
   async function marcarAtendido(p: PedidoWeb) {

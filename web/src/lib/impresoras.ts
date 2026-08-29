@@ -32,3 +32,19 @@ export function setImpresoraEtiquetas(nombre: string | null) {
   if (nombre) localStorage.setItem(CLAVE_ETIQUETAS, nombre);
   else localStorage.removeItem(CLAVE_ETIQUETAS);
 }
+
+// Impresora aparte para los pedidos web — separada de boletas a propósito:
+// un pedido web se suele revisar/imprimir desde un PC distinto al de la
+// caja del mesón (ej. el PC que hace de servidor, en la trastienda), con su
+// propia impresora conectada ahí — no tiene por qué ser la misma que
+// imprime las boletas de venta.
+const CLAVE_PEDIDOS_WEB = "impresoraPedidosWeb";
+
+export function obtenerImpresoraPedidosWeb(): string | null {
+  return localStorage.getItem(CLAVE_PEDIDOS_WEB);
+}
+
+export function setImpresoraPedidosWeb(nombre: string | null) {
+  if (nombre) localStorage.setItem(CLAVE_PEDIDOS_WEB, nombre);
+  else localStorage.removeItem(CLAVE_PEDIDOS_WEB);
+}

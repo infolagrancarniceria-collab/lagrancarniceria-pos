@@ -2,7 +2,14 @@ import { useEffect, useState } from "react";
 import { api, type EstadoRespaldo } from "../api";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 import { modoCajaActivo, setModoCajaActivo } from "../lib/modoCaja";
-import { obtenerImpresoraBoletas, setImpresoraBoletas, obtenerImpresoraEtiquetas, setImpresoraEtiquetas } from "../lib/impresoras";
+import {
+  obtenerImpresoraBoletas,
+  setImpresoraBoletas,
+  obtenerImpresoraEtiquetas,
+  setImpresoraEtiquetas,
+  obtenerImpresoraPedidosWeb,
+  setImpresoraPedidosWeb,
+} from "../lib/impresoras";
 import type { ImpresoraDisponible } from "../electron";
 import ModalAlerta from "../components/ModalAlerta";
 import { mostrarToast } from "../lib/toast";
@@ -27,6 +34,9 @@ export default function Configuracion() {
   const [impresoraBoletas, setImpresoraBoletasState] = useState(() => obtenerImpresoraBoletas() ?? PREDETERMINADA);
   const [impresoraEtiquetas, setImpresoraEtiquetasState] = useState(
     () => obtenerImpresoraEtiquetas() ?? PREDETERMINADA
+  );
+  const [impresoraPedidosWeb, setImpresoraPedidosWebState] = useState(
+    () => obtenerImpresoraPedidosWeb() ?? PREDETERMINADA
   );
   const [estadoRespaldo, setEstadoRespaldo] = useState<EstadoRespaldo | null>(null);
   const [rutaUsbInput, setRutaUsbInput] = useState("");
@@ -305,11 +315,13 @@ export default function Configuracion() {
         <section className="tarjeta">
           <h2>Impresoras</h2>
           <p className="ayuda">
-            Elige qué impresora usar para las boletas y para las etiquetas de cámara en <strong>este PC</strong>{" "}
-            (pueden ser la misma o distintas). Si dejas "La predeterminada de Windows", el sistema manda el
-            trabajo a la que esté puesta como predeterminada — que no siempre es la que se espera si hay más de
-            una impresora conectada (o alguna virtual, como "Microsoft Print to PDF"). Elegirla acá evita esa
-            confusión.
+            Elige qué impresora usar para las boletas, las etiquetas de cámara y los pedidos web en{" "}
+            <strong>este PC</strong> (pueden ser la misma o distintas — por ejemplo, si revisas Pedidos web desde el
+            PC servidor, acá puedes apuntar a la impresora que esté conectada a ese equipo, sin depender de la
+            impresora de boletas del mesón). Si dejas "La predeterminada de Windows", el sistema manda el trabajo a
+            la que esté puesta como predeterminada — que no siempre es la que se espera si hay más de una
+            impresora conectada (o alguna virtual, como "Microsoft Print to PDF"), o directamente no imprime nada
+            si este equipo no tiene ninguna impresora conectada. Elegirla acá evita esa confusión.
           </p>
           <p className="ayuda">
             Si la impresora elegida no soporta imprimir sin diálogo (pasa con algunas impresoras térmicas), el
@@ -347,6 +359,24 @@ export default function Configuracion() {
                   onChange={(e) => {
                     setImpresoraEtiquetasState(e.target.value);
                     setImpresoraEtiquetas(e.target.value === PREDETERMINADA ? null : e.target.value);
+                  }}
+                >
+                  <option value={PREDETERMINADA}>La predeterminada de Windows</option>
+                  {impresoras.map((imp) => (
+                    <option key={imp.name} value={imp.name}>
+                      {imp.displayName || imp.name}
+                      {imp.isDefault ? " (predeterminada)" : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Pedidos web
+                <select
+                  value={impresoraPedidosWeb}
+                  onChange={(e) => {
+                    setImpresoraPedidosWebState(e.target.value);
+                    setImpresoraPedidosWeb(e.target.value === PREDETERMINADA ? null : e.target.value);
                   }}
                 >
                   <option value={PREDETERMINADA}>La predeterminada de Windows</option>
