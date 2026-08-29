@@ -157,13 +157,7 @@ productosRouter.get("/:id", async (req, res) => {
     where: { id: Number(req.params.id) },
     include: {
       categoria: true,
-      componentesDelCombo: {
-        include: {
-          componenteProducto: { include: { categoria: true } },
-          alternativaProducto: { include: { categoria: true } },
-        },
-        orderBy: { id: "asc" },
-      },
+      componentesDelCombo: { include: { componenteProducto: { include: { categoria: true } } }, orderBy: { id: "asc" } },
     },
   });
   if (!producto) return res.status(404).json({ error: "Producto no encontrado" });
@@ -414,7 +408,7 @@ function formatoCantidadComponente(cantidad: number, flagBalanza: string): strin
 async function regenerarDescripcionCombo(comboProductoId: number): Promise<void> {
   const componentes = await prisma.comboComponente.findMany({
     where: { comboProductoId },
-    include: { componenteProducto: true, alternativaProducto: true },
+    include: { componenteProducto: true },
     orderBy: { id: "asc" },
   });
   const descripcionCorta =
@@ -422,10 +416,7 @@ async function regenerarDescripcionCombo(comboProductoId: number): Promise<void>
       ? null
       : "Incluye: " +
         componentes
-          .map((c) => {
-            const base = `${formatoCantidadComponente(c.cantidad, c.componenteProducto.flagBalanza)} ${c.componenteProducto.descripcion}`;
-            return c.alternativaProducto ? `${base} (o ${c.alternativaProducto.descripcion} según disponibilidad)` : base;
-          })
+          .map((c) => `${formatoCantidadComponente(c.cantidad, c.componenteProducto.flagBalanza)} ${c.componenteProducto.descripcion}`)
           .join(", ");
   await prisma.producto.update({ where: { id: comboProductoId }, data: { descripcionCorta } });
 }
@@ -433,10 +424,6 @@ async function regenerarDescripcionCombo(comboProductoId: number): Promise<void>
 const agregarComponenteSchema = z.object({
   componenteProductoId: z.number().int().positive(),
   cantidad: z.number().positive("La cantidad debe ser mayor a 0"),
-});
-
-const alternativaComponenteSchema = z.object({
-  alternativaProductoId: z.number().int().positive().nullable(),
 });
 
 productosRouter.post("/:id/combo-componentes", async (req, res) => {
@@ -466,13 +453,7 @@ productosRouter.post("/:id/combo-componentes", async (req, res) => {
 
   const actualizado = await prisma.producto.findUnique({
     where: { id },
-    include: { categoria: true, componentesDelCombo: {
-        include: {
-          componenteProducto: { include: { categoria: true } },
-          alternativaProducto: { include: { categoria: true } },
-        },
-        orderBy: { id: "asc" },
-      } },
+    include: { categoria: true, componentesDelCombo: { include: { componenteProducto: { include: { categoria: true } } }, orderBy: { id: "asc" } } },
   });
   res.status(201).json(actualizado);
 });
@@ -490,60 +471,7 @@ productosRouter.delete("/:id/combo-componentes/:componenteId", async (req, res) 
 
   const actualizado = await prisma.producto.findUnique({
     where: { id },
-    include: { categoria: true, componentesDelCombo: {
-        include: {
-          componenteProducto: { include: { categoria: true } },
-          alternativaProducto: { include: { categoria: true } },
-        },
-        orderBy: { id: "asc" },
-      } },
-  });
-  res.json(actualizado);
-});
-
-// Guarda o quita la alternativa sugerida de un componente ya agregado — solo
-// informativo (ver comentario en ComboComponente.alternativaProductoId): no
-// afecta el descuento de stock al enviar el combo a Caja, que siempre resta
-// del componente principal. alternativaProductoId: null la quita.
-productosRouter.put("/:id/combo-componentes/:componenteId/alternativa", async (req, res) => {
-  const id = Number(req.params.id);
-  const componenteId = Number(req.params.componenteId);
-  const parsed = alternativaComponenteSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({ error: parsed.error.issues[0].message });
-  }
-  const { alternativaProductoId } = parsed.data;
-
-  const fila = await prisma.comboComponente.findUnique({ where: { id: componenteId } });
-  if (!fila || fila.comboProductoId !== id) return res.status(404).json({ error: "Componente no encontrado" });
-
-  if (alternativaProductoId != null) {
-    if (alternativaProductoId === id) {
-      return res.status(400).json({ error: "Un combo no puede ser su propia alternativa" });
-    }
-    if (alternativaProductoId === fila.componenteProductoId) {
-      return res.status(400).json({ error: "La alternativa no puede ser el mismo producto que el componente principal" });
-    }
-    const alternativa = await prisma.producto.findUnique({ where: { id: alternativaProductoId } });
-    if (!alternativa) return res.status(404).json({ error: "El producto alternativo no existe" });
-    if (alternativa.esCombo) {
-      return res.status(400).json({ error: "Un combo no puede ser la alternativa de un componente" });
-    }
-  }
-
-  await prisma.comboComponente.update({ where: { id: componenteId }, data: { alternativaProductoId } });
-  await regenerarDescripcionCombo(id);
-  void sincronizarCatalogoConWeb();
-
-  const actualizado = await prisma.producto.findUnique({
-    where: { id },
-    include: { categoria: true, componentesDelCombo: {
-        include: {
-          componenteProducto: { include: { categoria: true } },
-          alternativaProducto: { include: { categoria: true } },
-        },
-        orderBy: { id: "asc" },
-      } },
+    include: { categoria: true, componentesDelCombo: { include: { componenteProducto: { include: { categoria: true } } }, orderBy: { id: "asc" } } },
   });
   res.json(actualizado);
 });

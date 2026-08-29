@@ -60,10 +60,6 @@ export interface ComponenteCombo {
   componenteProductoId: number;
   componenteProducto: Producto;
   cantidad: number;
-  // Reemplazo sugerido si el componente principal no tiene stock — solo
-  // informativo, no descuenta stock por su cuenta.
-  alternativaProductoId: number | null;
-  alternativaProducto: Producto | null;
 }
 
 export interface CorteOpcion {
@@ -896,10 +892,6 @@ export const api = {
       post<ProductoConCosto>(`/api/productos/${id}/combo-componentes`, { componenteProductoId, cantidad }),
     quitarComponenteCombo: (id: number, componenteId: number) =>
       del<ProductoConCosto>(`/api/productos/${id}/combo-componentes/${componenteId}`),
-    definirAlternativaComponenteCombo: (id: number, componenteId: number, alternativaProductoId: number | null) =>
-      put<ProductoConCosto>(`/api/productos/${id}/combo-componentes/${componenteId}/alternativa`, {
-        alternativaProductoId,
-      }),
     categorizarMasivo: (productoIds: number[], categoriaId: number) =>
       post<{ actualizados: number }>("/api/productos/categorizar-masivo", { productoIds, categoriaId }),
     eliminarMasivo: (productoIds: number[]) =>

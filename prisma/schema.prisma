@@ -204,7 +204,6 @@ model Producto {
 
   componentesDelCombo ComboComponente[] @relation("ComponentesDelCombo")
   usadoEnCombos       ComboComponente[] @relation("ProductoUsadoEnCombos")
-  usadoComoAlternativaEnCombos ComboComponente[] @relation("ProductoUsadoComoAlternativaEnCombos")
 }
 
 // Una línea de la "receta" de un combo — qué producto real (y cuánto) lleva
@@ -222,14 +221,6 @@ model ComboComponente {
   // Mismo criterio que ItemVenta.cantidad: kg si el componente es pesable,
   // unidades si es Normal.
   cantidad Float
-
-  // Reemplazo sugerido si el componente principal no tiene stock — solo
-  // informativo, el equipo decide a mano si lo usa (igual que la
-  // disponibilidad de cualquier producto). No cambia el descuento de stock
-  // automático al enviar el pedido a Caja, que siempre resta del componente
-  // principal.
-  alternativaProductoId Int?
-  alternativaProducto   Producto? @relation("ProductoUsadoComoAlternativaEnCombos", fields: [alternativaProductoId], references: [id])
 }
 
 model HistorialPrecio {
