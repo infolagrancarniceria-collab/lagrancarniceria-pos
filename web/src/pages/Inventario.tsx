@@ -2,17 +2,21 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, type Categoria, type ProductoConStock } from "../api";
 import SelectorCategoria from "../components/SelectorCategoria";
+import { useFiltroUrl } from "../hooks/useFiltroUrl";
 import ModalAlerta from "../components/ModalAlerta";
 
 export default function Inventario() {
   const [productos, setProductos] = useState<ProductoConStock[]>([]);
   const [categorias, setCategorias] = useState<Categoria[]>([]);
-  // Pre-marcado si se llega desde el aviso de "stock bajo" (ver
-  // web/src/pages/Avisos.tsx, enlaza a "/inventario?bajo=true").
-  const [soloBajoStock, setSoloBajoStock] = useState(
-    () => new URLSearchParams(window.location.search).get("bajo") === "true"
-  );
-  const [categoriaId, setCategoriaId] = useState<number | "">("");
+  // En la URL, no en useState suelto — así "← Volver" recupera el mismo
+  // filtro al regresar (ver hooks/useFiltroUrl.ts). "bajo=true" además
+  // sigue siendo el link que ya usa el aviso de "stock bajo" en Avisos.tsx.
+  const [soloBajoStockStr, setSoloBajoStockStr] = useFiltroUrl("bajo");
+  const soloBajoStock = soloBajoStockStr === "true";
+  const setSoloBajoStock = (v: boolean) => setSoloBajoStockStr(v ? "true" : "");
+  const [categoriaIdStr, setCategoriaIdStr] = useFiltroUrl("categoria");
+  const categoriaId: number | "" = categoriaIdStr ? Number(categoriaIdStr) : "";
+  const setCategoriaId = (id: number | "") => setCategoriaIdStr(id === "" ? "" : String(id));
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(false);
 

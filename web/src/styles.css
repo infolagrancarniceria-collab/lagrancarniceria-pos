@@ -397,6 +397,22 @@ select {
   margin-bottom: 1rem;
 }
 
+/* Flecha "Volver" (BotonVolver.tsx) — chica y discreta, arriba de cada
+   pantalla, para no competir visualmente con el título real de la página. */
+.boton-volver {
+  background: transparent;
+  border: none;
+  color: var(--color-vino);
+  font-weight: 600;
+  font-size: 0.9rem;
+  padding: 0.2rem 0;
+  margin-bottom: 0.6rem;
+  cursor: pointer;
+}
+.boton-volver:hover {
+  text-decoration: underline;
+}
+
 /* Componentes comunes */
 .encabezado-pantalla {
   display: flex;

@@ -8,6 +8,7 @@ import {
   type HistorialEntrada,
   type ProductoConUltimoCosto,
 } from "../api";
+import { useFiltroUrl } from "../hooks/useFiltroUrl";
 import ModalAlerta from "../components/ModalAlerta";
 
 // Pantalla nueva, a pedido del usuario, para tener de un vistazo el estado
@@ -18,7 +19,11 @@ import ModalAlerta from "../components/ModalAlerta";
 export default function ControlPrecios() {
   const [productos, setProductos] = useState<ProductoConUltimoCosto[] | null>(null);
   const [historial, setHistorial] = useState<HistorialEntrada[] | null>(null);
-  const [verTodos, setVerTodos] = useState(false);
+  // En la URL, no en useState suelto — así "← Volver" recupera el mismo
+  // filtro al regresar (ver hooks/useFiltroUrl.ts).
+  const [verTodosStr, setVerTodosStr] = useFiltroUrl("verTodos");
+  const verTodos = verTodosStr === "1";
+  const setVerTodos = (v: boolean) => setVerTodosStr(v ? "1" : "");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {

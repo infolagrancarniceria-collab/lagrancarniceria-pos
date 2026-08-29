@@ -3509,3 +3509,74 @@ el usuario: (1) configure la sync en su instalación real con la
 `SYNC_API_KEY` real, (2) confirme los PLU reales de los ~25 productos que
 quedaron fuera de la carga, y (3) corra `cargar-catalogo-real.ts
 --confirmar` una vez revisado.
+
+## Flag Balanza "Unidad" (antes "Normal"), y flecha "← Volver" que recuerda los filtros
+Tres pedidos del usuario de una vez. Antes de programar se confirmó con
+preguntas: el "Unidad" pedido es el mismo tipo que ya existía como
+"Normal" (solo cambiar la etiqueta, no crear un cuarto tipo), el EAN sigue
+con el mismo criterio de siempre (solo Normal/Unidad, no Pesable/Importe),
+y la flecha de volver debía cubrir **todas** las pantallas con filtros, no
+solo Productos.
+
+### Flag Balanza: "Normal" ahora se muestra como "Unidad"
+Cambio solo de **etiqueta visible** — el valor interno guardado en la base
+de datos sigue siendo `"NORMAL"` (mismo criterio en el resto del sistema:
+Caja, balanza, CSV, asistente de IA), así que no hizo falta ninguna
+migración ni tocar ninguna validación. Nueva función compartida
+`etiquetaFlagBalanza()` en `web/src/api.ts`, usada en el selector de
+ProductoForm y en la columna "Flag balanza" de la tabla de Productos (antes
+mostraba el valor crudo `NORMAL`/`PESABLE`/`IMPORTE`). El formato de
+importación CSV (columna `flag_balanza`) sigue aceptando literalmente
+`NORMAL`, `PESABLE` o `IMPORTE` — es el código del archivo, no cambia — con
+una aclaración `(Unidad)` agregada al texto de ayuda para que no confunda.
+
+### Flecha "← Volver" que recuerda el filtro exacto de la pantalla anterior
+El usuario reportó tener que rehacer el filtro de categoría en Productos
+(ej. "Vacuno") cada vez que volvía desde otra pantalla — no había ninguna
+forma de volver atrás dentro del programa (no hay barra de navegación de
+navegador visible en la app instalada).
+
+- **`BotonVolver.tsx`** (nuevo componente, montado una sola vez en
+  `Layout.tsx`, arriba de cada pantalla): usa el historial real del
+  navegador (`navigate(-1)`), así que funciona sin importar desde dónde se
+  llegó — no es un enlace fijo a una pantalla en particular. Solo se
+  esconde en la primerísima pantalla que carga el programa (detectado con
+  `location.key === "default"`, el valor que usa React Router para la
+  primera entrada del historial), porque ahí no hay ninguna pantalla
+  anterior real a la que volver.
+- **`useFiltroUrl()`** (nuevo hook, `web/src/hooks/useFiltroUrl.ts`): para
+  que "Volver" realmente recupere el mismo filtro (no solo la pantalla
+  correcta), cada pantalla con filtros los guarda en la URL
+  (`?categoria=5&buscar=...`) en vez de solo en memoria del componente —
+  volver a una URL anterior automáticamente repone esos valores. Escribe
+  con `replace` (no `push`): cambiar un filtro reemplaza la URL actual en
+  el historial en vez de agregar una entrada nueva — si no, escribir
+  letra por letra en un buscador llenaría el historial de entradas
+  intermedias, y "Volver" tendría que pasar por todas esas en vez de ir
+  directo a la pantalla anterior real.
+- **Aplicado a las 15 pantallas de listado/reporte con filtros**:
+  Productos (categoría, búsqueda, mostrar eliminados), Inventario
+  (categoría, solo stock bajo — mantiene compatible el link
+  `?bajo=true` que ya usa el aviso de stock bajo), Historial de
+  movimientos (tipo, N° factura), Reportes, Facturas, Gastos, Anulaciones,
+  Revisar entradas de cámara, Reporte de salidas de cámara (los 6 con rango
+  de fechas), Buscar venta (fechas + N° de venta — además ahora busca sola
+  al entrar a la pantalla, antes se quedaba en blanco hasta apretar
+  "Buscar" a mano aunque ya viniera con un filtro puesto), Ventas por mayor
+  (fechas + solo pendientes), Existencias de cámara (fechas), Mejor margen/
+  Combos (categoría + margen mínimo), Control de precios (ver todos), y
+  Pedidos web (pestaña Pendientes/Atendidos). **A propósito no se tocó**:
+  pantallas sin filtros (Categorías, Avisos, Revisiones, Créditos
+  pendientes, Ajustes pendientes de cámara) y formularios de una sola vez
+  (Registrar entrada, Cargar factura, Entrada de cámara, Cambio masivo,
+  Salida de cámara) — no tiene sentido "recordar" un formulario a medio
+  llenar.
+
+Probado con Playwright contra el servidor real: filtrar Productos por la
+categoría "Aves", navegar a Inventario, y volver con la flecha — el chip
+de categoría sigue marcado y la URL conserva `?categoria=1`; la ficha de
+producto muestra "Unidad" en el selector de Flag Balanza y en la tabla de
+Productos (antes decía "NORMAL"); el campo EAN sigue apareciendo solo con
+Unidad y desaparece con Pesable; y entrar directo a
+`/caja/buscar?numeroVenta=1` ya trae el resultado cargado, sin apretar
+"Buscar" a mano.

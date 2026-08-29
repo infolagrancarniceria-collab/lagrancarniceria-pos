@@ -380,7 +380,8 @@ export const herramientas: Anthropic.Tool[] = [
         flagBalanza: {
           type: "string",
           enum: ["NORMAL", "PESABLE", "IMPORTE"],
-          description: "NORMAL = se vende por unidad con código de barras propio; PESABLE/IMPORTE = va a la balanza",
+          description:
+            "NORMAL = se vende por unidad con código de barras propio (se muestra como 'Unidad' en la pantalla); PESABLE/IMPORTE = va a la balanza",
         },
         marca: { type: "string", description: "Opcional" },
         codigoBarras: { type: "string", description: "Opcional — solo aplica si flagBalanza es NORMAL" },

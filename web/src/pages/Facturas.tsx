@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, formatoCLP, type FacturaAgrupada } from "../api";
+import { useFiltroUrl } from "../hooks/useFiltroUrl";
 import ModalAlerta from "../components/ModalAlerta";
 
 function fechaHace(dias: number): string {
@@ -18,8 +19,10 @@ function hoy(): string {
 // de factura), con sus líneas visibles al expandir. Pensado para revisar o
 // respaldar rápido, con exportación a CSV (se abre en Excel) e impresión.
 export default function Facturas() {
-  const [desde, setDesde] = useState(fechaHace(30));
-  const [hasta, setHasta] = useState(hoy());
+  // En la URL, no en useState suelto — así "← Volver" recupera el mismo
+  // rango de fechas al regresar a esta pantalla (ver hooks/useFiltroUrl.ts).
+  const [desde, setDesde] = useFiltroUrl("desde", fechaHace(30));
+  const [hasta, setHasta] = useFiltroUrl("hasta", hoy());
   const [facturas, setFacturas] = useState<FacturaAgrupada[]>([]);
   const [expandida, setExpandida] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);

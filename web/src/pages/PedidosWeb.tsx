@@ -2,13 +2,18 @@ import { useEffect, useState } from "react";
 import { api, formatoCLP, formatoPeso, type PedidoWeb } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
 import { mostrarToast } from "../lib/toast";
+import { useFiltroUrl } from "../hooks/useFiltroUrl";
 import ModalAlerta from "../components/ModalAlerta";
 
 const ESTADOS = ["pendiente", "atendido"] as const;
 
 export default function PedidosWeb() {
   const { usuario } = useUsuario();
-  const [estado, setEstado] = useState<(typeof ESTADOS)[number]>("pendiente");
+  // En la URL, no en useState suelto — así "← Volver" recupera la misma
+  // pestaña (Pendientes/Atendidos) al regresar (ver hooks/useFiltroUrl.ts).
+  const [estadoStr, setEstadoStr] = useFiltroUrl("estado", "pendiente");
+  const estado = estadoStr as (typeof ESTADOS)[number];
+  const setEstado = setEstadoStr;
   const [pedidos, setPedidos] = useState<PedidoWeb[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(false);

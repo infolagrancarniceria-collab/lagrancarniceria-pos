@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api, formatoCLP, type Gasto, type ReporteGastos } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
+import { useFiltroUrl } from "../hooks/useFiltroUrl";
 import { TecladoNumerico } from "../components/TecladoNumerico";
 import { mostrarToast } from "../lib/toast";
 import ModalAlerta from "../components/ModalAlerta";
@@ -20,8 +21,10 @@ function hoy(): string {
 
 export default function Gastos() {
   const { usuario } = useUsuario();
-  const [desde, setDesde] = useState(fechaHace(30));
-  const [hasta, setHasta] = useState(hoy());
+  // En la URL, no en useState suelto — así "← Volver" recupera el mismo
+  // rango de fechas al regresar a esta pantalla (ver hooks/useFiltroUrl.ts).
+  const [desde, setDesde] = useFiltroUrl("desde", fechaHace(30));
+  const [hasta, setHasta] = useFiltroUrl("hasta", hoy());
   const [gastos, setGastos] = useState<Gasto[]>([]);
   const [reporte, setReporte] = useState<ReporteGastos | null>(null);
   const [error, setError] = useState<string | null>(null);

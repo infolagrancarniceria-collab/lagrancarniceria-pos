@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, type MovimientoInventario } from "../api";
+import { useFiltroUrl } from "../hooks/useFiltroUrl";
 import ModalAlerta from "../components/ModalAlerta";
 
 const etiquetasMotivo: Record<string, string> = {
@@ -12,8 +13,12 @@ const etiquetasMotivo: Record<string, string> = {
 
 export default function MovimientosInventario() {
   const [movimientos, setMovimientos] = useState<MovimientoInventario[]>([]);
-  const [tipo, setTipo] = useState<"" | "entrada" | "salida">("");
-  const [numeroFactura, setNumeroFactura] = useState("");
+  // En la URL, no en useState suelto — así "← Volver" recupera el mismo
+  // filtro al regresar a esta pantalla (ver hooks/useFiltroUrl.ts).
+  const [tipoStr, setTipoStr] = useFiltroUrl("tipo");
+  const tipo = tipoStr as "" | "entrada" | "salida";
+  const setTipo = setTipoStr;
+  const [numeroFactura, setNumeroFactura] = useFiltroUrl("numeroFactura");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {

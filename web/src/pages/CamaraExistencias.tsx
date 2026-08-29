@@ -18,6 +18,7 @@ import { EtiquetaCamara } from "../components/EtiquetaCamara";
 import ModalConfirmarClave from "../components/ModalConfirmarClave";
 import { imprimirEtiquetaCamara, imprimirEtiquetasLoteCamara } from "../lib/imprimir";
 import { mostrarToast } from "../lib/toast";
+import { useFiltroUrl } from "../hooks/useFiltroUrl";
 import ModalAlerta from "../components/ModalAlerta";
 
 const MOTIVOS_ANULAR_LOTE = ["Lote de prueba", "Entrada duplicada", "Datos incorrectos"];
@@ -67,8 +68,10 @@ export default function CamaraExistencias() {
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(false);
 
-  const [desde, setDesde] = useState("");
-  const [hasta, setHasta] = useState("");
+  // En la URL, no en useState suelto — así "← Volver" recupera el mismo
+  // filtro al regresar a esta pantalla (ver hooks/useFiltroUrl.ts).
+  const [desde, setDesde] = useFiltroUrl("desde");
+  const [hasta, setHasta] = useFiltroUrl("hasta");
 
   const [corrigiendoId, setCorrigiendoId] = useState<number | null>(null);
   const [formCorreccion, setFormCorreccion] = useState<FormularioCorreccion | null>(null);

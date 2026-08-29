@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import {
   api,
   calcularMargen,
+  etiquetaFlagBalanza,
   formatoCLP,
   type Categoria,
   type FilaImportacionCosto,
@@ -11,15 +12,23 @@ import {
 } from "../api";
 import SelectorCategoria from "../components/SelectorCategoria";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
+import { useFiltroUrl } from "../hooks/useFiltroUrl";
 import { mostrarToast } from "../lib/toast";
 import ModalAlerta from "../components/ModalAlerta";
 
 export default function Productos() {
   const [productos, setProductos] = useState<ProductoConUltimoCosto[]>([]);
   const [categorias, setCategorias] = useState<Categoria[]>([]);
-  const [buscar, setBuscar] = useState("");
-  const [categoriaId, setCategoriaId] = useState<number | "">("");
-  const [mostrarEliminados, setMostrarEliminados] = useState(false);
+  // Filtros guardados en la URL (no en useState suelto) para que la flecha
+  // "← Volver" (BotonVolver.tsx) recupere exactamente el mismo filtro al
+  // regresar a esta pantalla — ver hooks/useFiltroUrl.ts.
+  const [buscar, setBuscar] = useFiltroUrl("buscar");
+  const [categoriaIdStr, setCategoriaIdStr] = useFiltroUrl("categoria");
+  const categoriaId: number | "" = categoriaIdStr ? Number(categoriaIdStr) : "";
+  const setCategoriaId = (id: number | "") => setCategoriaIdStr(id === "" ? "" : String(id));
+  const [mostrarEliminadosStr, setMostrarEliminadosStr] = useFiltroUrl("eliminados");
+  const mostrarEliminados = mostrarEliminadosStr === "1";
+  const setMostrarEliminados = (v: boolean) => setMostrarEliminadosStr(v ? "1" : "");
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(false);
 
@@ -285,8 +294,8 @@ export default function Productos() {
           <p className="ayuda">
             Crea productos nuevos (no cambia precios de productos que ya existen). Columnas:{" "}
             <code>plu,descripcion,precio,flag_balanza,categoria_codigo</code> — <code>flag_balanza</code> debe ser{" "}
-            <code>NORMAL</code>, <code>PESABLE</code> o <code>IMPORTE</code>; <code>categoria_codigo</code> es
-            opcional (si se deja vacío, el producto queda en "Sin categorizar" para ordenar después).
+            <code>NORMAL</code> (Unidad), <code>PESABLE</code> o <code>IMPORTE</code>; <code>categoria_codigo</code>{" "}
+            es opcional (si se deja vacío, el producto queda en "Sin categorizar" para ordenar después).
           </p>
           {errorImportar && <ModalAlerta mensaje={errorImportar} onCerrar={() => setErrorImportar(null)} />}
           {mensajeImportar && <p className="exito">{mensajeImportar}</p>}
@@ -318,7 +327,7 @@ export default function Productos() {
                       <td>{f.plu}</td>
                       <td>{f.descripcion || "—"}</td>
                       <td>{f.precio != null ? formatoCLP(f.precio) : "—"}</td>
-                      <td>{f.flagBalanza ?? "—"}</td>
+                      <td>{f.flagBalanza ? etiquetaFlagBalanza(f.flagBalanza) : "—"}</td>
                       <td>{f.categoriaCodigo ?? "Sin categorizar"}</td>
                       <td>{f.error ?? "OK"}</td>
                     </tr>
@@ -395,7 +404,7 @@ export default function Productos() {
               key={c.id}
               type="button"
               className={`chip-categoria${categoriaId === c.id ? " activo" : ""}${c.nombre === "Sin categorizar" ? " chip-sin-categoria" : ""}`}
-              onClick={() => setCategoriaId((actual) => (actual === c.id ? "" : c.id))}
+              onClick={() => setCategoriaId(categoriaId === c.id ? "" : c.id)}
             >
               {c.nombre}
             </button>
@@ -469,7 +478,7 @@ export default function Productos() {
                 </td>
                 <td>{p.descripcion}</td>
                 <td>{p.categoria.nombre}</td>
-                <td>{p.flagBalanza}</td>
+                <td>{etiquetaFlagBalanza(p.flagBalanza)}</td>
                 <td>
                   {p.costoEfectivo != null ? formatoCLP(p.costoEfectivo) : "—"}
                   {p.costoEsEstimado && <span className="ayuda"> (estimado)</span>}

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, formatoCLP, type ReporteSalidasCamara } from "../api";
+import { useFiltroUrl } from "../hooks/useFiltroUrl";
 import ModalAlerta from "../components/ModalAlerta";
 
 function fechaHace(dias: number): string {
@@ -17,8 +18,10 @@ function hoy(): string {
 // salidas" del sistema que ya usaba su papá: kilos y valor neto egresado
 // por destino, más los últimos movimientos, en un rango de fechas.
 export default function CamaraReporteSalidas() {
-  const [desde, setDesde] = useState(fechaHace(30));
-  const [hasta, setHasta] = useState(hoy());
+  // En la URL, no en useState suelto — así "← Volver" recupera el mismo
+  // rango de fechas al regresar a esta pantalla (ver hooks/useFiltroUrl.ts).
+  const [desde, setDesde] = useFiltroUrl("desde", fechaHace(30));
+  const [hasta, setHasta] = useFiltroUrl("hasta", hoy());
   const [reporte, setReporte] = useState<ReporteSalidasCamara | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(false);

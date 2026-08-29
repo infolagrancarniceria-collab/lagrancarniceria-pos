@@ -14,6 +14,16 @@ export interface Categoria {
 
 export type FlagBalanza = "NORMAL" | "PESABLE" | "IMPORTE";
 
+// El valor interno ("NORMAL") no cambió — solo la etiqueta que ve la persona,
+// a pedido del usuario, para que sea más claro que ese tipo es "precio por
+// unidad, sin pasar por la balanza" (Pesable/Importe sí van a la balanza).
+export function etiquetaFlagBalanza(flag: string): string {
+  if (flag === "NORMAL") return "Unidad";
+  if (flag === "PESABLE") return "Pesable";
+  if (flag === "IMPORTE") return "Importe";
+  return flag;
+}
+
 export interface Producto {
   id: number;
   plu: string;

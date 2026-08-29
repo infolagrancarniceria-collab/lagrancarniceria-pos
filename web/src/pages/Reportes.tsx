@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, formatoCLP, type ReporteDespachos, type ReporteInventario, type ReportePrecios, type ReporteVentas } from "../api";
+import { useFiltroUrl } from "../hooks/useFiltroUrl";
 import ModalAlerta from "../components/ModalAlerta";
 
 const etiquetasMotivo: Record<string, string> = {
@@ -25,8 +26,10 @@ function hoy(): string {
 }
 
 export default function Reportes() {
-  const [desde, setDesde] = useState(fechaHace(30));
-  const [hasta, setHasta] = useState(hoy());
+  // En la URL, no en useState suelto — así "← Volver" recupera el mismo
+  // rango de fechas al regresar a esta pantalla (ver hooks/useFiltroUrl.ts).
+  const [desde, setDesde] = useFiltroUrl("desde", fechaHace(30));
+  const [hasta, setHasta] = useFiltroUrl("hasta", hoy());
   const [reporteInventario, setReporteInventario] = useState<ReporteInventario | null>(null);
   const [reportePrecios, setReportePrecios] = useState<ReportePrecios | null>(null);
   const [reporteVentas, setReporteVentas] = useState<ReporteVentas | null>(null);

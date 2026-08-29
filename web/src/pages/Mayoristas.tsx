@@ -2,6 +2,7 @@ import { Fragment, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, formatoCLP, calcularMargen, type SalidaMayorista } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
+import { useFiltroUrl } from "../hooks/useFiltroUrl";
 import ModalConfirmarClave from "../components/ModalConfirmarClave";
 import ModalAlerta from "../components/ModalAlerta";
 
@@ -22,9 +23,13 @@ function hoy(): string {
 export default function Mayoristas() {
   const { usuario } = useUsuario();
 
-  const [desde, setDesde] = useState(fechaHace(30));
-  const [hasta, setHasta] = useState(hoy());
-  const [soloPendientes, setSoloPendientes] = useState(false);
+  // En la URL, no en useState suelto — así "← Volver" recupera el mismo
+  // filtro al regresar a esta pantalla (ver hooks/useFiltroUrl.ts).
+  const [desde, setDesde] = useFiltroUrl("desde", fechaHace(30));
+  const [hasta, setHasta] = useFiltroUrl("hasta", hoy());
+  const [soloPendientesStr, setSoloPendientesStr] = useFiltroUrl("soloPendientes");
+  const soloPendientes = soloPendientesStr === "1";
+  const setSoloPendientes = (v: boolean) => setSoloPendientesStr(v ? "1" : "");
   const [salidas, setSalidas] = useState<SalidaMayorista[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(false);

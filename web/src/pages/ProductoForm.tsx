@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   api,
   calcularMargen,
+  etiquetaFlagBalanza,
   formatoCLP,
   FAMILIAS_CAMARA,
   type Categoria,
@@ -332,9 +333,9 @@ export default function ProductoForm() {
         <label>
           Flag balanza
           <select value={form.flagBalanza} onChange={(e) => actualizarCampo("flagBalanza", e.target.value as FlagBalanza)}>
-            <option value="NORMAL">Normal</option>
-            <option value="PESABLE">Pesable</option>
-            <option value="IMPORTE">Importe</option>
+            <option value="NORMAL">{etiquetaFlagBalanza("NORMAL")}</option>
+            <option value="PESABLE">{etiquetaFlagBalanza("PESABLE")}</option>
+            <option value="IMPORTE">{etiquetaFlagBalanza("IMPORTE")}</option>
           </select>
         </label>
         {form.flagBalanza === "NORMAL" && (

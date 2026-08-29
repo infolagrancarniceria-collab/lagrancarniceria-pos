@@ -6,6 +6,7 @@ import { modoCajaActivo } from "../lib/modoCaja";
 import { modoCamaraActivo } from "../lib/modoCamara";
 import { contarAvisos, notificarNuevosAvisosSiCorresponde } from "../lib/avisos";
 import { ToastHost } from "./ToastHost";
+import BotonVolver from "./BotonVolver";
 
 // Cada cuánto se revisa si hay avisos críticos nuevos (caja sin cerrar,
 // stock bajo, etc.) — no hace falta que sea muy seguido, el PC suele
@@ -122,6 +123,7 @@ export default function Layout() {
         </div>
       </header>
       <main className="contenido">
+        <BotonVolver />
         <Outlet />
       </main>
       <ToastHost />

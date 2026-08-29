@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, calcularMargen, formatoCLP, type Categoria, type ProductoConCosto } from "../api";
 import SelectorCategoria from "../components/SelectorCategoria";
+import { useFiltroUrl } from "../hooks/useFiltroUrl";
 import ModalAlerta from "../components/ModalAlerta";
 
 interface FilaMargen extends ProductoConCosto {
@@ -19,8 +20,12 @@ interface FilaMargen extends ProductoConCosto {
 export default function MejorMargen() {
   const [productos, setProductos] = useState<ProductoConCosto[]>([]);
   const [categorias, setCategorias] = useState<Categoria[]>([]);
-  const [categoriaId, setCategoriaId] = useState<number | "">("");
-  const [margenMinimo, setMargenMinimo] = useState("");
+  // Filtros en la URL, no en useState suelto — así "← Volver" recupera el
+  // mismo filtro al regresar a esta pantalla (ver hooks/useFiltroUrl.ts).
+  const [categoriaIdStr, setCategoriaIdStr] = useFiltroUrl("categoria");
+  const categoriaId: number | "" = categoriaIdStr ? Number(categoriaIdStr) : "";
+  const setCategoriaId = (id: number | "") => setCategoriaIdStr(id === "" ? "" : String(id));
+  const [margenMinimo, setMargenMinimo] = useFiltroUrl("margenMinimo");
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(false);
 

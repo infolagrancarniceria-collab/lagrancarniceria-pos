@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { api, formatoCLP, type CajaCamara } from "../api";
 import ModalConfirmarClave from "../components/ModalConfirmarClave";
 import { mostrarToast } from "../lib/toast";
+import { useFiltroUrl } from "../hooks/useFiltroUrl";
 import ModalAlerta from "../components/ModalAlerta";
 
 const MOTIVOS_ANULAR_CAJA = ["Caja de prueba", "Entrada duplicada", "Datos incorrectos"];
@@ -33,8 +34,10 @@ const ETIQUETAS_ESTADO: Record<string, string> = {
 // se le sacó algo, hay que corregirlo aparte (el servidor igual lo
 // rechaza, esto solo evita el intento).
 export default function CamaraEntradas() {
-  const [desde, setDesde] = useState(fechaHace(30));
-  const [hasta, setHasta] = useState(hoy());
+  // En la URL, no en useState suelto — así "← Volver" recupera el mismo
+  // rango de fechas al regresar a esta pantalla (ver hooks/useFiltroUrl.ts).
+  const [desde, setDesde] = useFiltroUrl("desde", fechaHace(30));
+  const [hasta, setHasta] = useFiltroUrl("hasta", hoy());
   const [cajas, setCajas] = useState<CajaCamara[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(false);

@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, formatoCLP, type Venta } from "../api";
 import ModalConfirmarClave from "../components/ModalConfirmarClave";
 import { ValeVenta } from "../components/ValeVenta";
 import { imprimirSilencioso as imprimirVale } from "../lib/imprimir";
+import { useFiltroUrl } from "../hooks/useFiltroUrl";
 import ModalAlerta from "../components/ModalAlerta";
 
 function fechaHace(dias: number): string {
@@ -16,17 +17,19 @@ function hoy(): string {
 }
 
 export default function BuscarVenta() {
-  const [desde, setDesde] = useState(fechaHace(7));
-  const [hasta, setHasta] = useState(hoy());
-  const [numeroVenta, setNumeroVenta] = useState("");
+  // En la URL, no en useState suelto — así "← Volver" recupera el mismo
+  // filtro (y vuelve a buscar sola, ver el useEffect de abajo) al regresar
+  // a esta pantalla (ver hooks/useFiltroUrl.ts).
+  const [desde, setDesde] = useFiltroUrl("desde", fechaHace(7));
+  const [hasta, setHasta] = useFiltroUrl("hasta", hoy());
+  const [numeroVenta, setNumeroVenta] = useFiltroUrl("numeroVenta");
   const [resultados, setResultados] = useState<Venta[]>([]);
   const [ventaDetalle, setVentaDetalle] = useState<Venta | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(false);
   const [anulandoVenta, setAnulandoVenta] = useState(false);
 
-  async function buscar(e: React.FormEvent) {
-    e.preventDefault();
+  async function buscarConFiltroActual() {
     setError(null);
     setVentaDetalle(null);
     setCargando(true);
@@ -43,6 +46,19 @@ export default function BuscarVenta() {
       setCargando(false);
     }
   }
+
+  function buscar(e: React.FormEvent) {
+    e.preventDefault();
+    void buscarConFiltroActual();
+  }
+
+  // Busca sola al entrar a la pantalla (ej. al volver desde otra con la
+  // flecha "← Volver") — antes se quedaba en blanco hasta apretar "Buscar"
+  // a mano, incluso si ya venía con un filtro puesto desde la URL.
+  useEffect(() => {
+    void buscarConFiltroActual();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function verDetalle(ventaId: number) {
     setError(null);
