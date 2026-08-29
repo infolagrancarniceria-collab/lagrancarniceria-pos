@@ -145,6 +145,18 @@ interface PedidoWebRemoto {
   comentario?: string | null;
 }
 
+// Cuántos PedidoWeb ya hay guardados para el mismo día local de "fecha"
+// (más 1) — usado para asignar numeroDelDia. Se recalcula contando la
+// tabla en vez de llevar un contador aparte porque es más simple y el
+// volumen de pedidos web de una carnicería no justifica optimizarlo.
+async function siguienteNumeroDelDia(fecha: Date): Promise<number> {
+  const inicioDelDia = new Date(fecha.getFullYear(), fecha.getMonth(), fecha.getDate());
+  const finDelDia = new Date(inicioDelDia);
+  finDelDia.setDate(finDelDia.getDate() + 1);
+  const cantidad = await prisma.pedidoWeb.count({ where: { fecha: { gte: inicioDelDia, lt: finDelDia } } });
+  return cantidad + 1;
+}
+
 // Trae los pedidos que la web tiene pendientes de entregar al POS, los
 // guarda en PedidoWeb (para el panel "Pedidos web") y le confirma a la web
 // cuáles quedaron guardados, para que no los vuelva a mandar la próxima vez.
@@ -170,10 +182,13 @@ export async function traerPedidosWebPendientes(): Promise<void> {
     for (const pedido of pedidos) {
       const yaExiste = await prisma.pedidoWeb.findUnique({ where: { idWeb: pedido.idWeb } });
       if (!yaExiste) {
+        const fecha = new Date(pedido.fecha);
+        const numeroDelDia = await siguienteNumeroDelDia(fecha);
         await prisma.pedidoWeb.create({
           data: {
             idWeb: pedido.idWeb,
-            fecha: new Date(pedido.fecha),
+            fecha,
+            numeroDelDia,
             clienteNombre: pedido.clienteNombre,
             clienteTelefono: pedido.clienteTelefono,
             tipoEntrega: pedido.tipoEntrega,

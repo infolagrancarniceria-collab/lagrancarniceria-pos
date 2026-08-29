@@ -1,8 +1,9 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api, formatoCLP, formatoPeso, type PedidoWeb, type Producto } from "../api";
-import { subtotalItem, totalPedido, ValePedidoWeb } from "../components/ValePedidoWeb";
+import { etiquetaPedido, subtotalItem, totalPedido, ValePedidoWeb } from "../components/ValePedidoWeb";
+import { RutaDespacho } from "../components/RutaDespacho";
 import { useUsuario } from "../context/UsuarioContext";
-import { imprimirPedidoWeb } from "../lib/imprimir";
+import { imprimirPedidoWeb, imprimirRutaDespacho } from "../lib/imprimir";
 import { mostrarToast } from "../lib/toast";
 import ModalAlerta from "../components/ModalAlerta";
 import ModalConfirmarClave from "../components/ModalConfirmarClave";
@@ -48,6 +49,13 @@ export default function PedidosWeb() {
   const [regaloSeleccionado, setRegaloSeleccionado] = useState<Producto | null>(null);
   const [regaloCantidad, setRegaloCantidad] = useState("");
   const [guardandoRegalo, setGuardandoRegalo] = useState(false);
+
+  // Selección para la hoja de ruta de despacho — un Map (no un Set de ids)
+  // para no perder los datos del pedido si se cambia de pestaña mientras
+  // hay pedidos elegidos de otra (ej. algunos de "Pendientes" y otros de
+  // "Atendidos"), ya que "pedidos" solo trae los de la pestaña activa.
+  const [seleccionRuta, setSeleccionRuta] = useState<Map<number, PedidoWeb>>(new Map());
+  const [rutaParaImprimir, setRutaParaImprimir] = useState<PedidoWeb[] | null>(null);
   const [enviandoACajaId, setEnviandoACajaId] = useState<number | null>(null);
 
   function cargar() {
@@ -71,6 +79,30 @@ export default function PedidosWeb() {
       )
       .finally(() => setPedidoParaImprimir(null));
   }, [pedidoParaImprimir]);
+
+  useEffect(() => {
+    if (!rutaParaImprimir) return;
+    imprimirRutaDespacho()
+      .catch(() =>
+        setError(
+          "No se pudo imprimir la ruta — revisa que este PC tenga una impresora elegida en Configuración → Impresoras (Pedidos web) y que esté conectada."
+        )
+      )
+      .finally(() => setRutaParaImprimir(null));
+  }, [rutaParaImprimir]);
+
+  function alternarSeleccionRuta(p: PedidoWeb) {
+    setSeleccionRuta((actual) => {
+      const nuevo = new Map(actual);
+      if (nuevo.has(p.id)) nuevo.delete(p.id);
+      else nuevo.set(p.id, p);
+      return nuevo;
+    });
+  }
+
+  function imprimirRuta() {
+    setRutaParaImprimir(Array.from(seleccionRuta.values()));
+  }
 
   async function marcarAtendido(p: PedidoWeb) {
     if (!usuario) return;
@@ -232,6 +264,21 @@ export default function PedidosWeb() {
         ))}
       </div>
 
+      {seleccionRuta.size > 0 && (
+        <div className="tarjeta fila-inline">
+          <span>
+            {seleccionRuta.size} pedido{seleccionRuta.size === 1 ? "" : "s"} de despacho seleccionado
+            {seleccionRuta.size === 1 ? "" : "s"} para la ruta.
+          </span>
+          <button type="button" className="boton boton-primario" onClick={imprimirRuta}>
+            Imprimir ruta de despacho
+          </button>
+          <button type="button" onClick={() => setSeleccionRuta(new Map())}>
+            Limpiar selección
+          </button>
+        </div>
+      )}
+
       {cargando && <p>Cargando...</p>}
 
       {!cargando && pedidos.length === 0 && (
@@ -246,9 +293,17 @@ export default function PedidosWeb() {
         return (
           <section key={p.id} className="tarjeta">
             <div className="encabezado-pantalla">
-              <h2>{p.clienteNombre}</h2>
+              <h2>
+                {etiquetaPedido(p)} — {p.clienteNombre}
+              </h2>
               <span>{new Date(p.fecha).toLocaleString("es-CL")}</span>
             </div>
+            {p.tipoEntrega === "despacho" && p.estado !== "anulado" && (
+              <label className="fila-inline">
+                <input type="checkbox" checked={seleccionRuta.has(p.id)} onChange={() => alternarSeleccionRuta(p)} />
+                Incluir en la ruta de despacho
+              </label>
+            )}
             <p>
               <strong>Teléfono:</strong> {p.clienteTelefono} ·{" "}
               <strong>Entrega:</strong> {p.tipoEntrega === "despacho" ? "Despacho a domicilio" : "Retiro en tienda"}
@@ -509,6 +564,7 @@ export default function PedidosWeb() {
 
     <div className="vale-oculto-hasta-imprimir">
       {pedidoParaImprimir && <ValePedidoWeb pedido={pedidoParaImprimir} />}
+      {rutaParaImprimir && <RutaDespacho pedidos={rutaParaImprimir} />}
     </div>
     </>
   );

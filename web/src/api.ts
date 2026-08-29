@@ -88,6 +88,9 @@ export interface PedidoWeb {
   id: number;
   idWeb: string;
   fecha: string;
+  // Correlativo del día (1, 2, 3...) — null en pedidos sincronizados antes
+  // de que este campo existiera.
+  numeroDelDia: number | null;
   clienteNombre: string;
   clienteTelefono: string;
   tipoEntrega: "retiro" | "despacho";

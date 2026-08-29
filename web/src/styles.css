@@ -968,6 +968,26 @@ select {
   margin-top: 1.5rem;
 }
 
+/* Hoja de ruta de despacho (ver RutaDespacho.tsx) — a diferencia del vale
+   de un pedido, se imprime en hoja A4 normal, así que no hereda el
+   max-width angosto de ".vale" pensado para el rollo térmico. */
+.ruta-despacho {
+  max-width: none;
+}
+.ruta-comuna {
+  margin-top: 1.5rem;
+}
+.ruta-parada {
+  margin: 0.75rem 0 1.25rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px dashed var(--color-borde);
+}
+@media print {
+  .ruta-parada {
+    break-inside: avoid;
+  }
+}
+
 /* Vale de la venta recién confirmada en Punto de Venta: oculto en pantalla
    (el cajero se queda en la pantalla de venta, no ve el vale) pero visible
    al imprimir — es lo único que no se tapa con ".no-imprimir" en ese

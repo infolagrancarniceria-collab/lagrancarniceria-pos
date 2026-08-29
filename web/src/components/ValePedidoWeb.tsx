@@ -26,6 +26,15 @@ export function totalPedido(pedido: PedidoWeb): number | null {
   return subtotalItems - descuento + (pedido.costoEnvio ?? 0);
 }
 
+// "PEDIDO #N" — N es el correlativo del día (ver PedidoWeb.numeroDelDia),
+// para poder identificar el pedido de un vistazo entre varios tickets sin
+// tener que leer el nombre del cliente. Se usa tanto en el ticket impreso
+// como en la tarjeta de pantalla, para que sea el mismo número en los dos
+// lados.
+export function etiquetaPedido(pedido: PedidoWeb): string {
+  return pedido.numeroDelDia != null ? `Pedido #${pedido.numeroDelDia}` : "Pedido";
+}
+
 interface Props {
   pedido: PedidoWeb;
   onImprimir?: () => void;
@@ -52,6 +61,7 @@ export function ValePedidoWeb({ pedido, onImprimir }: Props) {
           {pedido.anuladoEn ? `, ${new Date(pedido.anuladoEn).toLocaleString("es-CL")}` : ""}
         </p>
       )}
+      <h1>{etiquetaPedido(pedido)}</h1>
       <h2>La Gran Carnicería</h2>
       <p>Pedido web — {new Date(pedido.fecha).toLocaleString("es-CL")}</p>
       <p>Cliente: {pedido.clienteNombre}</p>

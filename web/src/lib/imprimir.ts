@@ -109,3 +109,33 @@ export async function imprimirEtiquetasLoteCamara() {
   await imprimirConRespaldo(obtenerImpresoraEtiquetas(), TAMANO_ETIQUETA_MICRONES);
   setTimeout(() => activarPaginaEtiqueta(false), 500);
 }
+
+// La hoja de ruta de despacho (varias paradas, para leer/tildar a mano
+// mientras se reparte) no tiene sentido en el rollo térmico angosto de
+// 80mm — necesita una hoja normal. Mismo mecanismo de sobrescribir el
+// tamaño de página justo antes de imprimir que ya usa la etiqueta de
+// cámara, pero a A4 en vez de 100×50mm.
+const ID_ESTILO_PAGINA_RUTA = "estilo-pagina-ruta-despacho";
+const TAMANO_A4_MICRONES = { width: 210000, height: 297000 };
+
+function activarPaginaRuta(activar: boolean) {
+  const existente = document.getElementById(ID_ESTILO_PAGINA_RUTA);
+  if (!activar) {
+    existente?.remove();
+    return;
+  }
+  if (existente) return;
+  const estilo = document.createElement("style");
+  estilo.id = ID_ESTILO_PAGINA_RUTA;
+  estilo.textContent = "@media print { @page { size: A4; margin: 12mm; } }";
+  document.head.appendChild(estilo);
+}
+
+// Misma impresora configurada para "Pedidos web" (Configuración →
+// Impresoras) — la ruta se arma justo antes de salir a repartir, desde el
+// mismo lugar donde se revisan los pedidos.
+export async function imprimirRutaDespacho() {
+  activarPaginaRuta(true);
+  await imprimirConRespaldo(obtenerImpresoraPedidosWeb(), TAMANO_A4_MICRONES);
+  setTimeout(() => activarPaginaRuta(false), 500);
+}

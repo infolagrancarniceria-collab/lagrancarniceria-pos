@@ -485,6 +485,15 @@ model PedidoWeb {
   clienteNombre   String
   clienteTelefono String
 
+  // Correlativo que reinicia cada día (el primer pedido que llega hoy es
+  // el 1, el segundo el 2, etc.) — para poder decir/anotar "pedido 3" en
+  // vez del id interno, que no significa nada para el equipo. Se calcula
+  // una sola vez al traerlo por sync (ver traerPedidosWebPendientes) y
+  // queda fijo — nunca se recalcula después, así no cambia si otro pedido
+  // del mismo día se anula. Null en pedidos sincronizados antes de este
+  // campo existir.
+  numeroDelDia Int?
+
   // "retiro" | "despacho" — clienteDireccion/comunaNombre/costoEnvio solo
   // vienen si es despacho (mismo criterio que el modelo Pedido de la web).
   tipoEntrega      String  @default("despacho")
