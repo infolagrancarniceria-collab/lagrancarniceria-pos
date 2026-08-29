@@ -7,6 +7,7 @@ import {
   FAMILIAS_CAMARA,
   type Categoria,
   type FlagBalanza,
+  type Producto,
   type ProductoConCosto,
 } from "../api";
 import SelectorCategoria from "../components/SelectorCategoria";
@@ -39,6 +40,7 @@ interface FormState {
   promoPrecioUnitario: string;
   promoGramosMinimos: string;
   promoEtiqueta: string;
+  esCombo: boolean;
 }
 
 const formVacio: FormState = {
@@ -65,7 +67,12 @@ const formVacio: FormState = {
   promoPrecioUnitario: "",
   promoGramosMinimos: "",
   promoEtiqueta: "",
+  esCombo: false,
 };
+
+function etiquetaCantidadProducto(producto: Producto): string {
+  return producto.flagBalanza === "NORMAL" ? "unidades" : "kg";
+}
 
 export default function ProductoForm() {
   const { id } = useParams();
@@ -127,6 +134,7 @@ export default function ProductoForm() {
           promoPrecioUnitario: p.promoPrecioUnitario != null ? String(p.promoPrecioUnitario) : "",
           promoGramosMinimos: p.promoGramosMinimos != null ? String(p.promoGramosMinimos) : "",
           promoEtiqueta: p.promoEtiqueta ?? "",
+          esCombo: p.esCombo,
         });
       })
       .catch((e) => setError(e.message));
@@ -134,6 +142,66 @@ export default function ProductoForm() {
 
   function actualizarCampo<K extends keyof FormState>(campo: K, valor: FormState[K]) {
     setForm((f) => ({ ...f, [campo]: valor }));
+  }
+
+  function marcarEsCombo(activo: boolean) {
+    // Un combo siempre se cotiza como unidad (1 combo = 1 unidad) — nunca
+    // pesable, así que fuerza Flag balanza al marcarlo.
+    setForm((f) => ({ ...f, esCombo: activo, flagBalanza: activo ? "NORMAL" : f.flagBalanza }));
+  }
+
+  // --- Componentes del combo (búsqueda + agregar/quitar) ---
+  const [componenteBusqueda, setComponenteBusqueda] = useState("");
+  const [componenteResultados, setComponenteResultados] = useState<Producto[]>([]);
+  const [componenteSeleccionado, setComponenteSeleccionado] = useState<Producto | null>(null);
+  const [componenteCantidad, setComponenteCantidad] = useState("");
+  const [guardandoComponente, setGuardandoComponente] = useState(false);
+
+  useEffect(() => {
+    if (!componenteBusqueda.trim() || componenteSeleccionado) {
+      setComponenteResultados([]);
+      return;
+    }
+    api.productos
+      .listar({ buscar: componenteBusqueda })
+      .then((r) => setComponenteResultados(r.filter((p) => !p.esCombo && p.id !== productoActual?.id).slice(0, 8)))
+      .catch(() => setComponenteResultados([]));
+  }, [componenteBusqueda, componenteSeleccionado, productoActual?.id]);
+
+  async function agregarComponente(e: React.FormEvent) {
+    e.preventDefault();
+    if (!productoActual || !componenteSeleccionado) return;
+    const cantidad = Number(componenteCantidad);
+    if (!componenteCantidad.trim() || Number.isNaN(cantidad) || cantidad <= 0) {
+      setError("La cantidad del componente no es válida");
+      return;
+    }
+    setGuardandoComponente(true);
+    try {
+      const actualizado = await api.productos.agregarComponenteCombo(productoActual.id, componenteSeleccionado.id, cantidad);
+      setProductoActual(actualizado);
+      actualizarCampo("descripcionCorta", actualizado.descripcionCorta ?? "");
+      mostrarToast("Componente agregado", `${componenteSeleccionado.descripcion} se agregó a la receta.`);
+      setComponenteBusqueda("");
+      setComponenteSeleccionado(null);
+      setComponenteCantidad("");
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setGuardandoComponente(false);
+    }
+  }
+
+  async function quitarComponente(componenteId: number, descripcion: string) {
+    if (!productoActual) return;
+    try {
+      const actualizado = await api.productos.quitarComponenteCombo(productoActual.id, componenteId);
+      setProductoActual(actualizado);
+      actualizarCampo("descripcionCorta", actualizado.descripcionCorta ?? "");
+      mostrarToast("Componente quitado", `${descripcion} se quitó de la receta.`, "eliminado");
+    } catch (e) {
+      setError((e as Error).message);
+    }
   }
 
   async function guardar(e: React.FormEvent) {
@@ -176,6 +244,7 @@ export default function ProductoForm() {
       promoPrecioUnitario: form.promoPrecioUnitario ? Number(form.promoPrecioUnitario) : null,
       promoGramosMinimos: form.promoGramosMinimos ? Number(form.promoGramosMinimos) : null,
       promoEtiqueta: form.promoEtiqueta.trim() || null,
+      esCombo: form.esCombo,
     };
 
     setGuardando(true);
@@ -329,13 +398,22 @@ export default function ProductoForm() {
             required
           />
         </label>
+        <label className="fila-inline">
+          <input type="checkbox" checked={form.esCombo} onChange={(e) => marcarEsCombo(e.target.checked)} />
+          Es un combo (junta varios productos en uno, solo se vende por la web)
+        </label>
         <label>
           Flag balanza
-          <select value={form.flagBalanza} onChange={(e) => actualizarCampo("flagBalanza", e.target.value as FlagBalanza)}>
+          <select
+            value={form.flagBalanza}
+            onChange={(e) => actualizarCampo("flagBalanza", e.target.value as FlagBalanza)}
+            disabled={form.esCombo}
+          >
             <option value="NORMAL">Normal</option>
             <option value="PESABLE">Pesable</option>
             <option value="IMPORTE">Importe</option>
           </select>
+          {form.esCombo && <span className="ayuda">Un combo siempre se cotiza como unidad.</span>}
         </label>
         {form.flagBalanza === "NORMAL" && (
           <label>
@@ -450,8 +528,92 @@ export default function ProductoForm() {
             value={form.descripcionCorta}
             onChange={(e) => actualizarCampo("descripcionCorta", e.target.value)}
             placeholder="Frase corta para la tarjeta de producto (opcional)"
+            disabled={form.esCombo}
           />
+          {form.esCombo && (
+            <span className="ayuda">
+              Se arma sola a partir de los componentes del combo (abajo) — se actualiza cada vez que agregas o quitas
+              uno.
+            </span>
+          )}
         </label>
+
+        {form.esCombo && !esNuevo && productoActual && (
+          <fieldset className="tarjeta formulario">
+            <legend>Componentes del combo</legend>
+            <p className="ayuda">Qué productos reales trae este combo, y cuánto de cada uno.</p>
+
+            {productoActual.componentesDelCombo.length > 0 && (
+              <ul className="lista-resultados">
+                {productoActual.componentesDelCombo.map((c) => (
+                  <li key={c.id} className="fila-inline">
+                    <span>
+                      {c.cantidad} {etiquetaCantidadProducto(c.componenteProducto)} — {c.componenteProducto.descripcion}
+                    </span>
+                    <button type="button" onClick={() => quitarComponente(c.id, c.componenteProducto.descripcion)}>
+                      Quitar
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <form onSubmit={agregarComponente} className="formulario">
+              {!componenteSeleccionado && (
+                <label>
+                  Buscar producto para agregar
+                  <input
+                    type="text"
+                    value={componenteBusqueda}
+                    onChange={(e) => setComponenteBusqueda(e.target.value)}
+                    placeholder="Ej: asado carnicero"
+                  />
+                </label>
+              )}
+              {!componenteSeleccionado && componenteResultados.length > 0 && (
+                <ul className="lista-resultados">
+                  {componenteResultados.map((prod) => (
+                    <li key={prod.id}>
+                      <button type="button" onClick={() => setComponenteSeleccionado(prod)}>
+                        {prod.descripcion} {prod.marca ? `— ${prod.marca}` : ""}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {componenteSeleccionado && (
+                <>
+                  <p>
+                    <strong>Producto:</strong> {componenteSeleccionado.descripcion}{" "}
+                    <button type="button" onClick={() => setComponenteSeleccionado(null)}>
+                      Cambiar
+                    </button>
+                  </p>
+                  <label>
+                    Cantidad ({etiquetaCantidadProducto(componenteSeleccionado)})
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      value={componenteCantidad}
+                      onChange={(e) => setComponenteCantidad(e.target.value)}
+                      autoFocus
+                    />
+                  </label>
+                  <div className="acciones-formulario">
+                    <button type="submit" className="boton boton-primario" disabled={guardandoComponente}>
+                      {guardandoComponente ? "Agregando..." : "Agregar al combo"}
+                    </button>
+                  </div>
+                </>
+              )}
+            </form>
+          </fieldset>
+        )}
+        {form.esCombo && esNuevo && (
+          <p className="ayuda">Guarda el producto primero para poder agregar los componentes del combo.</p>
+        )}
+
         <fieldset className="tarjeta formulario">
           <legend>Promoción por volumen (página web)</legend>
           {form.flagBalanza === "NORMAL" ? (

@@ -1,9 +1,11 @@
 import { Router } from "express";
-import { Prisma, type Producto } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../db";
 import { verificarClaveConLimite } from "../lib/clave";
 import { traerPedidosWebPendientes } from "../lib/syncWeb";
+
+type ProductoConCombo = Prisma.ProductoGetPayload<{ include: { componentesDelCombo: true } }>;
 
 export const pedidosWebRouter = Router();
 
@@ -304,9 +306,12 @@ pedidosWebRouter.post("/:id/enviar-a-caja", async (req, res) => {
   // de Venta nunca usa un precio congelado), no el que el cliente vio al
   // cotizar, que puede haber cambiado desde entonces.
   const plusFaltantes: string[] = [];
-  const itemsConProducto: { producto: Producto; cantidad: number }[] = [];
+  const itemsConProducto: { producto: ProductoConCombo; cantidad: number }[] = [];
   for (const item of itemsCrudos) {
-    const producto = await prisma.producto.findUnique({ where: { plu: item.plu } });
+    const producto = await prisma.producto.findUnique({
+      where: { plu: item.plu },
+      include: { componentesDelCombo: true },
+    });
     if (!producto) {
       plusFaltantes.push(item.plu);
       continue;
@@ -318,6 +323,26 @@ pedidosWebRouter.post("/:id/enviar-a-caja", async (req, res) => {
     return res.status(400).json({
       error: `No se encontró en el catálogo el producto con PLU ${plusFaltantes.join(", ")} — revisa que siga existiendo antes de enviar a Caja`,
     });
+  }
+
+  // Un combo no tiene stock propio — al venderse, se descuenta el de sus
+  // componentes (cantidad de la receta × cuántos combos se vendieron), no
+  // el del combo mismo. Se suma todo en un solo mapa (combos y productos
+  // normales juntos) para que, si un mismo producto aparece tanto suelto
+  // como dentro de un combo en el mismo pedido, quede un solo movimiento de
+  // inventario con el total — mismo criterio que ya usa confirmarVenta en
+  // caja.ts para no duplicar movimientos del mismo producto.
+  const decrementosPorProducto = new Map<number, number>();
+  for (const { producto, cantidad } of itemsConProducto) {
+    if (producto.esCombo) {
+      for (const componente of producto.componentesDelCombo) {
+        const actual = decrementosPorProducto.get(componente.componenteProductoId) ?? 0;
+        decrementosPorProducto.set(componente.componenteProductoId, actual + componente.cantidad * cantidad);
+      }
+    } else {
+      const actual = decrementosPorProducto.get(producto.id) ?? 0;
+      decrementosPorProducto.set(producto.id, actual + cantidad);
+    }
   }
 
   let comunaId: number | null = null;
@@ -365,14 +390,12 @@ pedidosWebRouter.post("/:id/enviar-a-caja", async (req, res) => {
         },
       },
     }),
-    ...itemsConProducto.map((i) =>
-      prisma.producto.update({ where: { id: i.producto.id }, data: { stockActual: { decrement: i.cantidad } } })
-    ),
-    ...itemsConProducto.map((i) =>
+    ...Array.from(decrementosPorProducto.entries()).flatMap(([productoId, cantidad]) => [
+      prisma.producto.update({ where: { id: productoId }, data: { stockActual: { decrement: cantidad } } }),
       prisma.movimientoInventario.create({
-        data: { productoId: i.producto.id, usuarioId, tipo: "salida", motivo: "venta", cantidad: i.cantidad },
-      })
-    ),
+        data: { productoId, usuarioId, tipo: "salida", motivo: "venta", cantidad },
+      }),
+    ]),
     prisma.pedidoWeb.update({
       where: { id },
       data: { estado: "atendido", atendidoPorId: usuarioId, atendidoEn: new Date() },

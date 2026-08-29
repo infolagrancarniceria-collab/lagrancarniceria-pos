@@ -181,6 +181,18 @@ model Producto {
   stockActual     Float  @default(0)
   umbralStockBajo Float?
 
+  // Combo: producto "vitrina" que junta varios productos reales en una
+  // sola cotización de la web (ej. "Combo Parrillero") — solo se vende por
+  // la web (ver enviarACaja en pedidosWeb.ts), nunca en Punto de Venta. No
+  // tiene stock propio: al venderse, se descuenta el de sus componentes
+  // (ver ComboComponente), nunca el de este producto. flagBalanza siempre
+  // "NORMAL" (se cotiza como 1 combo = 1 unidad). descripcionCorta se
+  // regenera sola a partir de los componentes (ver
+  // regenerarDescripcionCombo en productos.ts) — no se edita a mano,
+  // porque así la web muestra siempre lo que el combo trae en verdad, sin
+  // depender de que alguien la actualice cada vez que cambia la receta.
+  esCombo Boolean @default(false)
+
   historialPrecio       HistorialPrecio[]
   movimientosInventario MovimientoInventario[]
   itemsVenta            ItemVenta[]
@@ -189,6 +201,26 @@ model Producto {
   lotesCamara       LoteCamara[]
   salidasMayoristas SalidaMayorista[]
   regalosPedidoWeb  PedidoWebRegalo[]
+
+  componentesDelCombo ComboComponente[] @relation("ComponentesDelCombo")
+  usadoEnCombos       ComboComponente[] @relation("ProductoUsadoEnCombos")
+}
+
+// Una línea de la "receta" de un combo — qué producto real (y cuánto) lleva
+// adentro. Un mismo producto puede ser componente de varios combos, y un
+// combo puede tener varios componentes.
+model ComboComponente {
+  id Int @id @default(autoincrement())
+
+  comboProductoId Int
+  comboProducto   Producto @relation("ComponentesDelCombo", fields: [comboProductoId], references: [id])
+
+  componenteProductoId Int
+  componenteProducto   Producto @relation("ProductoUsadoEnCombos", fields: [componenteProductoId], references: [id])
+
+  // Mismo criterio que ItemVenta.cantidad: kg si el componente es pesable,
+  // unidades si es Normal.
+  cantidad Float
 }
 
 model HistorialPrecio {

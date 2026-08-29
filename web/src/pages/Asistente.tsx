@@ -147,6 +147,7 @@ async function ejecutarPropuesta(accion: PropuestaAsistente["accion"], usuarioId
         promoPrecioUnitario: null,
         promoGramosMinimos: null,
         promoEtiqueta: null,
+        esCombo: false,
       });
       return;
     case "proponer_desactivar_producto":

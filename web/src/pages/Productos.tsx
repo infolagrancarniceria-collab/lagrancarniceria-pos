@@ -467,7 +467,10 @@ export default function Productos() {
                 <td>
                   <Link to={`/productos/${p.id}`}>{p.plu}</Link>
                 </td>
-                <td>{p.descripcion}</td>
+                <td>
+                  {p.descripcion}
+                  {p.esCombo && <span className="ayuda"> (combo)</span>}
+                </td>
                 <td>{p.categoria.nombre}</td>
                 <td>{p.flagBalanza}</td>
                 <td>

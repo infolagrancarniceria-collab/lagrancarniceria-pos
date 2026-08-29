@@ -49,6 +49,17 @@ export interface Producto {
   promoEtiqueta: string | null;
   descripcionCorta: string | null;
   familiaCorte: string | null;
+  // Combo: producto "vitrina" que junta varios productos reales, solo
+  // vendible por la web (ver componentesDelCombo en ProductoConCosto).
+  esCombo: boolean;
+}
+
+export interface ComponenteCombo {
+  id: number;
+  comboProductoId: number;
+  componenteProductoId: number;
+  componenteProducto: Producto;
+  cantidad: number;
 }
 
 export interface CorteOpcion {
@@ -398,6 +409,9 @@ export interface ProductoConCosto extends Producto {
   ultimoCostoCamaraFecha: string | null;
   costoEfectivo: number | null;
   costoEsEstimado: boolean;
+  // Solo viene en GET /api/productos/:id (no en el listado) — la receta de
+  // este producto si es un combo.
+  componentesDelCombo: ComponenteCombo[];
 }
 
 export interface ProductoConUltimoCosto extends Producto {
@@ -874,6 +888,10 @@ export const api = {
         lowStock?: boolean;
       }
     ) => put<Producto>(`/api/productos/${id}/web`, data),
+    agregarComponenteCombo: (id: number, componenteProductoId: number, cantidad: number) =>
+      post<ProductoConCosto>(`/api/productos/${id}/combo-componentes`, { componenteProductoId, cantidad }),
+    quitarComponenteCombo: (id: number, componenteId: number) =>
+      del<ProductoConCosto>(`/api/productos/${id}/combo-componentes/${componenteId}`),
     categorizarMasivo: (productoIds: number[], categoriaId: number) =>
       post<{ actualizados: number }>("/api/productos/categorizar-masivo", { productoIds, categoriaId }),
     eliminarMasivo: (productoIds: number[]) =>

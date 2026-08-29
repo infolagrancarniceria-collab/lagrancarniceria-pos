@@ -155,7 +155,10 @@ productosRouter.get("/margenes", async (req, res) => {
 productosRouter.get("/:id", async (req, res) => {
   const producto = await prisma.producto.findUnique({
     where: { id: Number(req.params.id) },
-    include: { categoria: true },
+    include: {
+      categoria: true,
+      componentesDelCombo: { include: { componenteProducto: { include: { categoria: true } } }, orderBy: { id: "asc" } },
+    },
   });
   if (!producto) return res.status(404).json({ error: "Producto no encontrado" });
 
@@ -223,6 +226,7 @@ const productoBaseSchema = z.object({
   promoPrecioUnitario: z.number().positive().optional().nullable(),
   promoGramosMinimos: z.number().int().positive().optional().nullable(),
   promoEtiqueta: z.string().trim().optional().nullable(),
+  esCombo: z.boolean().optional(),
 });
 
 function validarCodigoBarrasVsFlag(data: {
@@ -231,6 +235,13 @@ function validarCodigoBarrasVsFlag(data: {
 }): string | null {
   if (data.flagBalanza !== "NORMAL" && data.codigoBarras) {
     return "El código de barras (EAN) solo aplica a productos con Flag Balanza = Normal; los productos pesables/importe usan el código que imprime la balanza";
+  }
+  return null;
+}
+
+function validarCombo(data: { flagBalanza: string; esCombo?: boolean }): string | null {
+  if (data.esCombo && data.flagBalanza !== "NORMAL") {
+    return "Un combo siempre se cotiza como unidad — Flag Balanza debe ser Normal";
   }
   return null;
 }
@@ -244,6 +255,8 @@ productosRouter.post("/", async (req, res) => {
 
   const errorFlag = validarCodigoBarrasVsFlag(data);
   if (errorFlag) return res.status(400).json({ error: errorFlag });
+  const errorCombo = validarCombo(data);
+  if (errorCombo) return res.status(400).json({ error: errorCombo });
 
   const categoria = await prisma.categoria.findUnique({ where: { id: data.categoriaId } });
   if (!categoria) return res.status(400).json({ error: "La categoría indicada no existe" });
@@ -262,8 +275,13 @@ productosRouter.post("/", async (req, res) => {
     if (eanExistente) return res.status(409).json({ error: "Ya existe un producto con ese código de barras" });
   }
 
+  // La descripción corta de un combo se arma sola a partir de sus
+  // componentes (ver regenerarDescripcionCombo) — un combo recién creado
+  // todavía no tiene ninguno, así que nace en null, ignorando lo que haya
+  // llegado en el campo (el formulario ya lo deja de solo lectura, pero se
+  // refuerza acá para no depender solo del frontend).
   const producto = await prisma.producto.create({
-    data: { ...data, codigoBarras: data.codigoBarras || null },
+    data: { ...data, codigoBarras: data.codigoBarras || null, descripcionCorta: data.esCombo ? null : data.descripcionCorta },
     include: { categoria: true },
   });
   void sincronizarCatalogoConWeb();
@@ -287,6 +305,8 @@ productosRouter.put("/:id", async (req, res) => {
 
   const errorFlag = validarCodigoBarrasVsFlag(data);
   if (errorFlag) return res.status(400).json({ error: errorFlag });
+  const errorCombo = validarCombo(data);
+  if (errorCombo) return res.status(400).json({ error: errorCombo });
 
   const categoria = await prisma.categoria.findUnique({ where: { id: data.categoriaId } });
   if (!categoria) return res.status(400).json({ error: "La categoría indicada no existe" });
@@ -300,9 +320,16 @@ productosRouter.put("/:id", async (req, res) => {
     if (eanExistente) return res.status(409).json({ error: "Ya existe un producto con ese código de barras" });
   }
 
+  // Igual que en el create: si es combo, la descripción corta la maneja
+  // regenerarDescripcionCombo, no este endpoint — se ignora lo que venga en
+  // el campo y se deja la que ya estaba.
   const producto = await prisma.producto.update({
     where: { id },
-    data: { ...data, codigoBarras: data.codigoBarras || null },
+    data: {
+      ...data,
+      codigoBarras: data.codigoBarras || null,
+      descripcionCorta: data.esCombo ? undefined : data.descripcionCorta,
+    },
     include: { categoria: true },
   });
   void sincronizarCatalogoConWeb();
@@ -365,6 +392,88 @@ productosRouter.put("/:id/web", async (req, res) => {
   });
   void sincronizarCatalogoConWeb();
   res.json(producto);
+});
+
+// --- Combos: qué productos reales trae adentro un producto "combo" ---
+//
+// La descripción corta de un combo (lo que ve el cliente en la web bajo el
+// nombre) se arma sola a partir de sus componentes, en vez de que alguien
+// la escriba a mano — así queda siempre al día apenas se cambia la
+// receta, que es justo el flujo que se espera acá (armar y reajustar
+// combos seguido).
+function formatoCantidadComponente(cantidad: number, flagBalanza: string): string {
+  return flagBalanza === "NORMAL" ? `${cantidad} un.` : `${cantidad} kg`;
+}
+
+async function regenerarDescripcionCombo(comboProductoId: number): Promise<void> {
+  const componentes = await prisma.comboComponente.findMany({
+    where: { comboProductoId },
+    include: { componenteProducto: true },
+    orderBy: { id: "asc" },
+  });
+  const descripcionCorta =
+    componentes.length === 0
+      ? null
+      : "Incluye: " +
+        componentes
+          .map((c) => `${formatoCantidadComponente(c.cantidad, c.componenteProducto.flagBalanza)} ${c.componenteProducto.descripcion}`)
+          .join(", ");
+  await prisma.producto.update({ where: { id: comboProductoId }, data: { descripcionCorta } });
+}
+
+const agregarComponenteSchema = z.object({
+  componenteProductoId: z.number().int().positive(),
+  cantidad: z.number().positive("La cantidad debe ser mayor a 0"),
+});
+
+productosRouter.post("/:id/combo-componentes", async (req, res) => {
+  const id = Number(req.params.id);
+  const parsed = agregarComponenteSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0].message });
+  }
+  const { componenteProductoId, cantidad } = parsed.data;
+
+  const combo = await prisma.producto.findUnique({ where: { id } });
+  if (!combo) return res.status(404).json({ error: "Producto no encontrado" });
+  if (!combo.esCombo) return res.status(400).json({ error: "Este producto no está marcado como combo" });
+
+  if (componenteProductoId === id) {
+    return res.status(400).json({ error: "Un combo no puede incluirse a sí mismo como componente" });
+  }
+  const componente = await prisma.producto.findUnique({ where: { id: componenteProductoId } });
+  if (!componente) return res.status(404).json({ error: "El producto componente no existe" });
+  if (componente.esCombo) {
+    return res.status(400).json({ error: "Un combo no puede llevar otro combo como componente" });
+  }
+
+  await prisma.comboComponente.create({ data: { comboProductoId: id, componenteProductoId, cantidad } });
+  await regenerarDescripcionCombo(id);
+  void sincronizarCatalogoConWeb();
+
+  const actualizado = await prisma.producto.findUnique({
+    where: { id },
+    include: { categoria: true, componentesDelCombo: { include: { componenteProducto: { include: { categoria: true } } }, orderBy: { id: "asc" } } },
+  });
+  res.status(201).json(actualizado);
+});
+
+productosRouter.delete("/:id/combo-componentes/:componenteId", async (req, res) => {
+  const id = Number(req.params.id);
+  const componenteId = Number(req.params.componenteId);
+
+  const fila = await prisma.comboComponente.findUnique({ where: { id: componenteId } });
+  if (!fila || fila.comboProductoId !== id) return res.status(404).json({ error: "Componente no encontrado" });
+
+  await prisma.comboComponente.delete({ where: { id: componenteId } });
+  await regenerarDescripcionCombo(id);
+  void sincronizarCatalogoConWeb();
+
+  const actualizado = await prisma.producto.findUnique({
+    where: { id },
+    include: { categoria: true, componentesDelCombo: { include: { componenteProducto: { include: { categoria: true } } }, orderBy: { id: "asc" } } },
+  });
+  res.json(actualizado);
 });
 
 // Cambio rápido del precio de venta al por mayor — a diferencia de "precio"
