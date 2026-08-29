@@ -50,6 +50,7 @@ interface ProductoSync {
   precio: number;
   unidad: "kg" | "unidad";
   familiaCorte: string | null;
+  pesoPromedioTrozoGramos: number | null;
   disponibilidad: "disponible" | "agotado" | "proximamente";
   featured: boolean;
   lowStock: boolean;
@@ -88,6 +89,7 @@ async function construirSnapshotCatalogo(): Promise<SnapshotCatalogo> {
       // Producto.precio): NORMAL se vende por unidad, PESABLE/IMPORTE por kg.
       unidad: p.flagBalanza === "NORMAL" ? "unidad" : "kg",
       familiaCorte: p.familiaCorte,
+      pesoPromedioTrozoGramos: p.pesoPromedioTrozoGramos,
       disponibilidad: p.disponibilidadWeb as "disponible" | "agotado" | "proximamente",
       featured: p.featured,
       lowStock: p.lowStock,

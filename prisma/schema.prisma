@@ -176,6 +176,15 @@ model Producto {
   // viven en CorteOpcion.
   familiaCorte String?
 
+  // Peso promedio de un trozo/presa, en gramos — solo para productos por
+  // peso (típicamente pollo/aves: trutro, ala, etc.), donde la gente suele
+  // pensar la compra en "cuántos trozos" en vez de en kilos. Si tiene valor,
+  // el cotizador de la web ofrece elegir por cantidad de trozos además de
+  // por peso/monto, estimando el peso como trozos × este valor — sigue
+  // siendo un peso aproximado, se ajusta al pesar de verdad. Null = el
+  // producto no ofrece esa opción.
+  pesoPromedioTrozoGramos Int?
+
   // Se actualiza solo con cada movimiento de inventario (entrada/salida);
   // no se edita a mano desde la ficha del producto.
   stockActual     Float  @default(0)

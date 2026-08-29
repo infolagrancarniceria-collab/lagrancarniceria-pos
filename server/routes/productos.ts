@@ -226,6 +226,10 @@ const productoBaseSchema = z.object({
   promoPrecioUnitario: z.number().positive().optional().nullable(),
   promoGramosMinimos: z.number().int().positive().optional().nullable(),
   promoEtiqueta: z.string().trim().optional().nullable(),
+  // Peso promedio de un trozo/presa (g) — solo tiene sentido para pesables
+  // (ver comentario en schema.prisma). No se valida contra flagBalanza acá:
+  // si se deja en un producto Normal simplemente no se usa en la web.
+  pesoPromedioTrozoGramos: z.number().int().positive().optional().nullable(),
   esCombo: z.boolean().optional(),
 });
 

@@ -49,6 +49,10 @@ export interface Producto {
   promoEtiqueta: string | null;
   descripcionCorta: string | null;
   familiaCorte: string | null;
+  // Peso promedio de un trozo/presa (g) — solo para pesables (típicamente
+  // pollo/aves). Si tiene valor, la web ofrece elegir por cantidad de
+  // trozos además de por peso/monto.
+  pesoPromedioTrozoGramos: number | null;
   // Combo: producto "vitrina" que junta varios productos reales, solo
   // vendible por la web (ver componentesDelCombo en ProductoConCosto).
   esCombo: boolean;

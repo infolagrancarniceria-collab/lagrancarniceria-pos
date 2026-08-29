@@ -40,6 +40,7 @@ interface FormState {
   promoPrecioUnitario: string;
   promoGramosMinimos: string;
   promoEtiqueta: string;
+  pesoPromedioTrozoGramos: string;
   esCombo: boolean;
 }
 
@@ -67,6 +68,7 @@ const formVacio: FormState = {
   promoPrecioUnitario: "",
   promoGramosMinimos: "",
   promoEtiqueta: "",
+  pesoPromedioTrozoGramos: "",
   esCombo: false,
 };
 
@@ -134,6 +136,7 @@ export default function ProductoForm() {
           promoPrecioUnitario: p.promoPrecioUnitario != null ? String(p.promoPrecioUnitario) : "",
           promoGramosMinimos: p.promoGramosMinimos != null ? String(p.promoGramosMinimos) : "",
           promoEtiqueta: p.promoEtiqueta ?? "",
+          pesoPromedioTrozoGramos: p.pesoPromedioTrozoGramos != null ? String(p.pesoPromedioTrozoGramos) : "",
           esCombo: p.esCombo,
         });
       })
@@ -244,6 +247,7 @@ export default function ProductoForm() {
       promoPrecioUnitario: form.promoPrecioUnitario ? Number(form.promoPrecioUnitario) : null,
       promoGramosMinimos: form.promoGramosMinimos ? Number(form.promoGramosMinimos) : null,
       promoEtiqueta: form.promoEtiqueta.trim() || null,
+      pesoPromedioTrozoGramos: form.pesoPromedioTrozoGramos ? Number(form.pesoPromedioTrozoGramos) : null,
       esCombo: form.esCombo,
     };
 
@@ -656,6 +660,27 @@ export default function ProductoForm() {
             />
           </label>
         </fieldset>
+
+        {form.flagBalanza !== "NORMAL" && (
+          <fieldset className="tarjeta formulario">
+            <legend>Venta por trozos (página web)</legend>
+            <p className="ayuda">
+              Para productos donde la gente suele pedir "tantos trozos" en vez de kilos (ej. pollo/aves). Si lo llenas,
+              el cotizador de la web deja elegir por cantidad de trozos, estimando el peso como trozos × este valor —
+              sigue siendo un peso aproximado, se ajusta al pesar de verdad. Déjalo vacío si no aplica.
+            </p>
+            <label>
+              Peso promedio por trozo (g)
+              <input
+                type="number"
+                min="1"
+                value={form.pesoPromedioTrozoGramos}
+                onChange={(e) => actualizarCampo("pesoPromedioTrozoGramos", e.target.value)}
+                placeholder="ej. 180 (trutro), 90 (ala)"
+              />
+            </label>
+          </fieldset>
+        )}
 
         <div className="acciones-formulario">
           <button type="submit" className="boton boton-primario" disabled={guardando}>
