@@ -216,9 +216,9 @@ export default function Configuracion() {
         <h2>Modo caja exclusiva</h2>
         <p className="ayuda">
           Pensado para un PC que se usa solo para cobrar (ej. el mesón de atención): esconde el resto del menú
-          (Productos, Inventario, Reportes, etc.) y deja solo Caja, Créditos y esta pantalla de Configuración —
-          así se puede volver a desactivarlo cuando haga falta. Es una preferencia de <strong>este PC</strong>{" "}
-          nada más (no afecta a otros equipos ni queda guardada en la base de datos).
+          (Productos, Inventario, Reportes, etc.) y deja solo Caja, Créditos, Pedidos web y esta pantalla de
+          Configuración — así se puede volver a desactivarlo cuando haga falta. Es una preferencia de{" "}
+          <strong>este PC</strong> nada más (no afecta a otros equipos ni queda guardada en la base de datos).
         </p>
         <label className="fila-inline">
           <input type="checkbox" checked={modoCaja} onChange={(e) => cambiarModoCaja(e.target.checked)} />
