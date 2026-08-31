@@ -60,8 +60,19 @@ export default function MejorMargen() {
 
   const umbralPropuestaNum = Number(umbralPropuesta) || 0;
   const tamanoPropuestaNum = Math.max(1, Number(tamanoPropuesta) || 0);
+  // El generador de propuestas de combo, a pedido del usuario, solo
+  // considera carnes frescas (Vacuno, Cerdo, Pollo/Aves) — no Congelados,
+  // Artesanales, etc. — sin importar qué categoría esté elegida en el
+  // filtro de arriba. "Aves" cubierto además de "Pollo" porque el nombre
+  // real de la categoría en el catálogo puede variar.
+  const CATEGORIAS_COMBO = ["vacuno", "cerdo", "pollo", "aves"];
   const productosPropuesta = filasBase
-    .filter((p) => p.costoEfectivo != null && p.margenReal >= umbralPropuestaNum)
+    .filter(
+      (p) =>
+        p.costoEfectivo != null &&
+        p.margenReal >= umbralPropuestaNum &&
+        CATEGORIAS_COMBO.includes(p.categoria.nombre.toLowerCase())
+    )
     .sort((a, b) => b.margenReal - a.margenReal);
 
   return (
@@ -152,7 +163,8 @@ export default function MejorMargen() {
         Elige un margen real mínimo y un tamaño de combo de referencia — se muestra la lista completa de productos
         que cumplen el umbral (dentro de la categoría filtrada arriba, si hay alguna elegida), ordenada de mayor a
         menor margen real, con los primeros según el tamaño elegido resaltados como sugerencia. El combo se arma a
-        mano eligiendo de esa lista.
+        mano eligiendo de esa lista. Solo considera <strong>Vacuno, Cerdo y Pollo/Aves</strong> — no Congelados,
+        Artesanales ni el resto de las categorías.
       </p>
       <div className="filtros">
         <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
