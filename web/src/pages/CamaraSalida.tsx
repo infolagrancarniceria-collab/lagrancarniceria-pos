@@ -5,6 +5,7 @@ import { useUsuario } from "../context/UsuarioContext";
 import { useEscanerCodigoBarras } from "../hooks/useEscanerCodigoBarras";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 import { ejecutarOEncolar } from "../lib/colaOffline";
+import { DESTINOS_CAMARA, infoDestinoCamara } from "../lib/destinoCamara";
 import { EstadoOffline } from "../components/EstadoOffline";
 import { mostrarToast } from "../lib/toast";
 import ModalAlerta from "../components/ModalAlerta";
@@ -14,14 +15,7 @@ import ModalAlerta from "../components/ModalAlerta";
 // no paga ese peso en su carga inicial.
 const EscanerCamara = lazy(() => import("../components/EscanerCamara"));
 
-const DESTINOS: { valor: DestinoSalidaCamara; etiqueta: string }[] = [
-  { valor: "sala_venta", etiqueta: "Sala de venta" },
-  { valor: "produccion", etiqueta: "Producción" },
-  { valor: "merma", etiqueta: "Merma" },
-  { valor: "donacion", etiqueta: "Donación" },
-  { valor: "mayorista", etiqueta: "Venta por mayor" },
-  { valor: "otro", etiqueta: "Otro" },
-];
+const DESTINOS = DESTINOS_CAMARA;
 
 export default function CamaraSalida() {
   const { usuario } = useUsuario();
@@ -248,16 +242,23 @@ export default function CamaraSalida() {
           )}
 
           <form onSubmit={confirmarSalida} onKeyDown={manejarEnterComoTab} className="formulario">
-            <label>
-              Destino
-              <select value={destino} onChange={(e) => setDestino(e.target.value as DestinoSalidaCamara)}>
+            <div>
+              <span className="ayuda">Destino</span>
+              <div className="destinos-camara">
                 {DESTINOS.map((d) => (
-                  <option key={d.valor} value={d.valor}>
+                  <button
+                    key={d.valor}
+                    type="button"
+                    className={`destino-tile ${destino === d.valor ? "activo" : ""}`}
+                    style={{ ["--destino-color" as string]: d.color }}
+                    onClick={() => setDestino(d.valor)}
+                  >
+                    <span>{d.icono}</span>
                     {d.etiqueta}
-                  </option>
+                  </button>
                 ))}
-              </select>
-            </label>
+              </div>
+            </div>
 
             <label>
               Peso que sale (kg)
@@ -322,9 +323,14 @@ export default function CamaraSalida() {
       {resultado && (
         <section className="tarjeta">
           <p className="exito">
-            Listo — {resultado.movimiento.pesoKg.toFixed(3)} kg de la caja {numeroCaja} salieron con destino "
-            {DESTINOS.find((d) => d.valor === resultado.movimiento.destino)?.etiqueta ?? resultado.movimiento.destino}
-            ". La caja quedó en estado "{resultado.caja.estado}" (saldo {resultado.caja.saldoKg.toFixed(3)} kg).
+            Listo — {resultado.movimiento.pesoKg.toFixed(3)} kg de la caja {numeroCaja} salieron con destino{" "}
+            <span
+              className="destino-badge"
+              style={{ ["--destino-color" as string]: infoDestinoCamara(resultado.movimiento.destino).color }}
+            >
+              {infoDestinoCamara(resultado.movimiento.destino).icono} {infoDestinoCamara(resultado.movimiento.destino).etiqueta}
+            </span>
+            . La caja quedó en estado "{resultado.caja.estado}" (saldo {resultado.caja.saldoKg.toFixed(3)} kg).
           </p>
           {resultado.salidaMayorista && (
             <p className="ayuda">

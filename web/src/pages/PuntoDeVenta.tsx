@@ -6,6 +6,7 @@ import {
   redondearA10,
   TOLERANCIA_REDONDEO_EFECTIVO,
   type Comuna,
+  type FlagBalanza,
   type MedioPago,
   type Producto,
   type Venta,
@@ -18,6 +19,12 @@ import ModalConfirmarClave from "../components/ModalConfirmarClave";
 import { ValeVenta } from "../components/ValeVenta";
 import { imprimirSilencioso } from "../lib/imprimir";
 import ModalAlerta from "../components/ModalAlerta";
+
+const ETIQUETAS_FLAG_BALANZA: Record<FlagBalanza, string> = {
+  NORMAL: "Normal (unidad)",
+  PESABLE: "Pesable",
+  IMPORTE: "Importe",
+};
 
 export default function PuntoDeVenta() {
   const { usuario } = useUsuario();
@@ -75,6 +82,13 @@ export default function PuntoDeVenta() {
   const [itemEditandoPrecio, setItemEditandoPrecio] = useState<number | null>(null);
   const [precioNuevoValor, setPrecioNuevoValor] = useState("");
   const [itemAutorizandoPrecio, setItemAutorizandoPrecio] = useState<number | null>(null);
+  // Cambio rápido de flag balanza (pesable/normal/importe) para el producto
+  // que se está por agregar — igual patrón que el lápiz de precio, pero
+  // sobre el producto elegido en el buscador, antes de escribir la
+  // cantidad, para que quede en el modo correcto antes de vender.
+  const [editandoFlagBalanza, setEditandoFlagBalanza] = useState(false);
+  const [flagBalanzaNuevoValor, setFlagBalanzaNuevoValor] = useState<FlagBalanza>("NORMAL");
+  const [autorizandoFlagBalanza, setAutorizandoFlagBalanza] = useState(false);
 
   const inputCantidadRef = useRef<HTMLInputElement>(null);
   const inputMontoPagoRef = useRef<HTMLInputElement>(null);
@@ -294,6 +308,7 @@ export default function PuntoDeVenta() {
     setProductoSeleccionado(p);
     setBuscar("");
     setProductos([]);
+    setEditandoFlagBalanza(false);
     setTimeout(() => inputCantidadRef.current?.focus(), 0);
   }
 
@@ -382,6 +397,25 @@ export default function PuntoDeVenta() {
     // catálogo, no el ya cobrado en esta línea) quede al día.
     const actualizada = await api.caja.obtenerVenta(venta.id);
     setVenta(actualizada);
+  }
+
+  // Cambio rápido de flag balanza desde Caja — a pedido del usuario, para
+  // no tener que ir hasta Productos cada vez que hace falta ajustar si algo
+  // se vende pesable/normal/importe. Igual que el cambio de precio de acá
+  // mismo, pide clave de supervisor porque afecta cómo se calcula el precio
+  // de ahí en adelante (no solo de esta venta).
+  async function confirmarCambioFlagBalanza(usuarioId: number, clave: string, motivo?: string) {
+    if (!productoSeleccionado) return;
+    const actualizado = await api.productos.cambiarFlagBalanza(productoSeleccionado.id, {
+      flagBalanza: flagBalanzaNuevoValor,
+      usuarioId,
+      clave,
+      motivoAutorizacion: motivo,
+    });
+    setMensaje(`${actualizado.descripcion}: ahora es "${ETIQUETAS_FLAG_BALANZA[actualizado.flagBalanza]}"`);
+    setProductoSeleccionado(actualizado);
+    setAutorizandoFlagBalanza(false);
+    setEditandoFlagBalanza(false);
   }
 
   // En efectivo, el cajero escribe lo que el cliente entregó en la mano — no
@@ -681,9 +715,50 @@ export default function PuntoDeVenta() {
                       </div>
                     )}
                   </div>
-                  {productoSeleccionado && (
-                    <span className="exito">
-                      Vendiendo: {productoSeleccionado.descripcion} ({formatoCLP(productoSeleccionado.precio)})
+                  {productoSeleccionado && !editandoFlagBalanza && (
+                    <span className="exito fila-inline">
+                      Vendiendo: {productoSeleccionado.descripcion} ({formatoCLP(productoSeleccionado.precio)}) —{" "}
+                      {ETIQUETAS_FLAG_BALANZA[productoSeleccionado.flagBalanza]}
+                      <button
+                        type="button"
+                        className="boton-chico"
+                        title="Cambiar si es pesable, normal o importe"
+                        onClick={() => {
+                          setFlagBalanzaNuevoValor(productoSeleccionado.flagBalanza);
+                          setEditandoFlagBalanza(true);
+                        }}
+                      >
+                        ⚖️✏️
+                      </button>
+                    </span>
+                  )}
+                  {productoSeleccionado && editandoFlagBalanza && (
+                    <span className="fila-inline">
+                      Cambiar a:
+                      <select
+                        value={flagBalanzaNuevoValor}
+                        onChange={(e) => setFlagBalanzaNuevoValor(e.target.value as FlagBalanza)}
+                      >
+                        <option value="NORMAL">Normal (unidad)</option>
+                        <option value="PESABLE">Pesable</option>
+                        <option value="IMPORTE">Importe</option>
+                      </select>
+                      <button
+                        type="button"
+                        className="boton-chico boton-primario"
+                        onClick={() => {
+                          if (flagBalanzaNuevoValor === productoSeleccionado.flagBalanza) {
+                            setEditandoFlagBalanza(false);
+                            return;
+                          }
+                          setAutorizandoFlagBalanza(true);
+                        }}
+                      >
+                        Guardar
+                      </button>
+                      <button type="button" className="boton-chico" onClick={() => setEditandoFlagBalanza(false)}>
+                        Cancelar
+                      </button>
                     </span>
                   )}
                   <input
@@ -1228,6 +1303,21 @@ export default function PuntoDeVenta() {
             />
           );
         })()}
+
+      {autorizandoFlagBalanza && productoSeleccionado && (
+        <ModalConfirmarClave
+          titulo="Autorizar cambio de flag balanza"
+          descripcion={`${productoSeleccionado.descripcion}: de "${ETIQUETAS_FLAG_BALANZA[productoSeleccionado.flagBalanza]}" a "${ETIQUETAS_FLAG_BALANZA[flagBalanzaNuevoValor]}". Este cambio queda para todas las ventas futuras, no solo esta, y puede afectar el precio.`}
+          motivoOpciones={[
+            "Se vende por peso, no por unidad",
+            "Se vende por unidad, no por peso",
+            "Se vende por importe/monto",
+            "Ajuste puntual",
+          ]}
+          onConfirmar={confirmarCambioFlagBalanza}
+          onCancelar={() => setAutorizandoFlagBalanza(false)}
+        />
+      )}
 
       {cancelandoVenta && (
         <ModalConfirmarClave

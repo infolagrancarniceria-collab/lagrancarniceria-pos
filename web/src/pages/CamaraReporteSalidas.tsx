@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, formatoCLP, type ReporteSalidasCamara } from "../api";
+import { infoDestinoCamara } from "../lib/destinoCamara";
 import ModalAlerta from "../components/ModalAlerta";
 
 function fechaHace(dias: number): string {
@@ -92,16 +93,21 @@ export default function CamaraReporteSalidas() {
               </tr>
             </thead>
             <tbody>
-              {reporte.porDestino.map((d) => (
-                <tr key={d.destino}>
-                  <td>
-                    <b>{d.etiqueta}</b>
-                  </td>
-                  <td>{d.cajasDistintas}</td>
-                  <td>{d.kilos.toFixed(3)}</td>
-                  <td>{formatoCLP(d.valor)}</td>
-                </tr>
-              ))}
+              {reporte.porDestino.map((d) => {
+                const info = infoDestinoCamara(d.destino);
+                return (
+                  <tr key={d.destino}>
+                    <td>
+                      <span className="destino-badge" style={{ ["--destino-color" as string]: info.color }}>
+                        {info.icono} {d.etiqueta}
+                      </span>
+                    </td>
+                    <td>{d.cajasDistintas}</td>
+                    <td>{d.kilos.toFixed(3)}</td>
+                    <td>{formatoCLP(d.valor)}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
 
@@ -122,17 +128,24 @@ export default function CamaraReporteSalidas() {
                   <td colSpan={5}>Todavía no hay egresos registrados en este rango.</td>
                 </tr>
               )}
-              {reporte.ultimosMovimientos.map((m) => (
-                <tr key={m.id}>
-                  <td>{new Date(m.fecha).toLocaleString("es-CL")}</td>
-                  <td>
-                    <b>{m.numero}</b>
-                  </td>
-                  <td>{m.producto}</td>
-                  <td>{m.etiquetaDestino}</td>
-                  <td>{m.kilos.toFixed(3)}</td>
-                </tr>
-              ))}
+              {reporte.ultimosMovimientos.map((m) => {
+                const info = infoDestinoCamara(m.destino);
+                return (
+                  <tr key={m.id}>
+                    <td>{new Date(m.fecha).toLocaleString("es-CL")}</td>
+                    <td>
+                      <b>{m.numero}</b>
+                    </td>
+                    <td>{m.producto}</td>
+                    <td>
+                      <span className="destino-badge" style={{ ["--destino-color" as string]: info.color }}>
+                        {info.icono} {m.etiquetaDestino}
+                      </span>
+                    </td>
+                    <td>{m.kilos.toFixed(3)}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </>

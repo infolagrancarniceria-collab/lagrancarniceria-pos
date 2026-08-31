@@ -566,6 +566,7 @@ export interface ReporteVentas {
   totalVentasOnline: number;
   masVendidosPorCantidad: { productoId: number; plu: string; descripcion: string; cantidad: number; ingreso: number }[];
   masVendidosPorIngreso: { productoId: number; plu: string; descripcion: string; cantidad: number; ingreso: number }[];
+  porDia: { fecha: string; cantidadVentas: number; totalVentas: number }[];
 }
 
 export interface HistorialEntrada {
@@ -847,6 +848,10 @@ export const api = {
     reactivar: (id: number) => post<Producto>(`/api/productos/${id}/reactivar`, {}),
     cambiarPrecioMayor: (id: number, precioMayor: number) =>
       put<Producto>(`/api/productos/${id}/precio-mayor`, { precioMayor }),
+    cambiarFlagBalanza: (
+      id: number,
+      data: { flagBalanza: FlagBalanza; usuarioId: number; clave: string; motivoAutorizacion?: string }
+    ) => put<Producto>(`/api/productos/${id}/flag-balanza`, data),
     listarConCosto: (params: { buscar?: string; categoriaId?: number; incluirInactivos?: boolean } = {}) => {
       const qs = new URLSearchParams();
       if (params.buscar) qs.set("buscar", params.buscar);

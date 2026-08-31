@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, formatoCLP, type ReporteDespachos, type ReporteInventario, type ReportePrecios, type ReporteVentas } from "../api";
+import { GraficoBarras, GraficoLinea, GraficoTorta } from "../components/Graficos";
 import ModalAlerta from "../components/ModalAlerta";
 
 const etiquetasMotivo: Record<string, string> = {
@@ -22,6 +23,12 @@ function fechaHace(dias: number): string {
 
 function hoy(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+// "YYYY-MM-DD" -> "DD/MM", más corto para el eje del gráfico de línea.
+function fechaCorta(fecha: string): string {
+  const [, mes, dia] = fecha.split("-");
+  return `${dia}/${mes}`;
 }
 
 export default function Reportes() {
@@ -91,7 +98,17 @@ export default function Reportes() {
             {formatoCLP(reporteVentas.totalVentasOnline)}).
           </p>
 
+          <h3>Ventas por día</h3>
+          <GraficoLinea
+            datos={reporteVentas.porDia.map((d) => ({ etiqueta: fechaCorta(d.fecha), valor: d.totalVentas }))}
+            formatoValor={formatoCLP}
+          />
+
           <h3>Más vendidos por cantidad</h3>
+          <GraficoBarras
+            datos={reporteVentas.masVendidosPorCantidad.map((p) => ({ etiqueta: p.descripcion, valor: p.cantidad }))}
+          />
+
           <table className="tabla">
             <thead>
               <tr>
@@ -160,6 +177,9 @@ export default function Reportes() {
           </div>
 
           <h3>Por comuna</h3>
+          <GraficoBarras
+            datos={reporteDespachos.porComuna.map((c) => ({ etiqueta: c.comuna, valor: c.cantidadDespachos }))}
+          />
           <table className="tabla">
             <thead>
               <tr>
@@ -206,6 +226,13 @@ export default function Reportes() {
             </div>
           </div>
 
+          <h3>Salidas por motivo</h3>
+          <GraficoTorta
+            datos={Object.entries(reporteInventario.salidasPorMotivo)
+              .filter(([, cantidad]) => cantidad > 0)
+              .map(([motivo, cantidad]) => ({ etiqueta: etiquetasMotivo[motivo] ?? motivo, valor: cantidad }))}
+          />
+
           <h3>Productos con más merma en el período</h3>
           <table className="tabla">
             <thead>
@@ -246,6 +273,13 @@ export default function Reportes() {
               </div>
             ))}
           </div>
+
+          <GraficoTorta
+            datos={Object.entries(reportePrecios.porTipo).map(([tipo, cantidad]) => ({
+              etiqueta: etiquetasTipoCambio[tipo] ?? tipo,
+              valor: cantidad,
+            }))}
+          />
 
           <h3>Mayores variaciones de precio en el período</h3>
           <table className="tabla">

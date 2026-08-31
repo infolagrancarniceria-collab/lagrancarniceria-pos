@@ -4,6 +4,7 @@ import { parse } from "csv-parse/sync";
 import { z } from "zod";
 import { prisma } from "../db";
 import { obtenerIdsCategoriaYDescendientes } from "../lib/categorias";
+import { verificarClaveConLimite } from "../lib/clave";
 import { sincronizarCatalogoConWeb } from "../lib/syncWeb";
 
 export const productosRouter = Router();
@@ -500,6 +501,67 @@ productosRouter.put("/:id/precio-mayor", async (req, res) => {
     data: { precioMayor: parsed.data.precioMayor },
     include: { categoria: true },
   });
+  res.json(producto);
+});
+
+// Cambio rápido de flag balanza desde Punto de venta (mesón) — a pedido del
+// usuario, para no tener que ir hasta la ficha del producto en Productos
+// cada vez que hace falta ajustar si algo se vende pesable/normal/importe.
+// Como afecta cómo se calcula el precio de ahí en adelante, pide clave de
+// supervisor igual que el cambio de precio individual desde Caja (ver
+// POST /api/precios/individual) — a diferencia de ese endpoint acá la clave
+// es siempre obligatoria, no hay otro llamador que edite este campo sin ella
+// (el formulario de Productos usa el PUT normal, sin clave).
+const cambioFlagBalanzaSchema = z.object({
+  flagBalanza: flagBalanzaEnum,
+  usuarioId: z.number().int().positive(),
+  clave: z.string().min(1, "Falta la clave de supervisor"),
+  motivoAutorizacion: z.string().trim().optional(),
+});
+
+productosRouter.put("/:id/flag-balanza", async (req, res) => {
+  const id = Number(req.params.id);
+  const parsed = cambioFlagBalanzaSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0].message });
+  }
+  const { flagBalanza, usuarioId, clave } = parsed.data;
+
+  const usuario = await prisma.usuario.findUnique({ where: { id: usuarioId } });
+  if (!usuario || !usuario.activo) return res.status(400).json({ error: "Usuario inválido" });
+
+  const existente = await prisma.producto.findUnique({ where: { id } });
+  if (!existente) return res.status(404).json({ error: "Producto no encontrado" });
+
+  const errorCombo = validarCombo({ flagBalanza, esCombo: existente.esCombo });
+  if (errorCombo) return res.status(400).json({ error: errorCombo });
+
+  const claveSupervisor = await prisma.claveSupervisor.findFirst();
+  if (!claveSupervisor) {
+    return res.status(403).json({ error: "Clave de supervisor incorrecta" });
+  }
+  const resultadoClave = verificarClaveConLimite(req.ip ?? "desconocido", clave, claveSupervisor.hashClave);
+  if (resultadoClave.bloqueado) {
+    return res.status(429).json({
+      error: `Demasiados intentos fallidos — espera ${resultadoClave.segundosRestantes} segundos e intenta de nuevo`,
+    });
+  }
+  if (!resultadoClave.valida) {
+    return res.status(403).json({ error: "Clave de supervisor incorrecta" });
+  }
+
+  // El código de barras (EAN) solo tiene sentido en productos Normal (ver
+  // validarCodigoBarrasVsFlag) — si se cambia a Pesable/Importe y el
+  // producto tenía uno cargado, se limpia solo en vez de dejarlo inválido.
+  const producto = await prisma.producto.update({
+    where: { id },
+    data: {
+      flagBalanza,
+      codigoBarras: flagBalanza !== "NORMAL" ? null : existente.codigoBarras,
+    },
+    include: { categoria: true },
+  });
+  void sincronizarCatalogoConWeb();
   res.json(producto);
 });
 

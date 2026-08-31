@@ -41,6 +41,16 @@ function rangoFechas(query: Record<string, unknown>): { desde: Date; hasta: Date
   return rangoFechasDesdeTexto(query.desde, query.hasta);
 }
 
+// "YYYY-MM-DD" en hora LOCAL (no toISOString(), que es UTC y puede correr
+// una venta de las 23:xx hacia el día siguiente) — para agrupar ventas por
+// día calendario tal como las ve el usuario.
+function formatoFechaLocal(fecha: Date): string {
+  const anio = fecha.getFullYear();
+  const mes = String(fecha.getMonth() + 1).padStart(2, "0");
+  const dia = String(fecha.getDate()).padStart(2, "0");
+  return `${anio}-${mes}-${dia}`;
+}
+
 export async function calcularReporteVentas(desdeTexto?: unknown, hastaTexto?: unknown) {
   const { desde, hasta } = rangoFechasDesdeTexto(desdeTexto, hastaTexto);
 
@@ -84,6 +94,20 @@ export async function calcularReporteVentas(desdeTexto?: unknown, hastaTexto?: u
     .sort((a, b) => b.ingreso - a.ingreso)
     .slice(0, 10);
 
+  // Evolución diaria — a pedido del usuario, para graficar cómo se mueven
+  // las ventas día a día en el rango elegido (no solo el total acumulado).
+  const porDiaMapa = new Map<string, { cantidadVentas: number; totalVentas: number }>();
+  for (const v of ventasEnRango) {
+    const clave = formatoFechaLocal(v.fecha);
+    const actual = porDiaMapa.get(clave) ?? { cantidadVentas: 0, totalVentas: 0 };
+    actual.cantidadVentas += 1;
+    actual.totalVentas += v.total;
+    porDiaMapa.set(clave, actual);
+  }
+  const porDia = Array.from(porDiaMapa.entries())
+    .map(([fecha, datos]) => ({ fecha, ...datos }))
+    .sort((a, b) => a.fecha.localeCompare(b.fecha));
+
   return {
     desde: desde.toISOString(),
     hasta: hasta.toISOString(),
@@ -93,6 +117,7 @@ export async function calcularReporteVentas(desdeTexto?: unknown, hastaTexto?: u
     totalVentasOnline,
     masVendidosPorCantidad,
     masVendidosPorIngreso,
+    porDia,
   };
 }
 
