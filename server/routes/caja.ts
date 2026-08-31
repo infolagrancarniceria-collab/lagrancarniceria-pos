@@ -706,6 +706,10 @@ const agregarPagoSchema = z
     medio: z.enum(["efectivo", "tarjeta", "credito"]),
     monto: z.number().positive("El monto debe ser mayor a 0"),
     clienteNombre: z.string().trim().optional().nullable(),
+    // Solo tiene sentido en efectivo: lo que el cliente entregó en la mano,
+    // antes del tope/redondeo aplicado a "monto" — para poder mostrar en el
+    // vale con cuánto pagó y el vuelto correspondiente.
+    montoEntregado: z.number().positive().optional(),
   })
   .refine((data) => data.medio !== "credito" || !!data.clienteNombre?.trim(), {
     message: "Falta el nombre del cliente para dejarlo a crédito",
@@ -718,14 +722,20 @@ cajaRouter.post("/ventas/:id/pagos", async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.issues[0].message });
   }
-  const { medio, monto, clienteNombre } = parsed.data;
+  const { medio, monto, clienteNombre, montoEntregado } = parsed.data;
 
   const venta = await prisma.venta.findUnique({ where: { id: ventaId } });
   if (!venta) return res.status(404).json({ error: "Venta no encontrada" });
   if (venta.estado !== "abierta") return res.status(400).json({ error: "Esta venta ya no admite cambios" });
 
   await prisma.pagoVenta.create({
-    data: { ventaId, medio, monto, clienteNombre: medio === "credito" ? clienteNombre!.trim() : null },
+    data: {
+      ventaId,
+      medio,
+      monto,
+      clienteNombre: medio === "credito" ? clienteNombre!.trim() : null,
+      montoEntregado: medio === "efectivo" ? montoEntregado ?? null : null,
+    },
   });
 
   const ventaActualizada = await prisma.venta.findUnique({

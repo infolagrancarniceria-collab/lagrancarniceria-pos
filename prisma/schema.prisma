@@ -503,6 +503,12 @@ model PagoVenta {
   medio String // "efectivo" | "tarjeta" | "credito"
   monto Float
 
+  // Solo aplica cuando medio = "efectivo": lo que el cliente entregó en la
+  // mano (antes del redondeo/tope a lo que se debía) — para poder mostrar
+  // en el vale impreso con cuánto pagó y el vuelto correspondiente. null en
+  // tarjeta/crédito, donde siempre se cobra el monto exacto.
+  montoEntregado Float?
+
   // Solo aplica cuando medio = "credito": a quién se le fía, y el registro
   // de cuándo/cómo se cobró después — puede pasar en una sesión de caja
   // distinta a la de la venta original (el cliente vuelve otro día).

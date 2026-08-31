@@ -608,6 +608,7 @@ export interface PagoVenta {
   venta?: Venta;
   medio: MedioPago;
   monto: number;
+  montoEntregado: number | null;
   clienteNombre: string | null;
   cobrado: boolean;
   medioCobro: MedioCobro | null;
@@ -1136,8 +1137,10 @@ export const api = {
       itemId: number,
       data: { clave: string; usuarioId: number; motivo?: string }
     ) => delConBody<Venta>(`/api/caja/ventas/${ventaId}/items/${itemId}`, data),
-    agregarPago: (ventaId: number, data: { medio: MedioPago; monto: number; clienteNombre?: string }) =>
-      post<Venta>(`/api/caja/ventas/${ventaId}/pagos`, data),
+    agregarPago: (
+      ventaId: number,
+      data: { medio: MedioPago; monto: number; clienteNombre?: string; montoEntregado?: number }
+    ) => post<Venta>(`/api/caja/ventas/${ventaId}/pagos`, data),
     quitarPago: (ventaId: number, pagoId: number) =>
       del<Venta>(`/api/caja/ventas/${ventaId}/pagos/${pagoId}`),
     confirmarVenta: (ventaId: number, usuarioId: number) =>

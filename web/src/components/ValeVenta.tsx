@@ -131,6 +131,12 @@ export function ValeVenta({ venta, onImprimir, onAnular }: Props) {
           <li key={p.id}>
             {etiquetaMedio[p.medio] ?? p.medio}
             {p.medio === "credito" ? ` (${p.clienteNombre})` : ""}: {formatoCLP(p.monto)}
+            {p.medio === "efectivo" && p.montoEntregado != null && p.montoEntregado > p.monto && (
+              <>
+                {" "}
+                — pagó con {formatoCLP(p.montoEntregado)}, vuelto {formatoCLP(p.montoEntregado - p.monto)}
+              </>
+            )}
           </li>
         ))}
         {calcularRedondeo(venta) !== 0 && (

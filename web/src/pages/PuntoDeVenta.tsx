@@ -458,6 +458,7 @@ export default function PuntoDeVenta() {
         medio: medioPago,
         monto: montoACobrar,
         clienteNombre: medioPago === "credito" ? clienteNombre.trim() : undefined,
+        montoEntregado: medioPago === "efectivo" ? monto : undefined,
       });
       setVenta(actualizada);
       setMontoPago("");
