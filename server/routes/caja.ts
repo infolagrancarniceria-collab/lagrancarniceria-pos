@@ -278,19 +278,30 @@ cajaRouter.post("/sesiones/:id/cerrar", async (req, res) => {
 // --- Ventas ---
 
 // Buscar ventas confirmadas (pagadas) por rango de fechas y/o N° de venta —
-// para la pantalla "Buscar venta" (ver detalle / reimprimir un vale).
+// para la pantalla "Buscar venta" (ver detalle / reimprimir un vale). También
+// sirve para el panel de "últimas ventas" en Punto de Venta, pasando
+// sesionCajaId + limit en vez de un rango de fechas (la sesión ya acota el
+// período, no tiene sentido pedirle también un rango).
 cajaRouter.get("/ventas", async (req, res) => {
   const ventaId = req.query.ventaId ? Number(req.query.ventaId) : undefined;
-  const { desde, hasta } = rangoFechasDesdeTexto(req.query.desde, req.query.hasta);
+  const sesionCajaId = req.query.sesionCajaId ? Number(req.query.sesionCajaId) : undefined;
+  const limit = req.query.limit ? Math.min(Math.max(Number(req.query.limit), 1), 200) : 200;
+
+  let filtro: { id?: number; sesionCajaId?: number; fecha?: { gte: Date; lte: Date } };
+  if (ventaId) {
+    filtro = { id: ventaId };
+  } else if (sesionCajaId) {
+    filtro = { sesionCajaId };
+  } else {
+    const { desde, hasta } = rangoFechasDesdeTexto(req.query.desde, req.query.hasta);
+    filtro = { fecha: { gte: desde, lte: hasta } };
+  }
 
   const ventas = await prisma.venta.findMany({
-    where: {
-      estado: "pagada",
-      ...(ventaId ? { id: ventaId } : { fecha: { gte: desde, lte: hasta } }),
-    },
+    where: { estado: "pagada", ...filtro },
     include: { usuario: true, items: true, pagos: true },
     orderBy: { fecha: "desc" },
-    take: 200,
+    take: limit,
   });
   res.json(ventas);
 });

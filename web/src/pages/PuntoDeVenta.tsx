@@ -50,6 +50,9 @@ export default function PuntoDeVenta() {
   } | null>(null);
   const [productos, setProductos] = useState<Producto[]>([]);
   const [comunas, setComunas] = useState<Comuna[]>([]);
+  // Últimas 3 ventas de esta sesión de caja — a pedido del usuario, para
+  // verificar o reimprimir una venta reciente sin salir de Punto de Venta.
+  const [ultimasVentas, setUltimasVentas] = useState<Venta[]>([]);
   const [mostrarSelectorComuna, setMostrarSelectorComuna] = useState(false);
   const [buscar, setBuscar] = useState("");
   const [productoSeleccionado, setProductoSeleccionado] = useState<Producto | null>(null);
@@ -183,6 +186,21 @@ export default function PuntoDeVenta() {
         setMostrarFormComentario(true);
         return;
       }
+      if (e.key === "Escape") {
+        // Cierra el modal de "Ir a pagar" sin cancelar la venta ni perder
+        // los pagos ya agregados — para cuando al cliente se le ocurre
+        // agregar un producto más a último minuto: se cierra el modal,
+        // se agrega el producto al carrito y se vuelve a "Ir a pagar"
+        // cuando corresponda. Usa el valor de estado más reciente (no uno
+        // capturado al montar este listener) para no depender de si el
+        // modal ya estaba abierto cuando se registró el atajo.
+        setMostrarModalPago((abierto) => {
+          if (!abierto) return abierto;
+          e.preventDefault();
+          return false;
+        });
+        return;
+      }
       if (e.key === "Enter") {
         // Un Enter suelto (sin nada enfocado) abre el modal de "Ir a pagar"
         // directo, pensado para después de terminar de escanear los
@@ -245,6 +263,31 @@ export default function PuntoDeVenta() {
     }
     api.productos.listar({ buscar }).then(setProductos).catch((e) => setError(e.message));
   }, [buscar]);
+
+  function cargarUltimasVentas(sesionCajaId: number) {
+    api.caja
+      .buscarVentas({ sesionCajaId, limit: 3 })
+      .then(setUltimasVentas)
+      .catch(() => {});
+  }
+
+  useEffect(() => {
+    if (venta?.sesionCajaId) cargarUltimasVentas(venta.sesionCajaId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [venta?.sesionCajaId]);
+
+  // Trae de vuelta el vale completo (con productos y pagos) de una venta ya
+  // confirmada para reimprimirlo — reusa el mismo mecanismo que la
+  // impresión automática al confirmar (ver el efecto de ventaParaImprimir).
+  async function reimprimirVenta(ventaId: number) {
+    setError(null);
+    try {
+      const completa = await api.caja.obtenerVenta(ventaId);
+      setVentaParaImprimir(completa);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
 
   // Al abrir el modal de pago, el foco arranca en el medio de pago ya
   // activo (no en el monto) — así ← → funcionan de inmediato sin necesitar
@@ -614,6 +657,7 @@ export default function PuntoDeVenta() {
       setVentaParaImprimir(ventaConfirmada);
       setMostrarModalPago(false);
       await iniciarVenta();
+      cargarUltimasVentas(ventaConfirmada.sesionCajaId);
       setMensaje(`Venta #${ventaId} confirmada — imprimiendo vale...`);
     } catch (e) {
       setError((e as Error).message);
@@ -1267,6 +1311,25 @@ export default function PuntoDeVenta() {
               </>
             )}
           </section>
+
+          {ultimasVentas.length > 0 && (
+            <section className="tarjeta tarjeta-mini">
+              <h2>Últimas ventas</h2>
+              <ul className="lista-pagos-mini">
+                {ultimasVentas.map((v) => (
+                  <li key={v.id} className="fila-inline" style={{ justifyContent: "space-between" }}>
+                    <span>
+                      #{v.id} · {new Date(v.fecha).toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" })}{" "}
+                      · {formatoCLP(v.total)}
+                    </span>
+                    <button type="button" className="boton-chico" onClick={() => reimprimirVenta(v.id)}>
+                      Reimprimir
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
         </div>
       </div>
 

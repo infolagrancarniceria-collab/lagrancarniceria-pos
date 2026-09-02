@@ -1119,11 +1119,15 @@ export const api = {
       post<ResumenSesion>(`/api/caja/sesiones/${id}/cerrar`, data),
     ventaAbierta: () => get<Venta | null>("/api/caja/ventas/abierta"),
     obtenerVenta: (id: number) => get<Venta>(`/api/caja/ventas/${id}`),
-    buscarVentas: (params: { desde?: string; hasta?: string; ventaId?: number } = {}) => {
+    buscarVentas: (
+      params: { desde?: string; hasta?: string; ventaId?: number; sesionCajaId?: number; limit?: number } = {}
+    ) => {
       const qs = new URLSearchParams();
       if (params.desde) qs.set("desde", params.desde);
       if (params.hasta) qs.set("hasta", params.hasta);
       if (params.ventaId) qs.set("ventaId", String(params.ventaId));
+      if (params.sesionCajaId) qs.set("sesionCajaId", String(params.sesionCajaId));
+      if (params.limit) qs.set("limit", String(params.limit));
       const query = qs.toString();
       return get<Venta[]>(`/api/caja/ventas${query ? `?${query}` : ""}`);
     },
