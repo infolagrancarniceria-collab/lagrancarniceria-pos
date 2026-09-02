@@ -3,6 +3,8 @@ import { z } from "zod";
 import { prisma } from "../db";
 import { hashClave, verificarClaveConLimite } from "../lib/clave";
 import { decodificarCodigoBalanza } from "../lib/codigoBarras";
+import { calcularProximoPlu } from "../lib/proximoPlu";
+import { sincronizarCatalogoConWeb } from "../lib/syncWeb";
 import { rangoFechasDesdeTexto } from "./reportes";
 
 export const cajaRouter = Router();
@@ -627,6 +629,59 @@ cajaRouter.post("/ventas/:id/items/escanear", async (req, res) => {
   }
 
   const errorAgregar = await agregarItemAVenta(ventaId, producto.id, cantidad);
+  if (errorAgregar) return res.status(errorAgregar.status).json({ error: errorAgregar.error });
+
+  const ventaActualizada = await prisma.venta.findUnique({
+    where: { id: ventaId },
+    include: { items: { include: { producto: true, usuarioAnulacion: true } }, pagos: true, comuna: true },
+  });
+  res.status(201).json(ventaActualizada);
+});
+
+// --- Crear producto rápido (código escaneado sin match) y agregarlo ---
+// Cuando el código no calza con ningún producto (ni EAN ni PLU/peso de
+// balanza), en vez de dejar al cajero sin poder cobrar el producto, se crea
+// uno con los datos mínimos (descripción, precio, categoría) para poder
+// seguir la venta al tiro. Queda marcado creadoRapido=true para
+// completarlo después en Productos → "Revisión rápida" (PLU, marca,
+// código de barras real, etc.) sin bloquear la caja en el momento.
+const crearProductoRapidoSchema = z.object({
+  codigo: z.string().trim().min(1, "Falta el código escaneado"),
+  descripcion: z.string().trim().min(1, "Falta la descripción"),
+  precio: z.number().positive("El precio debe ser mayor a 0"),
+  categoriaId: z.number().int().positive("Falta la categoría"),
+});
+
+cajaRouter.post("/ventas/:id/items/crear-rapido", async (req, res) => {
+  const ventaId = Number(req.params.id);
+  const parsed = crearProductoRapidoSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0].message });
+  }
+  const { codigo, descripcion, precio, categoriaId } = parsed.data;
+
+  const categoria = await prisma.categoria.findUnique({ where: { id: categoriaId } });
+  if (!categoria) return res.status(400).json({ error: "La categoría indicada no existe" });
+
+  const eanExistente = await prisma.producto.findUnique({ where: { codigoBarras: codigo } });
+  if (eanExistente) {
+    return res.status(409).json({ error: `Ese código ya lo tiene "${eanExistente.descripcion}" — vuelve a escanearlo` });
+  }
+
+  const producto = await prisma.producto.create({
+    data: {
+      plu: await calcularProximoPlu(),
+      descripcion,
+      categoriaId,
+      precio,
+      flagBalanza: "NORMAL",
+      codigoBarras: codigo,
+      creadoRapido: true,
+    },
+  });
+  void sincronizarCatalogoConWeb();
+
+  const errorAgregar = await agregarItemAVenta(ventaId, producto.id, 1);
   if (errorAgregar) return res.status(errorAgregar.status).json({ error: errorAgregar.error });
 
   const ventaActualizada = await prisma.venta.findUnique({

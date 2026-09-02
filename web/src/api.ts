@@ -36,6 +36,9 @@ export interface Producto {
   duracion: string | null;
   codigoProveedor: string | null;
   aplicaIvaCarne: boolean;
+  // Se creó al vuelo desde Caja al escanear un código sin match — pendiente
+  // de completar en Productos → "Revisión rápida".
+  creadoRapido: boolean;
   activo: boolean;
   stockActual: number;
   umbralStockBajo: number | null;
@@ -834,13 +837,20 @@ export const api = {
   },
   productos: {
     listar: (
-      params: { buscar?: string; categoriaId?: number; stockNegativo?: boolean; incluirInactivos?: boolean } = {}
+      params: {
+        buscar?: string;
+        categoriaId?: number;
+        stockNegativo?: boolean;
+        incluirInactivos?: boolean;
+        creadoRapido?: boolean;
+      } = {}
     ) => {
       const qs = new URLSearchParams();
       if (params.buscar) qs.set("buscar", params.buscar);
       if (params.categoriaId) qs.set("categoriaId", String(params.categoriaId));
       if (params.stockNegativo) qs.set("stockNegativo", "true");
       if (params.incluirInactivos) qs.set("incluirInactivos", "true");
+      if (params.creadoRapido) qs.set("creadoRapido", "true");
       const query = qs.toString();
       return get<Producto[]>(`/api/productos${query ? `?${query}` : ""}`);
     },
@@ -853,11 +863,14 @@ export const api = {
       id: number,
       data: { flagBalanza: FlagBalanza; usuarioId: number; clave: string; motivoAutorizacion?: string }
     ) => put<Producto>(`/api/productos/${id}/flag-balanza`, data),
-    listarConCosto: (params: { buscar?: string; categoriaId?: number; incluirInactivos?: boolean } = {}) => {
+    listarConCosto: (
+      params: { buscar?: string; categoriaId?: number; incluirInactivos?: boolean; creadoRapido?: boolean } = {}
+    ) => {
       const qs = new URLSearchParams();
       if (params.buscar) qs.set("buscar", params.buscar);
       if (params.categoriaId) qs.set("categoriaId", String(params.categoriaId));
       if (params.incluirInactivos) qs.set("incluirInactivos", "true");
+      if (params.creadoRapido) qs.set("creadoRapido", "true");
       qs.set("incluirCosto", "true");
       return get<ProductoConUltimoCosto[]>(`/api/productos?${qs.toString()}`);
     },
@@ -870,7 +883,15 @@ export const api = {
     crear: (
       data: Omit<
         Producto,
-        "id" | "categoria" | "activo" | "stockActual" | "visibleEnWeb" | "disponibilidadWeb" | "featured" | "lowStock"
+        | "id"
+        | "categoria"
+        | "activo"
+        | "stockActual"
+        | "visibleEnWeb"
+        | "disponibilidadWeb"
+        | "featured"
+        | "lowStock"
+        | "creadoRapido"
       >
     ) => post<Producto>("/api/productos", data),
     actualizar: (
@@ -886,6 +907,7 @@ export const api = {
         | "disponibilidadWeb"
         | "featured"
         | "lowStock"
+        | "creadoRapido"
       >
     ) => put<Producto>(`/api/productos/${id}`, data),
     eliminar: (id: number) => del<void>(`/api/productos/${id}`),
@@ -1136,6 +1158,10 @@ export const api = {
       post<Venta>(`/api/caja/ventas/${ventaId}/items`, data),
     escanearCodigo: (ventaId: number, codigo: string) =>
       post<Venta>(`/api/caja/ventas/${ventaId}/items/escanear`, { codigo }),
+    crearProductoRapido: (
+      ventaId: number,
+      data: { codigo: string; descripcion: string; precio: number; categoriaId: number }
+    ) => post<Venta>(`/api/caja/ventas/${ventaId}/items/crear-rapido`, data),
     anularItem: (
       ventaId: number,
       itemId: number,

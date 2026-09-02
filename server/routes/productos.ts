@@ -6,6 +6,7 @@ import { prisma } from "../db";
 import { obtenerIdsCategoriaYDescendientes } from "../lib/categorias";
 import { verificarClaveConLimite } from "../lib/clave";
 import { sincronizarCatalogoConWeb } from "../lib/syncWeb";
+import { calcularProximoPlu } from "../lib/proximoPlu";
 
 export const productosRouter = Router();
 
@@ -42,6 +43,10 @@ productosRouter.get("/", async (req, res) => {
   // forma de encontrar ni reactivar ese producto. `incluirInactivos=true`
   // (checkbox "Mostrar eliminados" en Productos) también trae los inactivos.
   const incluirInactivos = req.query.incluirInactivos === "true";
+  // Pestaña "Revisión rápida" en Productos: solo los creados al vuelo desde
+  // Caja (ver POST /api/caja/ventas/:id/items/crear-rapido), pendientes de
+  // completar.
+  const creadoRapido = req.query.creadoRapido === "true";
 
   let categoriaIds: number[] | undefined;
   if (categoriaId) {
@@ -51,6 +56,7 @@ productosRouter.get("/", async (req, res) => {
   const productos = await prisma.producto.findMany({
     where: {
       ...(incluirInactivos ? {} : { activo: true }),
+      ...(creadoRapido ? { creadoRapido: true } : {}),
       ...(categoriaIds ? { categoriaId: { in: categoriaIds } } : {}),
       ...(stockNegativo ? { stockActual: { lt: 0 } } : {}),
       ...(buscar
@@ -98,9 +104,7 @@ productosRouter.get("/", async (req, res) => {
 // editable en el formulario, para productos que necesiten calzar con un
 // código específico ya conocido (ej. una lista de precios en papel).
 productosRouter.get("/proximo-plu", async (_req, res) => {
-  const productos = await prisma.producto.findMany({ select: { plu: true } });
-  const maxNumerico = productos.reduce((max, p) => (/^\d+$/.test(p.plu) ? Math.max(max, Number(p.plu)) : max), 0);
-  res.json({ plu: String(maxNumerico + 1) });
+  res.json({ plu: await calcularProximoPlu() });
 });
 
 // Para la pantalla "Mejor margen" (filtrar rápido qué productos convienen
@@ -334,6 +338,10 @@ productosRouter.put("/:id", async (req, res) => {
       ...data,
       codigoBarras: data.codigoBarras || null,
       descripcionCorta: data.esCombo ? undefined : data.descripcionCorta,
+      // Cualquier edición y guardado desde el formulario normal cuenta como
+      // "revisado" — saca al producto de la pestaña "Revisión rápida" de
+      // Productos sin necesidad de un botón aparte.
+      creadoRapido: false,
     },
     include: { categoria: true },
   });

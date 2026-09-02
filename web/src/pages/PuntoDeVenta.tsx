@@ -5,6 +5,7 @@ import {
   formatoCLP,
   redondearA10,
   TOLERANCIA_REDONDEO_EFECTIVO,
+  type Categoria,
   type Comuna,
   type FlagBalanza,
   type MedioPago,
@@ -16,9 +17,16 @@ import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 import { useEscanerCodigoBarras } from "../hooks/useEscanerCodigoBarras";
 import { TecladoNumerico } from "../components/TecladoNumerico";
 import ModalConfirmarClave from "../components/ModalConfirmarClave";
+import SelectorCategoria from "../components/SelectorCategoria";
 import { ValeVenta } from "../components/ValeVenta";
 import { imprimirSilencioso } from "../lib/imprimir";
 import ModalAlerta from "../components/ModalAlerta";
+
+// Mensaje exacto que devuelve POST /items/escanear cuando el código no
+// calza con ningún producto (ver server/routes/caja.ts) — se usa para
+// distinguir ese caso puntual de cualquier otro error y ofrecer crear el
+// producto al vuelo en vez de solo mostrar el error.
+const ERROR_CODIGO_SIN_MATCH = "No se encontró ningún producto con ese código";
 
 const ETIQUETAS_FLAG_BALANZA: Record<FlagBalanza, string> = {
   NORMAL: "Normal (unidad)",
@@ -93,6 +101,19 @@ export default function PuntoDeVenta() {
   const [flagBalanzaNuevoValor, setFlagBalanzaNuevoValor] = useState<FlagBalanza>("NORMAL");
   const [autorizandoFlagBalanza, setAutorizandoFlagBalanza] = useState(false);
 
+  // Crear producto rápido — cuando se escanea un código que no calza con
+  // ningún producto del catálogo, en vez de dejar al cajero sin poder
+  // cobrarlo se ofrece crearlo con lo mínimo (descripción, precio,
+  // categoría) y seguir la venta al tiro; queda marcado para completarlo
+  // después en Productos → "Revisión rápida".
+  const [categorias, setCategorias] = useState<Categoria[]>([]);
+  const [codigoSinMatch, setCodigoSinMatch] = useState<string | null>(null);
+  const [crearRapidoDescripcion, setCrearRapidoDescripcion] = useState("");
+  const [crearRapidoPrecio, setCrearRapidoPrecio] = useState("");
+  const [crearRapidoCategoriaId, setCrearRapidoCategoriaId] = useState<number | "">("");
+  const [crearRapidoError, setCrearRapidoError] = useState<string | null>(null);
+  const [creandoRapido, setCreandoRapido] = useState(false);
+
   const inputCantidadRef = useRef<HTMLInputElement>(null);
   const inputMontoPagoRef = useRef<HTMLInputElement>(null);
   const inputClienteNombreRef = useRef<HTMLInputElement>(null);
@@ -129,6 +150,7 @@ export default function PuntoDeVenta() {
   useEffect(() => {
     iniciarVenta();
     api.comunas.listar().then(setComunas).catch((e) => setError(e.message));
+    api.categorias.listar().then(setCategorias).catch((e) => setError(e.message));
   }, []);
 
   // Atajos de teclado para no ocupar espacio en pantalla ni depender del
@@ -198,6 +220,11 @@ export default function PuntoDeVenta() {
           if (!abierto) return abierto;
           e.preventDefault();
           return false;
+        });
+        setCodigoSinMatch((actual) => {
+          if (!actual) return actual;
+          e.preventDefault();
+          return null;
         });
         return;
       }
@@ -395,11 +422,54 @@ export default function PuntoDeVenta() {
       setMensaje(nuevo ? `Agregado: ${nuevo.producto.descripcion} (${nuevo.cantidad})` : "Producto agregado");
       setVenta(actualizada);
     } catch (e) {
-      setError((e as Error).message);
+      const mensaje = (e as Error).message;
+      if (mensaje === ERROR_CODIGO_SIN_MATCH) {
+        setCodigoSinMatch(codigo);
+        setCrearRapidoDescripcion("");
+        setCrearRapidoPrecio("");
+        setCrearRapidoCategoriaId("");
+        setCrearRapidoError(null);
+      } else {
+        setError(mensaje);
+      }
     }
   }, []);
 
   useEscanerCodigoBarras(escanearCodigo, !!venta);
+
+  async function confirmarCrearRapido() {
+    if (!venta || !codigoSinMatch) return;
+    const precio = Number(crearRapidoPrecio);
+    if (!crearRapidoDescripcion.trim()) {
+      setCrearRapidoError("Falta la descripción");
+      return;
+    }
+    if (!precio || precio <= 0) {
+      setCrearRapidoError("El precio debe ser mayor a 0");
+      return;
+    }
+    if (!crearRapidoCategoriaId) {
+      setCrearRapidoError("Falta la categoría");
+      return;
+    }
+    setCreandoRapido(true);
+    setCrearRapidoError(null);
+    try {
+      const actualizada = await api.caja.crearProductoRapido(venta.id, {
+        codigo: codigoSinMatch,
+        descripcion: crearRapidoDescripcion.trim(),
+        precio,
+        categoriaId: crearRapidoCategoriaId,
+      });
+      setVenta(actualizada);
+      setMensaje(`Producto creado y agregado: ${crearRapidoDescripcion.trim()}`);
+      setCodigoSinMatch(null);
+    } catch (e) {
+      setCrearRapidoError((e as Error).message);
+    } finally {
+      setCreandoRapido(false);
+    }
+  }
 
   // Anular un ítem del carrito siempre pide clave de supervisor y el nombre
   // de quien autoriza (no necesariamente el cajero con la sesión abierta),
@@ -1411,6 +1481,50 @@ export default function PuntoDeVenta() {
             >
               {procesando ? "Confirmando..." : "Cerrar venta e imprimir (Enter)"}
             </button>
+          </div>
+        </div>
+      )}
+
+      {codigoSinMatch && (
+        <div className="modal-fondo">
+          <div className="modal-contenido tarjeta">
+            <h2>Producto no encontrado</h2>
+            <p className="ayuda">
+              El código <strong>{codigoSinMatch}</strong> no calza con ningún producto del catálogo. Puedes crearlo
+              rápido con lo mínimo para seguir la venta — queda marcado en Productos → "Revisión rápida" para
+              completarlo con más calma después.
+            </p>
+            {crearRapidoError && <ModalAlerta mensaje={crearRapidoError} onCerrar={() => setCrearRapidoError(null)} />}
+            <label>
+              Descripción
+              <input
+                type="text"
+                value={crearRapidoDescripcion}
+                onChange={(e) => setCrearRapidoDescripcion(e.target.value)}
+                autoFocus
+              />
+            </label>
+            <label>
+              Precio de venta
+              <input
+                type="number"
+                min="1"
+                value={crearRapidoPrecio}
+                onChange={(e) => setCrearRapidoPrecio(e.target.value)}
+              />
+            </label>
+            <label>
+              Categoría
+              <SelectorCategoria categorias={categorias} value={crearRapidoCategoriaId} onChange={setCrearRapidoCategoriaId} />
+            </label>
+            <div className="fila-inline" style={{ justifyContent: "flex-end" }}>
+              <button type="button" onClick={() => setCodigoSinMatch(null)} disabled={creandoRapido}>
+                Cancelar
+              </button>
+              <button type="button" className="boton boton-primario" onClick={confirmarCrearRapido} disabled={creandoRapido}>
+                {creandoRapido ? "Creando..." : "Crear y agregar a la venta"}
+              </button>
+            </div>
           </div>
         </div>
       )}

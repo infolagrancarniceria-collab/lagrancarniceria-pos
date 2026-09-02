@@ -752,6 +752,16 @@ select {
   font-size: 0.85rem;
   line-height: 1;
 }
+/* La fila de "Nuevo precio de venta" reusa .boton-chico para "Guardar"/
+   "Cancelar" (texto, no un ícono) — el cuadrado fijo de arriba (pensado
+   para los íconos 🏷️/✕ del carrito) les recortaba el texto casi entero
+   (Chrome clipea el contenido de un <button> a su caja). Se pisa acá con
+   más especificidad para que vuelvan a su tamaño normal según el texto. */
+.carrito-scroll .fila-edicion-precio .boton-chico {
+  width: auto;
+  height: auto;
+  padding: 0.35rem 0.7rem;
+}
 .carrito-scroll td .fila-inline {
   gap: 0.3rem;
   margin-bottom: 0;
@@ -827,6 +837,13 @@ select {
 }
 .fila-edicion-precio td {
   background: var(--color-oro-fondo);
+}
+/* El ancho genérico de .input-chico (4.5rem, pensado para descuentos de
+   pocos dígitos) dejaba cortada la cifra al escribir un precio de hasta
+   6 dígitos (ej. $100.000), más aún con el tamaño de letra agrandado de
+   Punto de venta (".punto-de-venta .tabla"). */
+.fila-edicion-precio input.input-chico {
+  width: 7rem;
 }
 
 /* Margen (%) destacado — a pedido del usuario, para que salte a la vista

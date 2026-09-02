@@ -127,6 +127,13 @@ model Producto {
   // la categoría.
   aplicaIvaCarne Boolean @default(false)
 
+  // Se creó al vuelo desde Caja al escanear un código que no existía en el
+  // catálogo (ver POST /api/caja/ventas/:id/items/crear-rapido), con solo
+  // los datos mínimos para poder cobrar en el momento — queda marcado true
+  // hasta que alguien lo complete en Productos (pestaña "Revisión rápida"),
+  // donde se limpia la marca al guardar cualquier edición.
+  creadoRapido Boolean @default(false)
+
   activo        Boolean  @default(true)
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt

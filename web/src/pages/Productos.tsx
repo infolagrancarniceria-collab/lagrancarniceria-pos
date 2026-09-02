@@ -470,6 +470,12 @@ export default function Productos() {
                 <td>
                   {p.descripcion}
                   {p.esCombo && <span className="ayuda"> (combo)</span>}
+                  {p.creadoRapido && (
+                    <span className="error" title="Creado al vuelo desde Caja — falta completar sus datos">
+                      {" "}
+                      ⚡ pendiente
+                    </span>
+                  )}
                 </td>
                 <td>{p.categoria.nombre}</td>
                 <td>{p.flagBalanza}</td>
