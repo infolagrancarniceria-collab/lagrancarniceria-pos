@@ -202,7 +202,14 @@ async function calcularResumenSesion(sesionId: number) {
     totalCobrosCredito += cobro.monto;
   }
 
-  return { cantidadVentas: ventas.length, totalVentas, totalPorMedio, totalCobrosCredito };
+  // Retiros de caja (ver modelo RetiroCaja) — plata que salió en efectivo
+  // durante el turno sin ser parte de ninguna venta (ej. pagarle a un
+  // proveedor que llega con mercadería) — se resta del efectivo esperado
+  // más abajo para que no aparezca como una diferencia de caja al cerrar.
+  const retiros = await prisma.retiroCaja.findMany({ where: { sesionCajaId: sesionId }, include: { usuarioAutorizo: true } });
+  const totalRetiros = retiros.reduce((s, r) => s + r.monto, 0);
+
+  return { cantidadVentas: ventas.length, totalVentas, totalPorMedio, totalCobrosCredito, retiros, totalRetiros };
 }
 
 cajaRouter.get("/sesiones/:id/resumen", async (req, res) => {
@@ -211,7 +218,7 @@ cajaRouter.get("/sesiones/:id/resumen", async (req, res) => {
   if (!sesion) return res.status(404).json({ error: "Sesión no encontrada" });
 
   const resumen = await calcularResumenSesion(id);
-  const efectivoEsperado = sesion.fondoFijoInicial + resumen.totalPorMedio.efectivo;
+  const efectivoEsperado = sesion.fondoFijoInicial + resumen.totalPorMedio.efectivo - resumen.totalRetiros;
 
   res.json({
     sesion,
@@ -219,6 +226,54 @@ cajaRouter.get("/sesiones/:id/resumen", async (req, res) => {
     efectivoEsperado,
     diferencia: sesion.efectivoContado != null ? sesion.efectivoContado - efectivoEsperado : null,
   });
+});
+
+// --- Retiro de caja ---
+// Plata que sale en efectivo del cajón durante el turno sin ser parte de
+// una venta (ej. pagarle a un proveedor que llega con mercadería a mitad
+// del día) — mismo patrón de autorización que anular una venta (clave de
+// supervisor + quién autoriza), porque es plata saliendo de la caja sin
+// que quede un comprobante de venta de por medio.
+const registrarRetiroSchema = z.object({
+  monto: z.number().positive("El monto debe ser mayor a 0"),
+  motivo: z.string().trim().min(1, "Falta el motivo del retiro"),
+  usuarioId: z.number().int().positive(),
+  clave: z.string().trim().min(1, "Falta la clave de supervisor"),
+});
+
+cajaRouter.post("/sesiones/:id/retiros", async (req, res) => {
+  const sesionId = Number(req.params.id);
+  const parsed = registrarRetiroSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0].message });
+  }
+  const { monto, motivo, usuarioId, clave } = parsed.data;
+
+  const usuario = await validarUsuario(usuarioId);
+  if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
+
+  const sesion = await prisma.sesionCaja.findUnique({ where: { id: sesionId } });
+  if (!sesion) return res.status(404).json({ error: "Sesión no encontrada" });
+  if (sesion.estado !== "abierta") return res.status(400).json({ error: "Esta caja ya está cerrada" });
+
+  const claveSupervisor = await prisma.claveSupervisor.findFirst();
+  if (!claveSupervisor) {
+    return res.status(403).json({ error: "Clave de supervisor incorrecta" });
+  }
+  const resultadoClave = verificarClaveConLimite(req.ip ?? "desconocido", clave, claveSupervisor.hashClave);
+  if (resultadoClave.bloqueado) {
+    return res.status(429).json({ error: `Demasiados intentos fallidos — espera ${resultadoClave.segundosRestantes} segundos e intenta de nuevo` });
+  }
+  if (!resultadoClave.valida) {
+    return res.status(403).json({ error: "Clave de supervisor incorrecta" });
+  }
+
+  const retiro = await prisma.retiroCaja.create({
+    data: { sesionCajaId: sesionId, monto, motivo: motivo.trim(), usuarioAutorizoId: usuarioId },
+    include: { usuarioAutorizo: true },
+  });
+
+  res.status(201).json(retiro);
 });
 
 const cerrarSesionSchema = z.object({
@@ -267,7 +322,7 @@ cajaRouter.post("/sesiones/:id/cerrar", async (req, res) => {
 
   const sesionActualizada = await prisma.sesionCaja.findUnique({ where: { id } });
   const resumen = await calcularResumenSesion(id);
-  const efectivoEsperado = sesionActualizada!.fondoFijoInicial + resumen.totalPorMedio.efectivo;
+  const efectivoEsperado = sesionActualizada!.fondoFijoInicial + resumen.totalPorMedio.efectivo - resumen.totalRetiros;
 
   res.json({
     sesion: sesionActualizada,

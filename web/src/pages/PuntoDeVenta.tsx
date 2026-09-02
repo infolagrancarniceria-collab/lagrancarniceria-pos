@@ -52,10 +52,12 @@ export default function PuntoDeVenta() {
   // antes de que el ticket salga impreso (ver confirmarVentaConVuelto).
   const [vueltoAMostrar, setVueltoAMostrar] = useState<{
     ventaId: number;
+    pagoId: number;
     vuelto: number;
     entregado: number;
     venta: number;
   } | null>(null);
+  const [corrigiendoVuelto, setCorrigiendoVuelto] = useState(false);
   const [productos, setProductos] = useState<Producto[]>([]);
   const [comunas, setComunas] = useState<Comuna[]>([]);
   // Últimas 3 ventas de esta sesión de caja — a pedido del usuario, para
@@ -591,8 +593,19 @@ export default function PuntoDeVenta() {
         // Con vuelto de por medio, la venta queda pagada pero SIN confirmar
         // todavía: hay que darle tiempo al cajero de entregar el vuelto al
         // cliente antes de que salga el ticket. Se confirma recién al
-        // cerrar este popup (ver confirmarVentaConVuelto).
-        setVueltoAMostrar({ ventaId: actualizada.id, vuelto: vueltoAEntregar, entregado: monto, venta: montoACobrar });
+        // cerrar este popup (ver confirmarVentaConVuelto). Se guarda el id
+        // del pago recién creado (el de mayor id, por si ya había otros
+        // pagos parciales antes) para poder corregirlo sin salir del popup
+        // (ver corregirPagoConVuelto) si el cajero se equivocó con el
+        // monto entregado.
+        const pagoRecienCreado = actualizada.pagos.reduce((max, p) => (p.id > max.id ? p : max));
+        setVueltoAMostrar({
+          ventaId: actualizada.id,
+          pagoId: pagoRecienCreado.id,
+          vuelto: vueltoAEntregar,
+          entregado: monto,
+          venta: montoACobrar,
+        });
       } else if (cubiertoAhora) {
         await ejecutarConfirmarVenta(actualizada.id);
       }
@@ -751,6 +764,32 @@ export default function PuntoDeVenta() {
     const ventaId = vueltoAMostrar.ventaId;
     setVueltoAMostrar(null);
     await ejecutarConfirmarVenta(ventaId);
+  }
+
+  // "Corregir monto" en el popup de vuelto — para cuando el cliente entrega
+  // más plata después de haber ingresado el pago (ej. pagó $11.000 al
+  // toque y después completa con $40 más para dejarlo exacto). Antes no
+  // había vuelta atrás una vez que aparecía el popup: había que cerrar la
+  // venta con el vuelto mal calculado y arreglarlo después a mano. Saca el
+  // pago en efectivo recién agregado y vuelve a abrir "Ir a pagar" con el
+  // mismo monto precargado, listo para ajustarlo y volver a confirmar.
+  async function corregirPagoConVuelto() {
+    if (!vueltoAMostrar || !venta) return;
+    setError(null);
+    setCorrigiendoVuelto(true);
+    try {
+      const actualizada = await api.caja.quitarPago(vueltoAMostrar.ventaId, vueltoAMostrar.pagoId);
+      setVenta(actualizada);
+      setMedioPago("efectivo");
+      setMontoPago(String(vueltoAMostrar.entregado));
+      setVueltoAMostrar(null);
+      setMostrarModalPago(true);
+      setTimeout(() => inputMontoPagoRef.current?.focus(), 0);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setCorrigiendoVuelto(false);
+    }
   }
 
   // Igual que anular un ítem, cancelar toda la venta pide clave de
@@ -1476,10 +1515,19 @@ export default function PuntoDeVenta() {
               type="button"
               className="boton boton-primario"
               onClick={confirmarVentaConVuelto}
-              disabled={procesando}
+              disabled={procesando || corrigiendoVuelto}
               autoFocus
             >
               {procesando ? "Confirmando..." : "Cerrar venta e imprimir (Enter)"}
+            </button>
+            <button
+              type="button"
+              className="boton-chico"
+              title="Si el cliente entregó otro monto (ej. completó con más plata), corrige el pago antes de cerrar la venta"
+              onClick={corregirPagoConVuelto}
+              disabled={procesando || corrigiendoVuelto}
+            >
+              {corrigiendoVuelto ? "Corrigiendo..." : "Corregir monto entregado"}
             </button>
           </div>
         </div>

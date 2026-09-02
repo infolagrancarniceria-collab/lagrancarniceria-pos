@@ -670,12 +670,24 @@ export interface SesionCaja {
   usuarioAutorizoFondo?: Usuario | null;
 }
 
+export interface RetiroCaja {
+  id: number;
+  sesionCajaId: number;
+  monto: number;
+  motivo: string;
+  usuarioAutorizoId: number;
+  usuarioAutorizo?: Usuario;
+  fecha: string;
+}
+
 export interface ResumenSesion {
   sesion: SesionCaja;
   cantidadVentas: number;
   totalVentas: number;
   totalPorMedio: Record<string, number>;
   totalCobrosCredito: number;
+  retiros: RetiroCaja[];
+  totalRetiros: number;
   efectivoEsperado: number;
   diferencia: number | null;
 }
@@ -1139,6 +1151,10 @@ export const api = {
     resumenSesion: (id: number) => get<ResumenSesion>(`/api/caja/sesiones/${id}/resumen`),
     cerrarSesion: (id: number, data: { efectivoContado: number; usuarioId: number }) =>
       post<ResumenSesion>(`/api/caja/sesiones/${id}/cerrar`, data),
+    registrarRetiro: (
+      sesionId: number,
+      data: { monto: number; motivo: string; usuarioId: number; clave: string }
+    ) => post<RetiroCaja>(`/api/caja/sesiones/${sesionId}/retiros`, data),
     ventaAbierta: () => get<Venta | null>("/api/caja/ventas/abierta"),
     obtenerVenta: (id: number) => get<Venta>(`/api/caja/ventas/${id}`),
     buscarVentas: (

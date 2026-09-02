@@ -2,12 +2,15 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, formatoCLP, type ResumenSesion, type SesionCaja } from "../api";
 import ModalAlerta from "../components/ModalAlerta";
+import ModalRetiroCaja from "../components/ModalRetiroCaja";
+import { mostrarToast } from "../lib/toast";
 
 export default function Caja() {
   const [claveConfigurada, setClaveConfigurada] = useState<boolean | null>(null);
   const [sesion, setSesion] = useState<SesionCaja | null | undefined>(undefined);
   const [resumen, setResumen] = useState<ResumenSesion | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [mostrarRetiro, setMostrarRetiro] = useState(false);
 
   useEffect(() => {
     api.caja.estadoClave().then((r) => setClaveConfigurada(r.configurada)).catch((e) => setError(e.message));
@@ -19,6 +22,14 @@ export default function Caja() {
       api.caja.resumenSesion(sesion.id).then(setResumen).catch((e) => setError(e.message));
     }
   }, [sesion]);
+
+  async function confirmarRetiro(monto: number, motivo: string, usuarioId: number, clave: string) {
+    if (!sesion) return;
+    await api.caja.registrarRetiro(sesion.id, { monto, motivo, usuarioId, clave });
+    setMostrarRetiro(false);
+    mostrarToast("Retiro registrado", `${formatoCLP(monto)} — ${motivo}`);
+    api.caja.resumenSesion(sesion.id).then(setResumen).catch((e) => setError(e.message));
+  }
 
   if (claveConfigurada === null || sesion === undefined) {
     return (
@@ -86,6 +97,9 @@ export default function Caja() {
           <Link to="/comunas" className="boton">
             Comunas de despacho
           </Link>
+          <button type="button" onClick={() => setMostrarRetiro(true)}>
+            Retiro de caja
+          </button>
         </div>
       </div>
       {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
@@ -117,10 +131,37 @@ export default function Caja() {
               <div>
                 <strong>Cobros de crédito recibidos hoy:</strong> {formatoCLP(resumen.totalCobrosCredito)}
               </div>
+              <div>
+                <strong>Retiros de caja:</strong> {formatoCLP(resumen.totalRetiros)}
+              </div>
             </div>
+            {resumen.retiros.length > 0 && (
+              <table className="tabla">
+                <thead>
+                  <tr>
+                    <th>Hora</th>
+                    <th>Monto</th>
+                    <th>Motivo</th>
+                    <th>Autorizó</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {resumen.retiros.map((r) => (
+                    <tr key={r.id}>
+                      <td>{new Date(r.fecha).toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" })}</td>
+                      <td>{formatoCLP(r.monto)}</td>
+                      <td>{r.motivo}</td>
+                      <td>{r.usuarioAutorizo?.nombre ?? "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </>
         )}
       </div>
+
+      {mostrarRetiro && <ModalRetiroCaja onConfirmar={confirmarRetiro} onCancelar={() => setMostrarRetiro(false)} />}
     </div>
   );
 }

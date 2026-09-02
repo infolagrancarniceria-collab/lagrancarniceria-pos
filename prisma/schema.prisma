@@ -31,6 +31,7 @@ model Usuario {
   itemsAnulados              ItemVenta[]  @relation("ItemsAnuladosPorUsuario")
   cobrosDeCreditoRegistrados PagoVenta[]  @relation("CobrosDeCreditoRegistradosPorUsuario")
   gastos                     Gasto[]
+  retirosCajaAutorizados     RetiroCaja[]
 
   cajasCamaraCreadas          CajaCamara[]
   lotesCamaraCreados          LoteCamara[]
@@ -396,6 +397,28 @@ model SesionCaja {
 
   ventas          Venta[]
   cobrosDeCredito PagoVenta[] @relation("CobrosDeCredito")
+  retiros         RetiroCaja[]
+}
+
+// Plata que sale físicamente de la caja durante el turno sin ser parte de
+// una venta — el caso típico es pagarle en efectivo a un proveedor que
+// llega con mercadería a mitad del día. Se descuenta del efectivo esperado
+// al sacar el reporte X/Z (ver calcularResumenSesion) para que ese retiro
+// no aparezca como una diferencia de caja al cerrar. Mismo patrón de
+// autorización que anular una venta: clave de supervisor + quién autoriza.
+model RetiroCaja {
+  id Int @id @default(autoincrement())
+
+  sesionCajaId Int
+  sesionCaja   SesionCaja @relation(fields: [sesionCajaId], references: [id])
+
+  monto  Float
+  motivo String
+
+  usuarioAutorizoId Int
+  usuarioAutorizo   Usuario @relation(fields: [usuarioAutorizoId], references: [id])
+
+  fecha DateTime @default(now())
 }
 
 // Opciones de corte que se muestran en la web para una familia de producto
