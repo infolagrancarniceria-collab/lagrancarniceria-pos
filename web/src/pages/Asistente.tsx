@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   api,
+  calcularMargen,
   formatoCLP,
+  type Producto,
   type PropuestaAsistente,
   type DestinoSalidaCamara,
   type FamiliaCamara,
@@ -205,7 +207,29 @@ const COLUMNAS_CLP = new Set(["costoUnitario", "precioActual", "precioNuevo"]);
 // Tabla de revisión para propuestas masivas: muestra cada línea que se va a
 // aplicar (producto, cantidad, precio, etc.) antes de confirmar — el resumen
 // en texto no alcanza para revisar con confianza un lote de varios cambios.
+//
+// Para una entrada de factura (costoUnitario + productoId en cada línea) se
+// suman "Precio venta" y "Margen" calculados al vuelo contra el precio de
+// venta actual del catálogo — así se ve de inmediato, línea por línea, si
+// el costo nuevo de la factura sigue dejando margen antes de confirmar, sin
+// tener que ir a revisarlo aparte a Productos.
 function TablaRevisionMasiva({ items }: { items: Record<string, unknown>[] }) {
+  const esFactura = items.length > 0 && "costoUnitario" in items[0] && "productoId" in items[0];
+  const [productosPorId, setProductosPorId] = useState<Record<number, Producto>>({});
+
+  useEffect(() => {
+    if (!esFactura) return;
+    const ids = [...new Set(items.map((i) => Number(i.productoId)))];
+    Promise.all(ids.map((id) => api.productos.obtener(id).catch(() => null))).then((productos) => {
+      const mapa: Record<number, Producto> = {};
+      productos.forEach((p, i) => {
+        if (p) mapa[ids[i]] = p;
+      });
+      setProductosPorId(mapa);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [esFactura, JSON.stringify(items.map((i) => i.productoId))]);
+
   if (items.length === 0) return null;
   const columnas = Object.keys(items[0]).filter((k) => k !== "productoId");
   return (
@@ -215,20 +239,38 @@ function TablaRevisionMasiva({ items }: { items: Record<string, unknown>[] }) {
           {columnas.map((c) => (
             <th key={c}>{ETIQUETAS_COLUMNA[c] ?? c}</th>
           ))}
+          {esFactura && <th>Precio venta</th>}
+          {esFactura && <th>Margen</th>}
         </tr>
       </thead>
       <tbody>
-        {items.map((item, i) => (
-          <tr key={i}>
-            {columnas.map((c) => (
-              <td key={c}>
-                {COLUMNAS_CLP.has(c) && typeof item[c] === "number"
-                  ? formatoCLP(item[c] as number)
-                  : String(item[c] ?? "—")}
-              </td>
-            ))}
-          </tr>
-        ))}
+        {items.map((item, i) => {
+          const producto = esFactura ? productosPorId[Number(item.productoId)] : undefined;
+          const margen = producto ? calcularMargen(producto.precio, Number(item.costoUnitario) || null) : null;
+          return (
+            <tr key={i}>
+              {columnas.map((c) => (
+                <td key={c}>
+                  {COLUMNAS_CLP.has(c) && typeof item[c] === "number"
+                    ? formatoCLP(item[c] as number)
+                    : String(item[c] ?? "—")}
+                </td>
+              ))}
+              {esFactura && <td>{producto ? formatoCLP(producto.precio) : "—"}</td>}
+              {esFactura && (
+                <td>
+                  {margen != null ? (
+                    <span className={`margen-destacado ${margen < 0 ? "margen-negativo" : ""}`}>
+                      {margen.toFixed(1)}%
+                    </span>
+                  ) : (
+                    <span className="ayuda">—</span>
+                  )}
+                </td>
+              )}
+            </tr>
+          );
+        })}
       </tbody>
     </table>
   );
