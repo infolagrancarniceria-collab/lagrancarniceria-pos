@@ -460,6 +460,14 @@ model Venta {
   estado String   @default("abierta") // "abierta" | "pagada" | "anulada"
   total  Float    @default(0)
 
+  // "Caja auxiliar": normalmente solo hay UNA venta "abierta" a la vez por
+  // sesión (ver POST /ventas) — este flag marca las que el cajero abrió
+  // aparte, a propósito, para seguir cobrando a otros clientes mientras una
+  // venta queda esperando algo (ej. una transferencia que se está
+  // confirmando) sin bloquear la caja. Puramente informativo: no cambia
+  // ningún cálculo, solo cómo se etiqueta la pestaña en Punto de Venta.
+  esAuxiliar Boolean @default(false)
+
   // Comentario libre y opcional sobre la venta (ej. "cliente pidió sin
   // hueso", "entregar mañana") — se muestra también en el vale impreso.
   comentario String?

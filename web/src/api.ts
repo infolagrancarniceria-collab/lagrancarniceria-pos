@@ -628,6 +628,10 @@ export interface Venta {
   fecha: string;
   estado: "abierta" | "pagada" | "anulada";
   total: number;
+  // "Caja auxiliar" — ver comentario de Venta.esAuxiliar en el schema del
+  // servidor: marca una venta abierta a propósito en paralelo a la
+  // principal, para seguir cobrando mientras otra queda esperando algo.
+  esAuxiliar: boolean;
   comentario: string | null;
   esDespacho: boolean;
   comunaId: number | null;
@@ -1163,6 +1167,7 @@ export const api = {
       data: { monto: number; motivo: string; usuarioId: number; clave: string }
     ) => post<RetiroCaja>(`/api/caja/sesiones/${sesionId}/retiros`, data),
     ventaAbierta: () => get<Venta | null>("/api/caja/ventas/abierta"),
+    ventasAbiertas: () => get<Venta[]>("/api/caja/ventas/abiertas"),
     obtenerVenta: (id: number) => get<Venta>(`/api/caja/ventas/${id}`),
     buscarVentas: (
       params: { desde?: string; hasta?: string; ventaId?: number; sesionCajaId?: number; limit?: number } = {}
@@ -1176,7 +1181,8 @@ export const api = {
       const query = qs.toString();
       return get<Venta[]>(`/api/caja/ventas${query ? `?${query}` : ""}`);
     },
-    crearVenta: (usuarioId: number) => post<Venta>("/api/caja/ventas", { usuarioId }),
+    crearVenta: (usuarioId: number, auxiliar?: boolean) =>
+      post<Venta>("/api/caja/ventas", { usuarioId, auxiliar }),
     agregarItem: (ventaId: number, data: { productoId: number; cantidad: number }) =>
       post<Venta>(`/api/caja/ventas/${ventaId}/items`, data),
     escanearCodigo: (ventaId: number, codigo: string) =>

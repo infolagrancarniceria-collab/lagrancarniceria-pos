@@ -303,16 +303,23 @@ cajaRouter.post("/sesiones/:id/cerrar", async (req, res) => {
   // nada), se descarta sola acá, sin pedir nada — no hay ningún dato real
   // que perder. Solo bloquea el cierre si tiene algún ítem real (aunque
   // esté anulado, porque ahí sí hubo actividad que alguien ya autorizó).
-  const ventaAbierta = await prisma.venta.findFirst({
+  // Con "caja auxiliar" puede haber más de una venta abierta a la vez (ver
+  // Venta.esAuxiliar), así que se revisan todas, no solo la primera.
+  const ventasAbiertas = await prisma.venta.findMany({
     where: { sesionCajaId: id, estado: "abierta" },
     include: { items: true },
   });
-  if (ventaAbierta) {
-    if (ventaAbierta.items.length === 0) {
-      await prisma.venta.delete({ where: { id: ventaAbierta.id } });
-    } else {
-      return res.status(400).json({ error: "Hay una venta sin terminar — confírmala o cancélala antes de cerrar la caja" });
-    }
+  const conItems = ventasAbiertas.filter((v) => v.items.length > 0);
+  if (conItems.length > 0) {
+    return res.status(400).json({
+      error:
+        conItems.length === 1
+          ? "Hay una venta sin terminar — confírmala o cancélala antes de cerrar la caja"
+          : `Hay ${conItems.length} ventas sin terminar (incluida al menos una caja auxiliar) — confírmalas o cancélalas antes de cerrar la caja`,
+    });
+  }
+  for (const v of ventasAbiertas) {
+    await prisma.venta.delete({ where: { id: v.id } });
   }
 
   await prisma.sesionCaja.update({
@@ -374,6 +381,23 @@ cajaRouter.get("/ventas/abierta", async (_req, res) => {
   res.json(venta);
 });
 
+// Todas las ventas abiertas de la sesión actual, no solo la primera — ver
+// "Caja auxiliar" (Venta.esAuxiliar): el cajero puede tener más de una
+// venta en curso a la vez (ej. una esperando que se confirme una
+// transferencia, mientras cobra otra). Debe ir ANTES de "/ventas/:id" en
+// las rutas (si no, Express intentaría matchear "abiertas" como el id).
+cajaRouter.get("/ventas/abiertas", async (_req, res) => {
+  const sesion = await prisma.sesionCaja.findFirst({ where: { estado: "abierta" } });
+  if (!sesion) return res.json([]);
+
+  const ventas = await prisma.venta.findMany({
+    where: { sesionCajaId: sesion.id, estado: "abierta" },
+    include: { items: { include: { producto: true, usuarioAnulacion: true } }, pagos: true, comuna: true },
+    orderBy: { id: "asc" },
+  });
+  res.json(ventas);
+});
+
 cajaRouter.get("/ventas/:id", async (req, res) => {
   const venta = await prisma.venta.findUnique({
     where: { id: Number(req.params.id) },
@@ -389,14 +413,22 @@ cajaRouter.get("/ventas/:id", async (req, res) => {
   res.json(venta);
 });
 
-const crearVentaSchema = z.object({ usuarioId: z.number().int().positive() });
+const crearVentaSchema = z.object({
+  usuarioId: z.number().int().positive(),
+  // "Caja auxiliar" — si es true, se salta el bloqueo de "ya hay una venta
+  // en curso" y crea una segunda venta abierta a propósito (ver comentario
+  // de Venta.esAuxiliar en el schema). Sin este flag, el bloqueo se
+  // mantiene igual que siempre: es la red de seguridad contra un doble
+  // llamado accidental (ej. la pantalla se cargó dos veces).
+  auxiliar: z.boolean().optional(),
+});
 
 cajaRouter.post("/ventas", async (req, res) => {
   const parsed = crearVentaSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.issues[0].message });
   }
-  const { usuarioId } = parsed.data;
+  const { usuarioId, auxiliar } = parsed.data;
 
   const usuario = await validarUsuario(usuarioId);
   if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
@@ -404,11 +436,13 @@ cajaRouter.post("/ventas", async (req, res) => {
   const sesion = await prisma.sesionCaja.findFirst({ where: { estado: "abierta" } });
   if (!sesion) return res.status(400).json({ error: "No hay una caja abierta" });
 
-  const yaAbierta = await prisma.venta.findFirst({ where: { sesionCajaId: sesion.id, estado: "abierta" } });
-  if (yaAbierta) return res.status(409).json({ error: "Ya hay una venta en curso", ventaId: yaAbierta.id });
+  if (!auxiliar) {
+    const yaAbierta = await prisma.venta.findFirst({ where: { sesionCajaId: sesion.id, estado: "abierta" } });
+    if (yaAbierta) return res.status(409).json({ error: "Ya hay una venta en curso", ventaId: yaAbierta.id });
+  }
 
   const venta = await prisma.venta.create({
-    data: { sesionCajaId: sesion.id, usuarioId },
+    data: { sesionCajaId: sesion.id, usuarioId, esAuxiliar: !!auxiliar },
     include: { items: true, pagos: true, comuna: true },
   });
   res.status(201).json(venta);

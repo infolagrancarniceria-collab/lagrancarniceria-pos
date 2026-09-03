@@ -39,6 +39,28 @@ export default function PuntoDeVenta() {
   const navigate = useNavigate();
 
   const [venta, setVenta] = useState<Venta | null>(null);
+  // "Caja auxiliar" — normalmente hay una sola venta abierta a la vez, pero
+  // el cajero puede abrir otra en paralelo para seguir cobrando mientras
+  // una queda esperando algo (ej. una transferencia por confirmar) sin
+  // bloquear la caja (ver Venta.esAuxiliar). "venta" sigue siendo la que
+  // se ve y edita en pantalla; esta lista es solo para la barra de
+  // pestañas y para poder cambiar de una a otra sin perder su carrito.
+  const [ventasAbiertas, setVentasAbiertas] = useState<Venta[]>([]);
+  const [abriendoAuxiliar, setAbriendoAuxiliar] = useState(false);
+
+  // Sincroniza tanto la venta activa en pantalla como su copia en la lista
+  // de pestañas — casi todas las acciones de este archivo (agregar ítem,
+  // pago, descuento, etc.) devuelven la venta actualizada del servidor y
+  // deben pasar por acá en vez de "setVenta" directo, para que la pestaña
+  // no quede mostrando datos viejos.
+  function actualizarVenta(actualizada: Venta) {
+    setVenta(actualizada);
+    setVentasAbiertas((actual) => {
+      const existe = actual.some((v) => v.id === actualizada.id);
+      return existe ? actual.map((v) => (v.id === actualizada.id ? actualizada : v)) : [...actual, actualizada];
+    });
+  }
+
   // Venta recién confirmada, guardada solo para imprimir el vale sola en
   // segundo plano — no se muestra en pantalla (ver ".vale-oculto-hasta-imprimir"
   // en styles.css), para que el cajero se quede en Punto de Venta listo para
@@ -136,6 +158,19 @@ export default function PuntoDeVenta() {
   useEffect(() => {
     setMostrarSelectorComuna(venta?.esDespacho ?? false);
     setComentarioValor(venta?.comentario ?? "");
+    // Al cambiar de venta activa (ej. cambiar de pestaña entre la venta
+    // principal y una caja auxiliar) se cierra cualquier formulario o
+    // modal que estuviera editando algo de la venta anterior — sus datos
+    // (qué ítem, qué pago a medio llenar) ya no corresponden a la venta
+    // que quedó en pantalla.
+    setMostrarModalPago(false);
+    setItemEditandoPrecio(null);
+    setItemAutorizandoPrecio(null);
+    setItemAAnular(null);
+    setItemDescuentoEditando(null);
+    setMostrarFormDescuento(false);
+    setCancelandoVenta(false);
+    setEditandoFlagBalanza(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [venta?.id]);
 
@@ -331,19 +366,51 @@ export default function PuntoDeVenta() {
   async function iniciarVenta() {
     if (!usuario) return;
     try {
-      let actual = await api.caja.ventaAbierta();
-      if (!actual) {
+      let abiertas = await api.caja.ventasAbiertas();
+      if (abiertas.length === 0) {
         try {
-          actual = await api.caja.crearVenta(usuario.id);
+          const nueva = await api.caja.crearVenta(usuario.id);
+          abiertas = [nueva];
         } catch {
           // Otra llamada (ej. doble carga de la pantalla) ya creó la venta
           // justo antes — se recupera esa en vez de mostrar un error.
-          actual = await api.caja.ventaAbierta();
+          abiertas = await api.caja.ventasAbiertas();
         }
       }
-      setVenta(actual);
+      setVentasAbiertas(abiertas);
+      // La principal (la más antigua, id más chico) queda activa al entrar
+      // a la pantalla — si el cajero dejó una "caja auxiliar" abierta la
+      // última vez, sigue disponible en la barra de pestañas, no se pierde.
+      setVenta(abiertas[0] ?? null);
     } catch (e) {
       setError((e as Error).message);
+    }
+  }
+
+  // Cambia qué venta abierta se ve/edita en pantalla — usa la copia que ya
+  // se tiene en ventasAbiertas (se mantiene al día en cada acción vía
+  // actualizarVenta), sin necesidad de volver a pedirla al servidor.
+  function cambiarVentaActiva(id: number) {
+    const encontrada = ventasAbiertas.find((v) => v.id === id);
+    if (encontrada) setVenta(encontrada);
+  }
+
+  // "Abrir caja auxiliar" — a pedido del usuario, para seguir cobrando
+  // otras ventas mientras una queda esperando algo (ej. una transferencia
+  // por confirmar) sin dejar la caja bloqueada. Crea una segunda venta
+  // abierta a propósito y cambia el foco a ella.
+  async function abrirCajaAuxiliar() {
+    if (!usuario) return;
+    setError(null);
+    setAbriendoAuxiliar(true);
+    try {
+      const nueva = await api.caja.crearVenta(usuario.id, true);
+      setVentasAbiertas((actual) => [...actual, nueva]);
+      setVenta(nueva);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setAbriendoAuxiliar(false);
     }
   }
 
@@ -399,7 +466,7 @@ export default function PuntoDeVenta() {
     }
     try {
       const actualizada = await api.caja.agregarItem(venta.id, { productoId: productoSeleccionado.id, cantidad: cant });
-      setVenta(actualizada);
+      actualizarVenta(actualizada);
       setProductoSeleccionado(null);
       setCantidad("");
       setBuscar("");
@@ -422,7 +489,7 @@ export default function PuntoDeVenta() {
       const actualizada = await api.caja.escanearCodigo(ventaActual.id, codigo);
       const nuevo = actualizada.items[actualizada.items.length - 1];
       setMensaje(nuevo ? `Agregado: ${nuevo.producto.descripcion} (${nuevo.cantidad})` : "Producto agregado");
-      setVenta(actualizada);
+      actualizarVenta(actualizada);
     } catch (e) {
       const mensaje = (e as Error).message;
       if (mensaje === ERROR_CODIGO_SIN_MATCH) {
@@ -463,7 +530,7 @@ export default function PuntoDeVenta() {
         precio,
         categoriaId: crearRapidoCategoriaId,
       });
-      setVenta(actualizada);
+      actualizarVenta(actualizada);
       setMensaje(`Producto creado y agregado: ${crearRapidoDescripcion.trim()}`);
       setCodigoSinMatch(null);
     } catch (e) {
@@ -480,7 +547,7 @@ export default function PuntoDeVenta() {
     if (!venta || itemAAnular == null) return;
     setMensaje(null);
     const actualizada = await api.caja.anularItem(venta.id, itemAAnular, { clave, usuarioId, motivo });
-    setVenta(actualizada);
+    actualizarVenta(actualizada);
     setMensaje("Ítem anulado");
     setItemAAnular(null);
   }
@@ -511,7 +578,7 @@ export default function PuntoDeVenta() {
     // Refresca la venta para que el precio mostrado en el carrito (el del
     // catálogo, no el ya cobrado en esta línea) quede al día.
     const actualizada = await api.caja.obtenerVenta(venta.id);
-    setVenta(actualizada);
+    actualizarVenta(actualizada);
   }
 
   // Cambio rápido de flag balanza desde Caja — a pedido del usuario, para
@@ -575,7 +642,7 @@ export default function PuntoDeVenta() {
         clienteNombre: medioPago === "credito" ? clienteNombre.trim() : undefined,
         montoEntregado: medioPago === "efectivo" ? monto : undefined,
       });
-      setVenta(actualizada);
+      actualizarVenta(actualizada);
       setMontoPago("");
       setClienteNombre("");
       // Si este pago ya deja los pagos cubriendo el total completo (el caso
@@ -619,7 +686,7 @@ export default function PuntoDeVenta() {
     setError(null);
     try {
       const actualizada = await api.caja.actualizarDespacho(venta.id, { esDespacho, comunaId });
-      setVenta(actualizada);
+      actualizarVenta(actualizada);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -636,7 +703,7 @@ export default function PuntoDeVenta() {
     }
     try {
       const actualizada = await api.caja.actualizarDescuento(venta.id, { tipo: descuentoTipo, valor });
-      setVenta(actualizada);
+      actualizarVenta(actualizada);
       setDescuentoValor("");
     } catch (e) {
       setError((e as Error).message);
@@ -648,7 +715,7 @@ export default function PuntoDeVenta() {
     setError(null);
     try {
       const actualizada = await api.caja.actualizarDescuento(venta.id, { tipo: null, valor: null });
-      setVenta(actualizada);
+      actualizarVenta(actualizada);
       setMostrarFormDescuento(false);
     } catch (e) {
       setError((e as Error).message);
@@ -665,7 +732,7 @@ export default function PuntoDeVenta() {
     }
     try {
       const actualizada = await api.caja.actualizarDescuentoItem(venta.id, itemId, { tipo: itemDescuentoTipo, valor });
-      setVenta(actualizada);
+      actualizarVenta(actualizada);
       setItemDescuentoEditando(null);
       setItemDescuentoValor("");
     } catch (e) {
@@ -678,7 +745,7 @@ export default function PuntoDeVenta() {
     setError(null);
     try {
       const actualizada = await api.caja.actualizarDescuentoItem(venta.id, itemId, { tipo: null, valor: null });
-      setVenta(actualizada);
+      actualizarVenta(actualizada);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -690,7 +757,7 @@ export default function PuntoDeVenta() {
     setError(null);
     try {
       const actualizada = await api.caja.actualizarComentario(venta.id, comentarioValor.trim() || null);
-      setVenta(actualizada);
+      actualizarVenta(actualizada);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -701,7 +768,7 @@ export default function PuntoDeVenta() {
     setError(null);
     try {
       const actualizada = await api.caja.actualizarComentario(venta.id, null);
-      setVenta(actualizada);
+      actualizarVenta(actualizada);
       setComentarioValor("");
       setMostrarFormComentario(false);
     } catch (e) {
@@ -714,7 +781,7 @@ export default function PuntoDeVenta() {
     setError(null);
     try {
       const actualizada = await api.caja.quitarPago(venta.id, pagoId);
-      setVenta(actualizada);
+      actualizarVenta(actualizada);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -779,7 +846,7 @@ export default function PuntoDeVenta() {
     setCorrigiendoVuelto(true);
     try {
       const actualizada = await api.caja.quitarPago(vueltoAMostrar.ventaId, vueltoAMostrar.pagoId);
-      setVenta(actualizada);
+      actualizarVenta(actualizada);
       setMedioPago("efectivo");
       setMontoPago(String(vueltoAMostrar.entregado));
       setVueltoAMostrar(null);
@@ -793,11 +860,21 @@ export default function PuntoDeVenta() {
   }
 
   // Igual que anular un ítem, cancelar toda la venta pide clave de
-  // supervisor y el nombre de quien autoriza, vía ModalConfirmarClave.
+  // supervisor y el nombre de quien autoriza, vía ModalConfirmarClave. Si
+  // había otra venta abierta en paralelo (ver "caja auxiliar"), se queda
+  // en la pantalla y cambia a esa — antes siempre volvía a /caja, lo que
+  // tenía sentido cuando solo podía haber una venta a la vez, pero acá
+  // perdería el carrito de la otra que seguía en curso.
   async function confirmarCancelarVenta(usuarioId: number, clave: string, motivo?: string) {
     if (!venta) return;
     await api.caja.cancelarVenta(venta.id, { usuarioId, clave, motivo });
-    navigate("/caja");
+    const restantes = ventasAbiertas.filter((v) => v.id !== venta.id);
+    if (restantes.length > 0) {
+      setVentasAbiertas(restantes);
+      setVenta(restantes[0]);
+    } else {
+      navigate("/caja");
+    }
   }
 
   if (!venta) {
@@ -822,6 +899,35 @@ export default function PuntoDeVenta() {
       </div>
       {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
       {mensaje && <p className="exito">{mensaje}</p>}
+
+      {/* "Caja auxiliar" — a pedido del usuario: cuando un cliente tiene un
+          problema con el pago (ej. está haciendo una transferencia), se
+          puede abrir otra venta en paralelo para seguir cobrando en vez de
+          dejar la caja bloqueada esperando. Las pestañas solo aparecen
+          cuando hay más de una venta abierta a la vez; el botón para abrir
+          una siempre está disponible. */}
+      <div className="fila-inline pestanas-venta">
+        {ventasAbiertas.length > 1 &&
+          ventasAbiertas.map((v) => (
+            <button
+              key={v.id}
+              type="button"
+              className={`chip-categoria${v.id === venta.id ? " activo" : ""}`}
+              onClick={() => cambiarVentaActiva(v.id)}
+            >
+              {v.esAuxiliar ? `Caja auxiliar #${v.id}` : `Venta #${v.id}`} · {formatoCLP(v.total)}
+            </button>
+          ))}
+        <button
+          type="button"
+          className="boton-chico"
+          onClick={abrirCajaAuxiliar}
+          disabled={abriendoAuxiliar}
+          title="Abre otra venta en paralelo para seguir cobrando mientras esta espera algo (ej. una transferencia por confirmar)"
+        >
+          {abriendoAuxiliar ? "Abriendo..." : "+ Abrir caja auxiliar"}
+        </button>
+      </div>
 
       <p className="ayuda ayuda-linea">🔦 Lector de código de barras listo — escanea en cualquier momento.</p>
 
