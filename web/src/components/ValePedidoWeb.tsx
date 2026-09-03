@@ -47,7 +47,7 @@ export function ValePedidoWeb({ pedido, onImprimir }: Props) {
   const total = totalPedido(pedido);
 
   return (
-    <div className="vale">
+    <div className="vale vale-pedido-web">
       {onImprimir && (
         <div className="no-imprimir fila-inline">
           <button type="button" onClick={onImprimir}>

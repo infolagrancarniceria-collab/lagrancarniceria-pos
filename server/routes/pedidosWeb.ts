@@ -167,6 +167,86 @@ pedidosWebRouter.put("/:id/descuento", async (req, res) => {
   res.json(serializar(pedido));
 });
 
+// Datos que el equipo a veces necesita corregir a mano después de que el
+// pedido llegó de la web — no requiere clave de supervisor (mismo criterio
+// que el descuento: es una anotación, no plata ni stock moviéndose todavía).
+// Casos típicos: el cliente avisa que paga en efectivo y necesita cambio
+// (queda anotado en medioPago), o pidió desde una comuna que no estaba en
+// el listado de despacho al momento de cotizar (comunaNombre/costoEnvio
+// quedan en blanco o con un valor por defecto, y hay que completarlos a
+// mano una vez que el equipo confirma cuánto cobrar).
+const editarSchema = z.object({
+  usuarioId: z.number().int().positive(),
+  medioPago: z.string().trim().max(300).nullable().optional(),
+  comunaNombre: z.string().trim().max(200).nullable().optional(),
+  costoEnvio: z.number().nonnegative().nullable().optional(),
+});
+
+pedidosWebRouter.put("/:id/editar", async (req, res) => {
+  const id = Number(req.params.id);
+  const parsed = editarSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0].message });
+  }
+  const { usuarioId, ...cambios } = parsed.data;
+
+  const existente = await prisma.pedidoWeb.findUnique({ where: { id } });
+  if (!existente) return res.status(404).json({ error: "Pedido no encontrado" });
+
+  const usuario = await validarUsuario(usuarioId);
+  if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
+
+  const pedido = await prisma.pedidoWeb.update({
+    where: { id },
+    data: cambios,
+    include: CON_RELACIONES,
+  });
+  res.json(serializar(pedido));
+});
+
+// Quitar un ítem del pedido (ej. no había stock para despacharlo) — los
+// ítems del pedido viven como JSON (itemsJson, ver el modelo), no como
+// filas propias, así que se identifican por posición en el arreglo tal
+// como lo ve la pantalla. El total se recalcula solo (ver totalPedido en
+// ValePedidoWeb.tsx), no hay nada más que ajustar acá.
+const quitarItemSchema = z.object({ usuarioId: z.number().int().positive() });
+
+pedidosWebRouter.delete("/:id/items/:indice", async (req, res) => {
+  const id = Number(req.params.id);
+  const indice = Number(req.params.indice);
+  const parsed = quitarItemSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0].message });
+  }
+
+  const existente = await prisma.pedidoWeb.findUnique({ where: { id } });
+  if (!existente) return res.status(404).json({ error: "Pedido no encontrado" });
+
+  const usuario = await validarUsuario(parsed.data.usuarioId);
+  if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
+
+  let items: unknown[];
+  try {
+    items = JSON.parse(existente.itemsJson);
+  } catch {
+    items = [];
+  }
+  if (!Array.isArray(items) || indice < 0 || indice >= items.length) {
+    return res.status(400).json({ error: "Ítem no encontrado" });
+  }
+  if (items.length === 1) {
+    return res.status(400).json({ error: "No se puede quitar el único ítem del pedido — anula el pedido completo si corresponde" });
+  }
+  items.splice(indice, 1);
+
+  const pedido = await prisma.pedidoWeb.update({
+    where: { id },
+    data: { itemsJson: JSON.stringify(items) },
+    include: CON_RELACIONES,
+  });
+  res.json(serializar(pedido));
+});
+
 // --- Regalos (ej. longaniza o hamburguesas de cortesía) ---
 //
 // A diferencia de itemsJson (lo que pidió y paga el cliente), un regalo es

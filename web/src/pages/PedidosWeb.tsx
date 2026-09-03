@@ -26,6 +26,20 @@ function formularioDesde(p: PedidoWeb): FormularioDescuento {
   };
 }
 
+interface FormularioEditar {
+  medioPago: string;
+  comunaNombre: string;
+  costoEnvio: string;
+}
+
+function formularioEditarDesde(p: PedidoWeb): FormularioEditar {
+  return {
+    medioPago: p.medioPago ?? "",
+    comunaNombre: p.comunaNombre ?? "",
+    costoEnvio: p.costoEnvio != null ? String(p.costoEnvio) : "",
+  };
+}
+
 function etiquetaCantidadProducto(producto: Producto): string {
   return producto.flagBalanza === "NORMAL" ? "Cantidad (unidades)" : "Cantidad (kg)";
 }
@@ -43,6 +57,15 @@ export default function PedidosWeb() {
   const [formDescuento, setFormDescuento] = useState<FormularioDescuento | null>(null);
   const [guardandoDescuento, setGuardandoDescuento] = useState(false);
   const [pedidoParaImprimir, setPedidoParaImprimir] = useState<PedidoWeb | null>(null);
+
+  // Editar pedido — para corregir a mano lo que el equipo va descubriendo
+  // al coordinar el despacho: el cliente avisa que paga en efectivo y
+  // necesita cambio (queda anotado en "medio de pago"), o pidió desde una
+  // comuna que no estaba en el listado de despacho al cotizar.
+  const [editarEditId, setEditarEditId] = useState<number | null>(null);
+  const [formEditar, setFormEditar] = useState<FormularioEditar | null>(null);
+  const [guardandoEditar, setGuardandoEditar] = useState(false);
+  const [quitandoItem, setQuitandoItem] = useState<{ pedidoId: number; indice: number } | null>(null);
 
   const [regaloEditId, setRegaloEditId] = useState<number | null>(null);
   const [regaloBusqueda, setRegaloBusqueda] = useState("");
@@ -183,6 +206,57 @@ export default function PedidosWeb() {
       cargar();
     } catch (e) {
       setError((e as Error).message);
+    }
+  }
+
+  function abrirEditar(p: PedidoWeb) {
+    setEditarEditId(p.id);
+    setFormEditar(formularioEditarDesde(p));
+  }
+
+  async function guardarEditar(p: PedidoWeb, e: FormEvent) {
+    e.preventDefault();
+    if (!usuario || !formEditar) return;
+    let costoEnvio: number | null = null;
+    if (formEditar.costoEnvio.trim()) {
+      const valor = Number(formEditar.costoEnvio);
+      if (Number.isNaN(valor) || valor < 0) {
+        setError("El costo de envío no es válido");
+        return;
+      }
+      costoEnvio = valor;
+    }
+    setGuardandoEditar(true);
+    try {
+      await api.pedidosWeb.editar(p.id, usuario.id, {
+        medioPago: formEditar.medioPago.trim() || null,
+        comunaNombre: formEditar.comunaNombre.trim() || null,
+        costoEnvio,
+      });
+      mostrarToast("Pedido actualizado", `Se guardaron los cambios del pedido de ${p.clienteNombre}.`);
+      setEditarEditId(null);
+      cargar();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setGuardandoEditar(false);
+    }
+  }
+
+  async function quitarItem(p: PedidoWeb, indice: number) {
+    if (!usuario) return;
+    const item = p.items[indice];
+    const confirmado = window.confirm(`¿Quitar "${item.descripcion}" del pedido? (ej. por falta de stock)`);
+    if (!confirmado) return;
+    setQuitandoItem({ pedidoId: p.id, indice });
+    try {
+      await api.pedidosWeb.quitarItem(p.id, indice, usuario.id);
+      mostrarToast("Ítem quitado", `Se quitó "${item.descripcion}" del pedido de ${p.clienteNombre}.`, "eliminado");
+      cargar();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setQuitandoItem(null);
     }
   }
 
@@ -335,8 +409,14 @@ export default function PedidosWeb() {
             </p>
             {p.tipoEntrega === "despacho" && (
               <p>
-                <strong>Dirección:</strong> {p.clienteDireccion} ({p.comunaNombre}) ·{" "}
+                <strong>Dirección:</strong> {p.clienteDireccion} ({p.comunaNombre ?? "—"}) ·{" "}
                 <strong>Costo de envío:</strong> {p.costoEnvio != null ? formatoCLP(p.costoEnvio) : "—"}
+                {(p.comunaNombre == null || p.costoEnvio == null) && (
+                  <span className="error">
+                    {" "}
+                    — comuna sin listado inicial de despacho, completar a mano
+                  </span>
+                )}
               </p>
             )}
             {p.medioPago && (
@@ -354,6 +434,7 @@ export default function PedidosWeb() {
                   <th>Precio</th>
                   <th>Subtotal</th>
                   <th>Instrucciones</th>
+                  {p.estado !== "anulado" && <th></th>}
                 </tr>
               </thead>
               <tbody>
@@ -370,6 +451,19 @@ export default function PedidosWeb() {
                     </td>
                     <td>{subtotalItem(item) != null ? formatoCLP(subtotalItem(item)!) : "—"}</td>
                     <td>{item.instrucciones ?? "—"}</td>
+                    {p.estado !== "anulado" && (
+                      <td>
+                        <button
+                          type="button"
+                          className="boton-quitar-item"
+                          title="Quitar ítem (ej. no hay stock)"
+                          onClick={() => quitarItem(p, i)}
+                          disabled={quitandoItem?.pedidoId === p.id && quitandoItem.indice === i}
+                        >
+                          ✕
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -424,6 +518,54 @@ export default function PedidosWeb() {
                 Anulado — {p.motivoAnulacion ?? "sin motivo especificado"}
                 {p.anuladoEn ? `, ${new Date(p.anuladoEn).toLocaleString("es-CL")}` : ""}
               </p>
+            )}
+
+            {editarEditId === p.id && formEditar && (
+              <form className="formulario" onSubmit={(e) => guardarEditar(p, e)}>
+                <h3>Editar pedido</h3>
+                <p className="ayuda">
+                  Para corregir lo que se va descubriendo al coordinar el pedido: el cliente avisa que paga en
+                  efectivo y necesita cambio, o pidió desde una comuna que no estaba en el listado de despacho.
+                </p>
+                <label>
+                  Medio de pago / notas de cambio
+                  <input
+                    type="text"
+                    value={formEditar.medioPago}
+                    onChange={(e) => setFormEditar({ ...formEditar, medioPago: e.target.value })}
+                    placeholder='Ej: "Efectivo — paga con $20.000, dar $3.500 de vuelto"'
+                  />
+                </label>
+                {p.tipoEntrega === "despacho" && (
+                  <div className="fila-inline">
+                    <label>
+                      Comuna
+                      <input
+                        type="text"
+                        value={formEditar.comunaNombre}
+                        onChange={(e) => setFormEditar({ ...formEditar, comunaNombre: e.target.value })}
+                      />
+                    </label>
+                    <label>
+                      Costo de envío
+                      <input
+                        type="number"
+                        min="0"
+                        value={formEditar.costoEnvio}
+                        onChange={(e) => setFormEditar({ ...formEditar, costoEnvio: e.target.value })}
+                      />
+                    </label>
+                  </div>
+                )}
+                <div className="acciones-formulario">
+                  <button type="submit" className="boton boton-primario" disabled={guardandoEditar}>
+                    {guardandoEditar ? "Guardando..." : "Guardar"}
+                  </button>
+                  <button type="button" onClick={() => setEditarEditId(null)} disabled={guardandoEditar}>
+                    Cancelar
+                  </button>
+                </div>
+              </form>
             )}
 
             {descuentoEditId === p.id && formDescuento && (
@@ -550,6 +692,11 @@ export default function PedidosWeb() {
               {p.estado !== "anulado" && (
                 <button type="button" onClick={() => setAnulando(p)}>
                   Anular pedido
+                </button>
+              )}
+              {p.estado !== "anulado" && editarEditId !== p.id && (
+                <button type="button" onClick={() => abrirEditar(p)}>
+                  Editar pedido
                 </button>
               )}
               {p.estado !== "anulado" && descuentoEditId !== p.id && (

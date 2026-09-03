@@ -1310,6 +1310,19 @@ select {
   .tabla-vale td {
     padding: 0.3rem 0.25rem;
   }
+  /* El pedido web no se imprime en el rollo térmico de 80mm sino en una
+     impresora normal de hoja carta (ver imprimirPedidoWeb en
+     web/src/lib/imprimir.ts) — el tamaño de letra pensado para el ticket
+     angosto se ve minúsculo y desperdicia toda la hoja, así que se
+     restaura a un tamaño normal de página en vez del heredado de ".vale". */
+  .vale-pedido-web {
+    padding: 0;
+    font-size: 1rem;
+  }
+  .vale-pedido-web .tabla-vale th,
+  .vale-pedido-web .tabla-vale td {
+    padding: 0.5rem 0.4rem;
+  }
   /* Solo se imprime la etiqueta marcada como "imprimir-ahora" — igual que
      el prototipo original, que muestra todas las etiquetas en pantalla
      pero solo saca una a la vez por la impresora. */

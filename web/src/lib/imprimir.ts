@@ -46,8 +46,19 @@ export async function imprimirSilencioso() {
 // del mesón (ej. el PC servidor, en la trastienda), así que no conviene
 // depender de la impresora de boletas de ESE equipo en particular, que
 // puede no tener ninguna (o no ser la que corresponde).
+//
+// A diferencia del vale de venta (pensado para el rollo térmico continuo
+// de 80mm, ver "@page" en styles.css), el pedido web se imprime en una
+// impresora normal de hoja carta (ej. Brother DCP-T730DW) — por eso usa el
+// mismo mecanismo de sobrescribir el tamaño de página que ya usa la hoja
+// de ruta de despacho, pero a carta en vez de A4. Sin esto, un pedido
+// grande se veía cortado: con "80mm auto" de alto, el motor de impresión
+// arma UNA sola página tan alta como el contenido y la aprieta contra el
+// primer pliego físico en vez de repartirla en varias hojas carta.
 export async function imprimirPedidoWeb() {
-  await imprimirConRespaldo(obtenerImpresoraPedidosWeb());
+  activarPaginaCarta(true);
+  await imprimirConRespaldo(obtenerImpresoraPedidosWeb(), TAMANO_CARTA_MICRONES);
+  setTimeout(() => activarPaginaCarta(false), 500);
 }
 
 // El sistema imprime dos cosas de tamaño de página distinto: el vale
@@ -108,6 +119,25 @@ export async function imprimirEtiquetasLoteCamara() {
   activarPaginaEtiqueta(true);
   await imprimirConRespaldo(obtenerImpresoraEtiquetas(), TAMANO_ETIQUETA_MICRONES);
   setTimeout(() => activarPaginaEtiqueta(false), 500);
+}
+
+// Pedido web: misma idea que la hoja de ruta más abajo, pero a hoja carta
+// (216×279mm) — el tamaño real de papel que carga la impresora normal
+// usada para esto (ver imprimirPedidoWeb más arriba).
+const ID_ESTILO_PAGINA_CARTA = "estilo-pagina-pedido-web";
+const TAMANO_CARTA_MICRONES = { width: 216000, height: 279000 };
+
+function activarPaginaCarta(activar: boolean) {
+  const existente = document.getElementById(ID_ESTILO_PAGINA_CARTA);
+  if (!activar) {
+    existente?.remove();
+    return;
+  }
+  if (existente) return;
+  const estilo = document.createElement("style");
+  estilo.id = ID_ESTILO_PAGINA_CARTA;
+  estilo.textContent = "@media print { @page { size: 216mm 279mm; margin: 12mm; } }";
+  document.head.appendChild(estilo);
 }
 
 // La hoja de ruta de despacho (varias paradas, para leer/tildar a mano

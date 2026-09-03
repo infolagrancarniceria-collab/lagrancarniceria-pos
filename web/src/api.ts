@@ -1052,6 +1052,13 @@ export const api = {
       post<PedidoWeb>(`/api/pedidos-web/${id}/regalos`, { usuarioId, productoId, cantidad }),
     quitarRegalo: (id: number, regaloId: number, usuarioId: number) =>
       delConBody<PedidoWeb>(`/api/pedidos-web/${id}/regalos/${regaloId}`, { usuarioId }),
+    editar: (
+      id: number,
+      usuarioId: number,
+      cambios: { medioPago?: string | null; comunaNombre?: string | null; costoEnvio?: number | null }
+    ) => put<PedidoWeb>(`/api/pedidos-web/${id}/editar`, { usuarioId, ...cambios }),
+    quitarItem: (id: number, indice: number, usuarioId: number) =>
+      delConBody<PedidoWeb>(`/api/pedidos-web/${id}/items/${indice}`, { usuarioId }),
     enviarACaja: (id: number, usuarioId: number) =>
       post<{ pedido: PedidoWeb; ventaId: number }>(`/api/pedidos-web/${id}/enviar-a-caja`, { usuarioId }),
     sincronizar: () => post<{ nuevos: number }>("/api/pedidos-web/sincronizar", {}),
