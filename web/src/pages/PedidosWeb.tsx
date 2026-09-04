@@ -67,6 +67,24 @@ export default function PedidosWeb() {
   const [guardandoEditar, setGuardandoEditar] = useState(false);
   const [quitandoItem, setQuitandoItem] = useState<{ pedidoId: number; indice: number } | null>(null);
 
+  // Corregir cantidad/instrucciones de un ítem ya pedido (ej. el cliente
+  // avisa por teléfono que en verdad quiere 2 kilos, o que un pollo lo
+  // quiere trozado en vez de entero).
+  const [editandoItem, setEditandoItem] = useState<{ pedidoId: number; indice: number } | null>(null);
+  const [formItem, setFormItem] = useState({ cantidad: "", instrucciones: "" });
+  const [guardandoItem, setGuardandoItem] = useState(false);
+
+  // Agregar un producto nuevo al pedido (ej. el cliente llama y suma algo
+  // más al mismo pedido) — mismo patrón de búsqueda que "Agregar regalo",
+  // pero este sí se cobra (queda en itemsJson, no en PedidoWebRegalo).
+  const [itemNuevoEditId, setItemNuevoEditId] = useState<number | null>(null);
+  const [itemNuevoBusqueda, setItemNuevoBusqueda] = useState("");
+  const [itemNuevoResultados, setItemNuevoResultados] = useState<Producto[]>([]);
+  const [itemNuevoSeleccionado, setItemNuevoSeleccionado] = useState<Producto | null>(null);
+  const [itemNuevoCantidad, setItemNuevoCantidad] = useState("");
+  const [itemNuevoInstrucciones, setItemNuevoInstrucciones] = useState("");
+  const [guardandoItemNuevo, setGuardandoItemNuevo] = useState(false);
+
   const [regaloEditId, setRegaloEditId] = useState<number | null>(null);
   const [regaloBusqueda, setRegaloBusqueda] = useState("");
   const [regaloResultados, setRegaloResultados] = useState<Producto[]>([]);
@@ -260,6 +278,93 @@ export default function PedidosWeb() {
     }
   }
 
+  function abrirEditarItem(p: PedidoWeb, indice: number) {
+    const item = p.items[indice];
+    setEditandoItem({ pedidoId: p.id, indice });
+    setFormItem({
+      cantidad: item.unidad === "kg" ? String(item.cantidad / 1000) : String(item.cantidad),
+      instrucciones: item.instrucciones ?? "",
+    });
+  }
+
+  async function guardarEditarItem(p: PedidoWeb) {
+    if (!usuario || !editandoItem) return;
+    const item = p.items[editandoItem.indice];
+    const valor = Number(formItem.cantidad.replace(",", "."));
+    if (!formItem.cantidad.trim() || Number.isNaN(valor) || valor <= 0) {
+      setError("La cantidad no es válida");
+      return;
+    }
+    const cantidad = item.unidad === "kg" ? Math.round(valor * 1000) : Math.round(valor);
+    setGuardandoItem(true);
+    try {
+      await api.pedidosWeb.editarItem(p.id, editandoItem.indice, usuario.id, {
+        cantidad,
+        instrucciones: formItem.instrucciones.trim() || null,
+      });
+      mostrarToast("Ítem actualizado", `Se actualizó "${item.descripcion}" en el pedido de ${p.clienteNombre}.`);
+      setEditandoItem(null);
+      cargar();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setGuardandoItem(false);
+    }
+  }
+
+  function abrirItemNuevo(p: PedidoWeb) {
+    setItemNuevoEditId(p.id);
+    setItemNuevoBusqueda("");
+    setItemNuevoResultados([]);
+    setItemNuevoSeleccionado(null);
+    setItemNuevoCantidad("");
+    setItemNuevoInstrucciones("");
+  }
+
+  function cerrarItemNuevo() {
+    setItemNuevoEditId(null);
+    setItemNuevoSeleccionado(null);
+  }
+
+  useEffect(() => {
+    if (itemNuevoEditId == null || itemNuevoSeleccionado || !itemNuevoBusqueda.trim()) {
+      setItemNuevoResultados([]);
+      return;
+    }
+    api.productos
+      .listar({ buscar: itemNuevoBusqueda })
+      .then((r) => setItemNuevoResultados(r.slice(0, 8)))
+      .catch(() => setItemNuevoResultados([]));
+  }, [itemNuevoBusqueda, itemNuevoEditId, itemNuevoSeleccionado]);
+
+  async function agregarItemNuevo(p: PedidoWeb, e: FormEvent) {
+    e.preventDefault();
+    if (!usuario || !itemNuevoSeleccionado) return;
+    const valor = Number(itemNuevoCantidad.replace(",", "."));
+    if (!itemNuevoCantidad.trim() || Number.isNaN(valor) || valor <= 0) {
+      setError("La cantidad no es válida");
+      return;
+    }
+    const cantidad = itemNuevoSeleccionado.flagBalanza === "NORMAL" ? Math.round(valor) : Math.round(valor * 1000);
+    setGuardandoItemNuevo(true);
+    try {
+      await api.pedidosWeb.agregarItem(
+        p.id,
+        usuario.id,
+        itemNuevoSeleccionado.id,
+        cantidad,
+        itemNuevoInstrucciones.trim() || null
+      );
+      mostrarToast("Producto agregado", `${itemNuevoSeleccionado.descripcion} se agregó al pedido de ${p.clienteNombre}.`);
+      cerrarItemNuevo();
+      cargar();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setGuardandoItemNuevo(false);
+    }
+  }
+
   function abrirRegalo(p: PedidoWeb) {
     setRegaloEditId(p.id);
     setRegaloBusqueda("");
@@ -438,34 +543,95 @@ export default function PedidosWeb() {
                 </tr>
               </thead>
               <tbody>
-                {p.items.map((item, i) => (
-                  <tr key={i}>
-                    <td>{item.descripcion}</td>
-                    <td>{item.corte ?? "—"}</td>
-                    <td>{item.envasado ?? "—"}</td>
-                    <td>{item.unidad === "kg" ? formatoPeso(item.cantidad) : `${item.cantidad} un.`}</td>
-                    <td>
-                      {item.precioUnitario != null
-                        ? `${formatoCLP(item.precioUnitario)} ${item.unidad === "kg" ? "/kg" : "/un."}`
-                        : "—"}
-                    </td>
-                    <td>{subtotalItem(item) != null ? formatoCLP(subtotalItem(item)!) : "—"}</td>
-                    <td>{item.instrucciones ?? "—"}</td>
-                    {p.estado !== "anulado" && (
+                {p.items.map((item, i) => {
+                  const editandoEsteItem = editandoItem?.pedidoId === p.id && editandoItem.indice === i;
+                  return (
+                    <tr key={i}>
+                      <td>{item.descripcion}</td>
+                      <td>{item.corte ?? "—"}</td>
+                      <td>{item.envasado ?? "—"}</td>
                       <td>
-                        <button
-                          type="button"
-                          className="boton-quitar-item"
-                          title="Quitar ítem (ej. no hay stock)"
-                          onClick={() => quitarItem(p, i)}
-                          disabled={quitandoItem?.pedidoId === p.id && quitandoItem.indice === i}
-                        >
-                          ✕
-                        </button>
+                        {editandoEsteItem ? (
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.1"
+                            className="input-chico"
+                            value={formItem.cantidad}
+                            onChange={(e) => setFormItem({ ...formItem, cantidad: e.target.value })}
+                            autoFocus
+                          />
+                        ) : item.unidad === "kg" ? (
+                          formatoPeso(item.cantidad)
+                        ) : (
+                          `${item.cantidad} un.`
+                        )}
                       </td>
-                    )}
-                  </tr>
-                ))}
+                      <td>
+                        {item.precioUnitario != null
+                          ? `${formatoCLP(item.precioUnitario)} ${item.unidad === "kg" ? "/kg" : "/un."}`
+                          : "—"}
+                      </td>
+                      <td>{subtotalItem(item) != null ? formatoCLP(subtotalItem(item)!) : "—"}</td>
+                      <td>
+                        {editandoEsteItem ? (
+                          <input
+                            type="text"
+                            value={formItem.instrucciones}
+                            onChange={(e) => setFormItem({ ...formItem, instrucciones: e.target.value })}
+                            placeholder="Instrucciones"
+                          />
+                        ) : (
+                          (item.instrucciones ?? "—")
+                        )}
+                      </td>
+                      {p.estado !== "anulado" && (
+                        <td className="fila-inline">
+                          {editandoEsteItem ? (
+                            <>
+                              <button
+                                type="button"
+                                className="boton-chico boton-primario"
+                                onClick={() => guardarEditarItem(p)}
+                                disabled={guardandoItem}
+                              >
+                                {guardandoItem ? "Guardando..." : "Guardar"}
+                              </button>
+                              <button
+                                type="button"
+                                className="boton-chico"
+                                onClick={() => setEditandoItem(null)}
+                                disabled={guardandoItem}
+                              >
+                                Cancelar
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                className="boton-chico"
+                                title="Editar cantidad/instrucciones (ej. el cliente pidió más o cambió lo que quería)"
+                                onClick={() => abrirEditarItem(p, i)}
+                              >
+                                ✎
+                              </button>
+                              <button
+                                type="button"
+                                className="boton-quitar-item"
+                                title="Quitar ítem (ej. no hay stock)"
+                                onClick={() => quitarItem(p, i)}
+                                disabled={quitandoItem?.pedidoId === p.id && quitandoItem.indice === i}
+                              >
+                                ✕
+                              </button>
+                            </>
+                          )}
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
 
@@ -622,6 +788,80 @@ export default function PedidosWeb() {
               </form>
             )}
 
+            {itemNuevoEditId === p.id && (
+              <form className="formulario" onSubmit={(e) => agregarItemNuevo(p, e)}>
+                <h3>Agregar producto</h3>
+                <p className="ayuda">
+                  Para cuando el cliente llama y pide sumar algo más al mismo pedido — se cobra al precio actual del
+                  catálogo.
+                </p>
+                {!itemNuevoSeleccionado && (
+                  <label>
+                    Buscar producto
+                    <input
+                      type="text"
+                      value={itemNuevoBusqueda}
+                      onChange={(e) => setItemNuevoBusqueda(e.target.value)}
+                      placeholder="Ej: longaniza"
+                      autoFocus
+                    />
+                  </label>
+                )}
+                {!itemNuevoSeleccionado && itemNuevoResultados.length > 0 && (
+                  <ul className="lista-resultados">
+                    {itemNuevoResultados.map((prod) => (
+                      <li key={prod.id}>
+                        <button type="button" onClick={() => setItemNuevoSeleccionado(prod)}>
+                          {prod.descripcion} {prod.marca ? `— ${prod.marca}` : ""}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {itemNuevoSeleccionado && (
+                  <>
+                    <p>
+                      <strong>Producto:</strong> {itemNuevoSeleccionado.descripcion}{" "}
+                      <button type="button" onClick={() => setItemNuevoSeleccionado(null)}>
+                        Cambiar
+                      </button>
+                    </p>
+                    <label>
+                      {etiquetaCantidadProducto(itemNuevoSeleccionado)}
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.1"
+                        value={itemNuevoCantidad}
+                        onChange={(e) => setItemNuevoCantidad(e.target.value)}
+                        autoFocus
+                      />
+                    </label>
+                    <label>
+                      Instrucciones (opcional)
+                      <input
+                        type="text"
+                        value={itemNuevoInstrucciones}
+                        onChange={(e) => setItemNuevoInstrucciones(e.target.value)}
+                      />
+                    </label>
+                  </>
+                )}
+                <div className="acciones-formulario">
+                  <button
+                    type="submit"
+                    className="boton boton-primario"
+                    disabled={guardandoItemNuevo || !itemNuevoSeleccionado}
+                  >
+                    {guardandoItemNuevo ? "Guardando..." : "Agregar"}
+                  </button>
+                  <button type="button" onClick={cerrarItemNuevo} disabled={guardandoItemNuevo}>
+                    Cancelar
+                  </button>
+                </div>
+              </form>
+            )}
+
             {regaloEditId === p.id && (
               <form className="formulario" onSubmit={(e) => agregarRegalo(p, e)}>
                 <h3>Agregar regalo</h3>
@@ -702,6 +942,11 @@ export default function PedidosWeb() {
               {p.estado !== "anulado" && descuentoEditId !== p.id && (
                 <button type="button" onClick={() => abrirDescuento(p)}>
                   {p.descuentoTipo ? "Editar descuento" : "Aplicar descuento"}
+                </button>
+              )}
+              {p.estado !== "anulado" && itemNuevoEditId !== p.id && (
+                <button type="button" onClick={() => abrirItemNuevo(p)}>
+                  Agregar producto
                 </button>
               )}
               {p.estado !== "anulado" && regaloEditId !== p.id && (

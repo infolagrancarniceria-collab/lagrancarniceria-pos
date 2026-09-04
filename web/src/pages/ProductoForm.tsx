@@ -41,6 +41,7 @@ interface FormState {
   promoGramosMinimos: string;
   promoEtiqueta: string;
   pesoPromedioTrozoGramos: string;
+  opcionesUnidad: string;
   esCombo: boolean;
 }
 
@@ -69,6 +70,7 @@ const formVacio: FormState = {
   promoGramosMinimos: "",
   promoEtiqueta: "",
   pesoPromedioTrozoGramos: "",
+  opcionesUnidad: "",
   esCombo: false,
 };
 
@@ -137,6 +139,7 @@ export default function ProductoForm() {
           promoGramosMinimos: p.promoGramosMinimos != null ? String(p.promoGramosMinimos) : "",
           promoEtiqueta: p.promoEtiqueta ?? "",
           pesoPromedioTrozoGramos: p.pesoPromedioTrozoGramos != null ? String(p.pesoPromedioTrozoGramos) : "",
+          opcionesUnidad: p.opcionesUnidad ?? "",
           esCombo: p.esCombo,
         });
       })
@@ -297,6 +300,7 @@ export default function ProductoForm() {
       promoGramosMinimos: form.promoGramosMinimos ? Number(form.promoGramosMinimos) : null,
       promoEtiqueta: form.promoEtiqueta.trim() || null,
       pesoPromedioTrozoGramos: form.pesoPromedioTrozoGramos ? Number(form.pesoPromedioTrozoGramos) : null,
+      opcionesUnidad: form.opcionesUnidad.trim() || null,
       esCombo: form.esCombo,
     };
 
@@ -729,6 +733,22 @@ export default function ProductoForm() {
             </span>
           )}
         </label>
+
+        {form.flagBalanza === "NORMAL" && (
+          <label>
+            Opciones por unidad (página web)
+            <input
+              value={form.opcionesUnidad}
+              onChange={(e) => actualizarCampo("opcionesUnidad", e.target.value)}
+              placeholder='Ej: "Entero, Trozado, Para la parrilla" (separadas por coma)'
+            />
+            <span className="ayuda">
+              Si se llena, el cotizador de la web pide elegir una de estas opciones POR CADA unidad pedida, en vez de
+              una sola para todo el pedido — pensado para algo como "3 pollos enteros a $24.990": el cliente puede
+              pedir 2 enteros y 1 para la parrilla. Déjalo vacío si no aplica.
+            </span>
+          </label>
+        )}
 
         {!form.esCombo && (
           <fieldset className="tarjeta formulario">

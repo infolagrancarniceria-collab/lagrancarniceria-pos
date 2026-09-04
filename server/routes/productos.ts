@@ -235,6 +235,11 @@ const productoBaseSchema = z.object({
   // (ver comentario en schema.prisma). No se valida contra flagBalanza acá:
   // si se deja en un producto Normal simplemente no se usa en la web.
   pesoPromedioTrozoGramos: z.number().int().positive().optional().nullable(),
+  // Opciones de preparación por unidad, separadas por coma (ej.
+  // "Entero,Trozado,Para la parrilla") — solo tiene sentido para
+  // flagBalanza NORMAL, no se valida contra eso acá por el mismo motivo
+  // que pesoPromedioTrozoGramos arriba.
+  opcionesUnidad: z.string().trim().optional().nullable(),
   esCombo: z.boolean().optional(),
 });
 

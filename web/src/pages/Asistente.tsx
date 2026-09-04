@@ -150,6 +150,7 @@ async function ejecutarPropuesta(accion: PropuestaAsistente["accion"], usuarioId
         promoGramosMinimos: null,
         promoEtiqueta: null,
         pesoPromedioTrozoGramos: null,
+        opcionesUnidad: null,
         esCombo: false,
       });
       return;

@@ -57,6 +57,7 @@ interface ProductoSync {
   promoPrecioUnitario: number | null;
   promoGramosMinimos: number | null;
   promoEtiqueta: string | null;
+  opcionesUnidad: string | null;
 }
 
 interface SnapshotCatalogo {
@@ -96,6 +97,7 @@ async function construirSnapshotCatalogo(): Promise<SnapshotCatalogo> {
       promoPrecioUnitario: p.promoPrecioUnitario,
       promoGramosMinimos: p.promoGramosMinimos,
       promoEtiqueta: p.promoEtiqueta,
+      opcionesUnidad: p.opcionesUnidad,
     })),
     comunas: comunas.map((c) => ({ nombre: c.nombre, costoEnvio: c.costoEnvio })),
     cortes: cortes.map((c) => ({ familia: c.familia, nombre: c.nombre, orden: c.orden })),

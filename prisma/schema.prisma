@@ -193,6 +193,17 @@ model Producto {
   // producto no ofrece esa opción.
   pesoPromedioTrozoGramos Int?
 
+  // Opciones de preparación por unidad, separadas por coma (ej.
+  // "Entero,Trozado,Para la parrilla") — solo para productos por unidad
+  // (flagBalanza NORMAL). Si tiene valor, el cotizador de la web pide una
+  // elección independiente por cada unidad pedida (ej. 3 pollos enteros: 2
+  // "Entero" y 1 "Para la parrilla") en vez de una sola elección para todo
+  // el pedido. Distinto de familiaCorte/CorteOpcion (que es una tabla
+  // compartida entre productos de la misma familia): esto es específico
+  // de este producto, así que basta un texto libre. Null = el cotizador
+  // no pide ninguna elección por unidad.
+  opcionesUnidad String?
+
   // Se actualiza solo con cada movimiento de inventario (entrada/salida);
   // no se edita a mano desde la ficha del producto.
   stockActual     Float  @default(0)

@@ -56,6 +56,11 @@ export interface Producto {
   // pollo/aves). Si tiene valor, la web ofrece elegir por cantidad de
   // trozos además de por peso/monto.
   pesoPromedioTrozoGramos: number | null;
+  // Opciones de preparación por unidad, separadas por coma (ej.
+  // "Entero,Trozado,Para la parrilla") — solo para productos por unidad.
+  // Si tiene valor, el cotizador de la web pide una elección por cada
+  // unidad pedida (ej. 3 pollos: 2 "Entero" y 1 "Para la parrilla").
+  opcionesUnidad: string | null;
   // Combo: producto "vitrina" que junta varios productos reales, solo
   // vendible por la web (ver componentesDelCombo en ProductoConCosto).
   esCombo: boolean;
@@ -1063,6 +1068,19 @@ export const api = {
     ) => put<PedidoWeb>(`/api/pedidos-web/${id}/editar`, { usuarioId, ...cambios }),
     quitarItem: (id: number, indice: number, usuarioId: number) =>
       delConBody<PedidoWeb>(`/api/pedidos-web/${id}/items/${indice}`, { usuarioId }),
+    editarItem: (
+      id: number,
+      indice: number,
+      usuarioId: number,
+      cambios: { cantidad?: number; instrucciones?: string | null }
+    ) => put<PedidoWeb>(`/api/pedidos-web/${id}/items/${indice}`, { usuarioId, ...cambios }),
+    agregarItem: (
+      id: number,
+      usuarioId: number,
+      productoId: number,
+      cantidad: number,
+      instrucciones?: string | null
+    ) => post<PedidoWeb>(`/api/pedidos-web/${id}/items`, { usuarioId, productoId, cantidad, instrucciones }),
     enviarACaja: (id: number, usuarioId: number) =>
       post<{ pedido: PedidoWeb; ventaId: number }>(`/api/pedidos-web/${id}/enviar-a-caja`, { usuarioId }),
     sincronizar: () => post<{ nuevos: number }>("/api/pedidos-web/sincronizar", {}),

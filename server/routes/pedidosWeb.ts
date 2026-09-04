@@ -247,6 +247,109 @@ pedidosWebRouter.delete("/:id/items/:indice", async (req, res) => {
   res.json(serializar(pedido));
 });
 
+// Corregir la cantidad y/o las indicaciones de un ítem ya pedido (ej. el
+// cliente avisa por teléfono que en verdad quiere 2 kilos, no 1, o que un
+// pollo lo quiere trozado en vez de entero). Mismo criterio que el resto de
+// esta sección: es una corrección editorial sobre el pedido, no plata ni
+// stock moviéndose todavía (eso pasa recién al enviarlo a Caja), así que no
+// pide clave de supervisor.
+const editarItemSchema = z.object({
+  usuarioId: z.number().int().positive(),
+  cantidad: z.number().positive().optional(),
+  instrucciones: z.string().trim().max(500).nullable().optional(),
+});
+
+pedidosWebRouter.put("/:id/items/:indice", async (req, res) => {
+  const id = Number(req.params.id);
+  const indice = Number(req.params.indice);
+  const parsed = editarItemSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0].message });
+  }
+  const { usuarioId, cantidad, instrucciones } = parsed.data;
+  if (cantidad === undefined && instrucciones === undefined) {
+    return res.status(400).json({ error: "Nada que actualizar" });
+  }
+
+  const existente = await prisma.pedidoWeb.findUnique({ where: { id } });
+  if (!existente) return res.status(404).json({ error: "Pedido no encontrado" });
+
+  const usuario = await validarUsuario(usuarioId);
+  if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
+
+  let items: Record<string, unknown>[];
+  try {
+    items = JSON.parse(existente.itemsJson);
+  } catch {
+    items = [];
+  }
+  if (!Array.isArray(items) || indice < 0 || indice >= items.length) {
+    return res.status(400).json({ error: "Ítem no encontrado" });
+  }
+  if (cantidad !== undefined) items[indice].cantidad = cantidad;
+  if (instrucciones !== undefined) items[indice].instrucciones = instrucciones?.trim() || null;
+
+  const pedido = await prisma.pedidoWeb.update({
+    where: { id },
+    data: { itemsJson: JSON.stringify(items) },
+    include: CON_RELACIONES,
+  });
+  res.json(serializar(pedido));
+});
+
+// Agregar un producto al pedido (ej. el cliente llama y pide sumar algo más
+// al mismo pedido) — se toma el precio actual del catálogo, ya que no hubo
+// cotización real de la web para este ítem. Sin corte/envasado (se pueden
+// anotar en "instrucciones" si hace falta).
+const agregarItemSchema = z.object({
+  usuarioId: z.number().int().positive(),
+  productoId: z.number().int().positive(),
+  cantidad: z.number().positive(),
+  instrucciones: z.string().trim().max(500).nullable().optional(),
+});
+
+pedidosWebRouter.post("/:id/items", async (req, res) => {
+  const id = Number(req.params.id);
+  const parsed = agregarItemSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0].message });
+  }
+  const { usuarioId, productoId, cantidad, instrucciones } = parsed.data;
+
+  const existente = await prisma.pedidoWeb.findUnique({ where: { id } });
+  if (!existente) return res.status(404).json({ error: "Pedido no encontrado" });
+
+  const usuario = await validarUsuario(usuarioId);
+  if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
+
+  const producto = await prisma.producto.findUnique({ where: { id: productoId } });
+  if (!producto || !producto.activo) return res.status(400).json({ error: "Producto inválido" });
+
+  let items: Record<string, unknown>[];
+  try {
+    items = JSON.parse(existente.itemsJson);
+  } catch {
+    items = [];
+  }
+  items.push({
+    plu: producto.plu,
+    descripcion: producto.descripcion,
+    corte: null,
+    envasado: null,
+    instrucciones: instrucciones?.trim() || null,
+    cantidad,
+    unidad: producto.flagBalanza === "NORMAL" ? "unidad" : "kg",
+    precioUnitario: producto.precio,
+  });
+
+  const pedido = await prisma.pedidoWeb.update({
+    where: { id },
+    data: { itemsJson: JSON.stringify(items) },
+    include: CON_RELACIONES,
+  });
+  res.json(serializar(pedido));
+});
+
 // --- Regalos (ej. longaniza o hamburguesas de cortesía) ---
 //
 // A diferencia de itemsJson (lo que pidió y paga el cliente), un regalo es
