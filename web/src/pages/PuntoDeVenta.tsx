@@ -353,6 +353,20 @@ export default function PuntoDeVenta() {
     }
   }
 
+  // Para cuando la pantalla se queda pegada (ej. esperando una impresora que
+  // no responde) y deja de reaccionar a los clics — recarga todo desde cero.
+  // Es seguro: la venta en curso ya vive guardada en el servidor (se trae de
+  // nuevo sola al entrar a la pantalla, ver iniciarVenta), así que no se
+  // pierde nada, y el usuario sigue con la sesión iniciada (ver
+  // UsuarioContext, que guarda el usuario en localStorage).
+  function reiniciarPantalla() {
+    const confirmado = window.confirm(
+      "¿Reiniciar la pantalla? Se recarga todo desde cero — no se pierde la venta en curso ni la sesión."
+    );
+    if (!confirmado) return;
+    window.location.reload();
+  }
+
   // Al abrir el modal de pago, el foco arranca en el medio de pago ya
   // activo (no en el monto) — así ← → funcionan de inmediato sin necesitar
   // un clic antes, igual que ya pasaba con los botones cuando estaban
@@ -881,7 +895,12 @@ export default function PuntoDeVenta() {
     return (
       <>
         <div className="punto-de-venta no-imprimir">
-          <h1>Punto de venta</h1>
+          <div className="encabezado-venta">
+            <h1>Punto de venta</h1>
+            <button type="button" title="Si la pantalla quedó pegada" onClick={reiniciarPantalla}>
+              ⟳ Reiniciar pantalla
+            </button>
+          </div>
           {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
           <p>Cargando...</p>
         </div>
@@ -895,6 +914,9 @@ export default function PuntoDeVenta() {
     <div className="punto-de-venta no-imprimir">
       <div className="encabezado-venta">
         <h1>Punto de venta</h1>
+        <button type="button" title="Si la pantalla quedó pegada" onClick={reiniciarPantalla}>
+          ⟳ Reiniciar pantalla
+        </button>
         <div className="total-venta-destacado">Total: {formatoCLP(totalVenta)}</div>
       </div>
       {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}

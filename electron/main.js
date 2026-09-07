@@ -41,6 +41,18 @@ function crearVentana(url) {
 // dejarlo siempre en la predeterminada puede mandar el trabajo a la
 // impresora equivocada (o a una impresora virtual como "Microsoft Print to
 // PDF") sin ningún aviso.
+// Si la impresora configurada quedó desconectada, apagada o Windows le
+// cambió el nombre, el callback de webContents.print de más abajo a veces
+// simplemente nunca se dispara (problema conocido de Electron/Chromium con
+// impresoras que dejan de estar disponibles) — sin este tope, la promesa se
+// queda esperando para siempre y toda la pantalla que espera el resultado
+// (ver imprimirConRespaldo en web/src/lib/imprimir.ts) queda pegada
+// indefinidamente. Con el tope, si no hay respuesta a tiempo se resuelve
+// igual como si hubiera fallado, y el llamador cae solo al diálogo de
+// impresión normal (mismo respaldo que ya existe para cuando la impresión
+// silenciosa falla de otras formas).
+const TIMEOUT_IMPRESION_MS = 8000;
+
 ipcMain.handle("imprimir-silencioso", (evento, opciones) => {
   const ventana = BrowserWindow.fromWebContents(evento.sender);
   const deviceName = opciones && opciones.deviceName ? opciones.deviceName : undefined;
@@ -55,6 +67,15 @@ ipcMain.handle("imprimir-silencioso", (evento, opciones) => {
   // que antes.
   const pageSize = opciones && opciones.pageSize ? opciones.pageSize : undefined;
   return new Promise((resolve) => {
+    let resuelto = false;
+    const resolverUnaVez = (resultado) => {
+      if (resuelto) return;
+      resuelto = true;
+      resolve(resultado);
+    };
+    const idTimeout = setTimeout(() => {
+      resolverUnaVez({ exito: false, razonError: "timeout esperando respuesta de la impresora" });
+    }, TIMEOUT_IMPRESION_MS);
     ventana.webContents.print(
       {
         silent: true,
@@ -63,7 +84,8 @@ ipcMain.handle("imprimir-silencioso", (evento, opciones) => {
         ...(pageSize ? { pageSize, margins: { marginType: "none" } } : {}),
       },
       (exito, razonError) => {
-        resolve({ exito, razonError });
+        clearTimeout(idTimeout);
+        resolverUnaVez({ exito, razonError });
       }
     );
   });
