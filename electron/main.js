@@ -1,7 +1,7 @@
 // Proceso principal de Electron. Se escribe en JavaScript plano (no TypeScript)
 // porque Electron ejecuta este archivo con su propio Node.js interno, sin pasar
 // por un compilador — mantenerlo simple evita configuración adicional.
-const { app, BrowserWindow, ipcMain, dialog } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, shell } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 
@@ -29,6 +29,19 @@ function crearVentana(url) {
     },
   });
   ventana.loadURL(url);
+
+  // Los links a wa.me (resumen diario y ruta de despacho por WhatsApp, ver
+  // web/src/pages/Layout.tsx y PedidosWeb.tsx) deben abrir en el navegador
+  // del sistema — ahí Windows los redirige solo a la app de WhatsApp
+  // Desktop si está instalada, o a WhatsApp Web si no. Sin este handler,
+  // Electron bloquea window.open() por defecto (o abriría una ventana
+  // interna sin sentido, sin el navegador real detrás).
+  ventana.webContents.setWindowOpenHandler(({ url: urlDestino }) => {
+    if (urlDestino.startsWith("https://wa.me/")) {
+      shell.openExternal(urlDestino);
+    }
+    return { action: "deny" };
+  });
 }
 
 // Imprime el vale/etiqueta directo en una impresora, sin mostrar el diálogo

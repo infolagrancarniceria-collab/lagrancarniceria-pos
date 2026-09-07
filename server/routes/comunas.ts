@@ -16,6 +16,9 @@ comunasRouter.get("/", async (_req, res) => {
 const crearComunaSchema = z.object({
   nombre: z.string().trim().min(1, "El nombre no puede estar vacío"),
   costoEnvio: z.number().min(0, "El costo de envío no puede ser negativo"),
+  // Orden manual por cercanía real desde el local, para armar la ruta de
+  // despacho — null = sin ordenar todavía, queda al final de la ruta.
+  ordenDespacho: z.number().int().optional().nullable(),
 });
 
 comunasRouter.post("/", async (req, res) => {
@@ -34,10 +37,7 @@ comunasRouter.post("/", async (req, res) => {
   res.status(201).json(comuna);
 });
 
-const actualizarComunaSchema = z.object({
-  nombre: z.string().trim().min(1, "El nombre no puede estar vacío"),
-  costoEnvio: z.number().min(0, "El costo de envío no puede ser negativo"),
-});
+const actualizarComunaSchema = crearComunaSchema;
 
 comunasRouter.put("/:id", async (req, res) => {
   const id = Number(req.params.id);

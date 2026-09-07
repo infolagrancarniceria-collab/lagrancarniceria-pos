@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { api, formatoCLP, formatoPeso, type PedidoWeb, type Producto } from "../api";
+import { api, formatoCLP, formatoPeso, type Comuna, type PedidoWeb, type Producto } from "../api";
 import { etiquetaPedido, subtotalItem, totalPedido, ValePedidoWeb } from "../components/ValePedidoWeb";
-import { RutaDespacho } from "../components/RutaDespacho";
+import { construirMensajeRutaWhatsapp, RutaDespacho, type DireccionRuta } from "../components/RutaDespacho";
 import { useUsuario } from "../context/UsuarioContext";
 import { imprimirPedidoWeb, imprimirRutaDespacho } from "../lib/imprimir";
 import { mostrarToast } from "../lib/toast";
@@ -99,6 +99,17 @@ export default function PedidosWeb() {
   const [seleccionRuta, setSeleccionRuta] = useState<Map<number, PedidoWeb>>(new Map());
   const [rutaParaImprimir, setRutaParaImprimir] = useState<PedidoWeb[] | null>(null);
   const [enviandoACajaId, setEnviandoACajaId] = useState<number | null>(null);
+  const [comunas, setComunas] = useState<Comuna[]>([]);
+  const [direccionRuta, setDireccionRuta] = useState<DireccionRuta>("cercana");
+
+  useEffect(() => {
+    api.comunas.listar().then(setComunas).catch(() => {});
+  }, []);
+
+  function enviarRutaPorWhatsapp() {
+    const mensaje = construirMensajeRutaWhatsapp(Array.from(seleccionRuta.values()), comunas, direccionRuta);
+    window.open(`https://wa.me/?text=${encodeURIComponent(mensaje)}`, "_blank");
+  }
 
   function cargar() {
     setCargando(true);
@@ -473,8 +484,18 @@ export default function PedidosWeb() {
             {seleccionRuta.size} pedido{seleccionRuta.size === 1 ? "" : "s"} de despacho seleccionado
             {seleccionRuta.size === 1 ? "" : "s"} para la ruta.
           </span>
+          <label>
+            Empezar por
+            <select value={direccionRuta} onChange={(e) => setDireccionRuta(e.target.value as DireccionRuta)}>
+              <option value="cercana">La comuna más cercana</option>
+              <option value="lejana">La comuna más lejana</option>
+            </select>
+          </label>
           <button type="button" className="boton boton-primario" onClick={imprimirRuta}>
             Imprimir ruta de despacho
+          </button>
+          <button type="button" onClick={enviarRutaPorWhatsapp}>
+            Enviar por WhatsApp
           </button>
           <button type="button" onClick={() => setSeleccionRuta(new Map())}>
             Limpiar selección
@@ -980,7 +1001,7 @@ export default function PedidosWeb() {
 
     <div className="vale-oculto-hasta-imprimir">
       {pedidoParaImprimir && <ValePedidoWeb pedido={pedidoParaImprimir} />}
-      {rutaParaImprimir && <RutaDespacho pedidos={rutaParaImprimir} />}
+      {rutaParaImprimir && <RutaDespacho pedidos={rutaParaImprimir} comunas={comunas} direccion={direccionRuta} />}
     </div>
     </>
   );

@@ -48,6 +48,29 @@ export default function Layout() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Resumen diario por WhatsApp — a pedido del usuario, pasadas las 15:30
+  // se abre WhatsApp solo con el mensaje ya armado (ver
+  // /api/whatsapp/resumen-pendiente), sin que nadie tenga que acordarse de
+  // generarlo a mano. El backend ya se asegura de que esto pase una sola
+  // vez por día (marca la fecha apenas lo entrega) — acá solo se consulta
+  // cada tanto mientras el programa esté abierto.
+  useEffect(() => {
+    if (modoCamara) return;
+    function chequearResumenDiario() {
+      api.whatsapp
+        .resumenPendiente()
+        .then((r) => {
+          if (r.pendiente && r.mensaje && r.numeroDueno) {
+            window.open(`https://wa.me/${r.numeroDueno}?text=${encodeURIComponent(r.mensaje)}`, "_blank");
+          }
+        })
+        .catch(() => {});
+    }
+    chequearResumenDiario();
+    const id = setInterval(chequearResumenDiario, INTERVALO_CHEQUEO_AVISOS_MS);
+    return () => clearInterval(id);
+  }, [modoCamara]);
+
   const totalAvisos = avisos ? contarAvisos(avisos) : 0;
 
   // App instalada desde el celular (ver modoCamara.ts) — pantalla angosta,

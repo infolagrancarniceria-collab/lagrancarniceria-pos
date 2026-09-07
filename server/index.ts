@@ -27,6 +27,7 @@ import { comunasRouter } from "./routes/comunas";
 import { camaraRouter } from "./routes/camara";
 import { avisosRouter } from "./routes/avisos";
 import { cortesRouter } from "./routes/cortes";
+import { whatsappRouter } from "./routes/whatsapp";
 import { pedidosWebRouter } from "./routes/pedidosWeb";
 import { diagnosticoRouter } from "./routes/diagnostico";
 import {
@@ -102,6 +103,7 @@ app.use("/api/gastos", gastosRouter);
 app.use("/api/comunas", comunasRouter);
 app.use("/api/camara", camaraRouter);
 app.use("/api/avisos", avisosRouter);
+app.use("/api/whatsapp", whatsappRouter);
 app.use("/api/cortes", cortesRouter);
 app.use("/api/pedidos-web", pedidosWebRouter);
 app.use("/api/diagnostico", diagnosticoRouter);

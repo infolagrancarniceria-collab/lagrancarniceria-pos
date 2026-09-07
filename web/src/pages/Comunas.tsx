@@ -7,12 +7,14 @@ export default function Comunas() {
   const [comunas, setComunas] = useState<Comuna[]>([]);
   const [nombre, setNombre] = useState("");
   const [costoEnvio, setCostoEnvio] = useState("");
+  const [ordenDespacho, setOrdenDespacho] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
 
   const [editandoId, setEditandoId] = useState<number | null>(null);
   const [editNombre, setEditNombre] = useState("");
   const [editCosto, setEditCosto] = useState("");
+  const [editOrden, setEditOrden] = useState("");
 
   const [cortes, setCortes] = useState<CorteOpcion[]>([]);
   const [corteFamilia, setCorteFamilia] = useState<string>(FAMILIAS_CAMARA[0]);
@@ -40,9 +42,14 @@ export default function Comunas() {
       return;
     }
     try {
-      await api.comunas.crear({ nombre: nombre.trim(), costoEnvio: costo });
+      await api.comunas.crear({
+        nombre: nombre.trim(),
+        costoEnvio: costo,
+        ordenDespacho: ordenDespacho.trim() ? Number(ordenDespacho) : null,
+      });
       setNombre("");
       setCostoEnvio("");
+      setOrdenDespacho("");
       setMensaje("Comuna creada");
       cargar();
     } catch (e) {
@@ -54,6 +61,7 @@ export default function Comunas() {
     setEditandoId(c.id);
     setEditNombre(c.nombre);
     setEditCosto(String(c.costoEnvio));
+    setEditOrden(c.ordenDespacho != null ? String(c.ordenDespacho) : "");
   }
 
   async function guardarEdicion(id: number) {
@@ -64,7 +72,11 @@ export default function Comunas() {
       return;
     }
     try {
-      await api.comunas.actualizar(id, { nombre: editNombre.trim(), costoEnvio: costo });
+      await api.comunas.actualizar(id, {
+        nombre: editNombre.trim(),
+        costoEnvio: costo,
+        ordenDespacho: editOrden.trim() ? Number(editOrden) : null,
+      });
       setEditandoId(null);
       cargar();
     } catch (e) {
@@ -131,6 +143,19 @@ export default function Comunas() {
             Costo de envío
             <input type="number" min="0" value={costoEnvio} onChange={(e) => setCostoEnvio(e.target.value)} required />
           </label>
+          <label>
+            Orden de despacho (opcional)
+            <input
+              type="number"
+              value={ordenDespacho}
+              onChange={(e) => setOrdenDespacho(e.target.value)}
+              placeholder="ej. 1 = la más cercana"
+            />
+            <span className="ayuda">
+              Para armar la ruta de despacho en el orden real que conviene manejar desde el local (Cerro Navia) — 1
+              es la más cercana, los números más altos van más lejos. Las comunas sin número quedan al final.
+            </span>
+          </label>
           <div className="acciones-formulario">
             <button type="submit" className="boton boton-primario">
               Crear comuna
@@ -144,46 +169,53 @@ export default function Comunas() {
           <tr>
             <th>Comuna</th>
             <th>Costo de envío</th>
+            <th>Orden de despacho</th>
             <th></th>
           </tr>
         </thead>
         <tbody>
-          {comunas.map((c) =>
-            editandoId === c.id ? (
-              <tr key={c.id}>
-                <td>
-                  <input value={editNombre} onChange={(e) => setEditNombre(e.target.value)} />
-                </td>
-                <td>
-                  <input type="number" min="0" value={editCosto} onChange={(e) => setEditCosto(e.target.value)} />
-                </td>
-                <td className="fila-inline">
-                  <button type="button" onClick={() => guardarEdicion(c.id)}>
-                    Guardar
-                  </button>
-                  <button type="button" onClick={() => setEditandoId(null)}>
-                    Cancelar
-                  </button>
-                </td>
-              </tr>
-            ) : (
-              <tr key={c.id}>
-                <td>{c.nombre}</td>
-                <td>{formatoCLP(c.costoEnvio)}</td>
-                <td className="fila-inline">
-                  <button type="button" onClick={() => comenzarEdicion(c)}>
-                    Editar
-                  </button>
-                  <button type="button" className="boton-quitar-item" title="Eliminar" onClick={() => eliminar(c.id)}>
-                    ✕
-                  </button>
-                </td>
-              </tr>
-            )
-          )}
+          {[...comunas]
+            .sort((a, b) => (a.ordenDespacho ?? Infinity) - (b.ordenDespacho ?? Infinity))
+            .map((c) =>
+              editandoId === c.id ? (
+                <tr key={c.id}>
+                  <td>
+                    <input value={editNombre} onChange={(e) => setEditNombre(e.target.value)} />
+                  </td>
+                  <td>
+                    <input type="number" min="0" value={editCosto} onChange={(e) => setEditCosto(e.target.value)} />
+                  </td>
+                  <td>
+                    <input type="number" value={editOrden} onChange={(e) => setEditOrden(e.target.value)} />
+                  </td>
+                  <td className="fila-inline">
+                    <button type="button" onClick={() => guardarEdicion(c.id)}>
+                      Guardar
+                    </button>
+                    <button type="button" onClick={() => setEditandoId(null)}>
+                      Cancelar
+                    </button>
+                  </td>
+                </tr>
+              ) : (
+                <tr key={c.id}>
+                  <td>{c.nombre}</td>
+                  <td>{formatoCLP(c.costoEnvio)}</td>
+                  <td>{c.ordenDespacho ?? "—"}</td>
+                  <td className="fila-inline">
+                    <button type="button" onClick={() => comenzarEdicion(c)}>
+                      Editar
+                    </button>
+                    <button type="button" className="boton-quitar-item" title="Eliminar" onClick={() => eliminar(c.id)}>
+                      ✕
+                    </button>
+                  </td>
+                </tr>
+              )
+            )}
           {comunas.length === 0 && (
             <tr>
-              <td colSpan={3}>Todavía no hay comunas creadas.</td>
+              <td colSpan={4}>Todavía no hay comunas creadas.</td>
             </tr>
           )}
         </tbody>

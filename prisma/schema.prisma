@@ -379,6 +379,21 @@ model ConfiguracionSyncWeb {
   actualizadoEn DateTime @updatedAt
 }
 
+// Resumen diario por WhatsApp — a pedido del usuario, un mensaje con el
+// total vendido/cantidad de ventas/top productos del día, listo para
+// mandar (se abre WhatsApp con el texto ya escrito) apenas pasan las
+// 15:30, sin que nadie tenga que acordarse de generarlo a mano. No hay
+// envío 100% automático (eso requeriría contratar una API de WhatsApp
+// Business, con costo por mensaje) — alguien igual tiene que apretar
+// "Enviar" una vez que se abre. "ultimoResumenPreparadoFecha" (YYYY-MM-DD,
+// hora local) evita que se vuelva a abrir más de una vez el mismo día.
+model ConfiguracionWhatsapp {
+  id                         Int      @id @default(autoincrement())
+  numeroDueno                String?
+  ultimoResumenPreparadoFecha String?
+  actualizadoEn              DateTime @updatedAt
+}
+
 // Solo puede haber una sesión de caja "abierta" a la vez (una sola persona
 // usa el sistema a la vez, según la arquitectura del proyecto).
 model SesionCaja {
@@ -465,6 +480,12 @@ model Comuna {
   nombre     String  @unique
   costoEnvio Float
   activo     Boolean @default(true)
+
+  // Orden manual por cercanía real desde el local (Cerro Navia) para armar
+  // la ruta de despacho de forma eficiente — null = todavía no se ordenó
+  // esa comuna, queda al final. Se calibra a mano una sola vez (Comunas de
+  // despacho), no depende de ninguna API de mapas.
+  ordenDespacho Int?
 
   ventas Venta[]
 }

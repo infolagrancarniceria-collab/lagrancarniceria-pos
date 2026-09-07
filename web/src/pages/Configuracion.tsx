@@ -28,6 +28,10 @@ export default function Configuracion() {
   const [errorSyncWeb, setErrorSyncWeb] = useState<string | null>(null);
   const [mensajeSyncWeb, setMensajeSyncWeb] = useState<string | null>(null);
   const [guardandoSyncWeb, setGuardandoSyncWeb] = useState(false);
+  const [numeroDueno, setNumeroDueno] = useState("");
+  const [errorWhatsapp, setErrorWhatsapp] = useState<string | null>(null);
+  const [mensajeWhatsapp, setMensajeWhatsapp] = useState<string | null>(null);
+  const [guardandoWhatsapp, setGuardandoWhatsapp] = useState(false);
   const [direccionRed, setDireccionRed] = useState<{ direcciones: string[]; puerto: number } | null>(null);
   const [modoCaja, setModoCaja] = useState(() => modoCajaActivo());
   const [impresoras, setImpresoras] = useState<ImpresoraDisponible[] | null>(null);
@@ -83,7 +87,30 @@ export default function Configuracion() {
         if (r.webSyncUrl) setSyncWebUrl(r.webSyncUrl);
       })
       .catch((e) => setErrorSyncWeb(e.message));
+    api.whatsapp
+      .obtenerConfiguracion()
+      .then((r) => setNumeroDueno(r.numeroDueno ?? ""))
+      .catch((e) => setErrorWhatsapp(e.message));
   }, []);
+
+  async function guardarWhatsapp(e: React.FormEvent) {
+    e.preventDefault();
+    setErrorWhatsapp(null);
+    setMensajeWhatsapp(null);
+    if (!numeroDueno.trim()) {
+      setErrorWhatsapp("Falta el número de WhatsApp");
+      return;
+    }
+    setGuardandoWhatsapp(true);
+    try {
+      await api.whatsapp.guardarConfiguracion(numeroDueno.trim());
+      setMensajeWhatsapp("Guardado");
+    } catch (e) {
+      setErrorWhatsapp((e as Error).message);
+    } finally {
+      setGuardandoWhatsapp(false);
+    }
+  }
 
   async function elegirCarpetaUsb() {
     const carpeta = await window.electronAPI?.elegirCarpeta();
@@ -464,6 +491,33 @@ export default function Configuracion() {
           <div className="acciones-formulario">
             <button type="submit" className="boton boton-primario" disabled={guardandoSyncWeb}>
               {guardandoSyncWeb ? "Guardando..." : "Guardar"}
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <section className="tarjeta">
+        <h2>Resumen diario por WhatsApp</h2>
+        <p className="ayuda">
+          Pasadas las 15:30, mientras el programa esté abierto, se abre WhatsApp solo con el resumen del día (total
+          vendido, cantidad de ventas, más vendidos) ya escrito, listo para mandar al número de abajo — falta un
+          clic tuyo en "Enviar" dentro de WhatsApp, no sale sin que nadie lo toque.
+        </p>
+        {errorWhatsapp && <ModalAlerta mensaje={errorWhatsapp} onCerrar={() => setErrorWhatsapp(null)} />}
+        {mensajeWhatsapp && <p className="exito">{mensajeWhatsapp}</p>}
+
+        <form onSubmit={guardarWhatsapp} onKeyDown={manejarEnterComoTab} className="formulario">
+          <label>
+            Número de WhatsApp del dueño
+            <input
+              value={numeroDueno}
+              onChange={(e) => setNumeroDueno(e.target.value)}
+              placeholder="ej. 56912345678 (con código de país, sin +)"
+            />
+          </label>
+          <div className="acciones-formulario">
+            <button type="submit" className="boton boton-primario" disabled={guardandoWhatsapp}>
+              {guardandoWhatsapp ? "Guardando..." : "Guardar"}
             </button>
           </div>
         </form>

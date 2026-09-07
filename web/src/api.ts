@@ -473,6 +473,7 @@ export interface Comuna {
   nombre: string;
   costoEnvio: number;
   activo: boolean;
+  ordenDespacho: number | null;
 }
 
 export interface ReporteDespachos {
@@ -1042,8 +1043,9 @@ export const api = {
   },
   comunas: {
     listar: () => get<Comuna[]>("/api/comunas"),
-    crear: (data: { nombre: string; costoEnvio: number }) => post<Comuna>("/api/comunas", data),
-    actualizar: (id: number, data: { nombre: string; costoEnvio: number }) =>
+    crear: (data: { nombre: string; costoEnvio: number; ordenDespacho?: number | null }) =>
+      post<Comuna>("/api/comunas", data),
+    actualizar: (id: number, data: { nombre: string; costoEnvio: number; ordenDespacho?: number | null }) =>
       put<Comuna>(`/api/comunas/${id}`, data),
     eliminar: (id: number) => del<void>(`/api/comunas/${id}`),
   },
@@ -1279,6 +1281,13 @@ export const api = {
   },
   avisos: {
     obtener: () => get<AvisosCriticos>("/api/avisos"),
+  },
+  whatsapp: {
+    obtenerConfiguracion: () => get<{ numeroDueno: string | null }>("/api/whatsapp/configuracion"),
+    guardarConfiguracion: (numeroDueno: string) =>
+      post<{ numeroDueno: string | null }>("/api/whatsapp/configuracion", { numeroDueno }),
+    resumenPendiente: () =>
+      get<{ pendiente: boolean; mensaje?: string; numeroDueno?: string }>("/api/whatsapp/resumen-pendiente"),
   },
   asistente: {
     enviarMensaje: (mensaje: string, historial: unknown[]) =>
