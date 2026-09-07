@@ -1104,6 +1104,21 @@ select {
 .ruta-despacho {
   max-width: none;
 }
+/* Cuadratura de caja (ver CuadraturaCaja.tsx) — mismo motivo que la ruta de
+   despacho: se ve en pantalla y se imprime en A4, no en el rollo térmico. */
+.cuadratura-caja {
+  max-width: none;
+}
+.cuadratura-dia {
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--color-borde);
+}
+.cuadratura-dia:first-of-type {
+  margin-top: 1rem;
+  padding-top: 0;
+  border-top: none;
+}
 .ruta-comuna {
   margin-top: 1.5rem;
 }

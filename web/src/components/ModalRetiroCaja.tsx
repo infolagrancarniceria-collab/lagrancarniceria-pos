@@ -2,17 +2,19 @@ import { useEffect, useState } from "react";
 import { api, type Usuario } from "../api";
 
 interface Props {
+  tipo: "retiro" | "ingreso";
   onConfirmar: (monto: number, motivo: string, usuarioId: number, clave: string) => Promise<void>;
   onCancelar: () => void;
 }
 
-// Retiro de caja — plata que sale del cajón en efectivo sin ser parte de
-// una venta (ej. pagarle a un proveedor que llega con mercadería a mitad
-// del día). Mismo patrón de autorización que anular una venta
-// (ModalConfirmarClave: quién autoriza + clave de supervisor), pero con
-// monto y motivo como campos propios en vez de un dropdown de motivos —
-// acá el motivo es libre (a quién se le pagó), no una lista corta fija.
-export default function ModalRetiroCaja({ onConfirmar, onCancelar }: Props) {
+// Retiro/ingreso de caja — plata que sale o entra al cajón en efectivo sin
+// ser parte de una venta (ej. pagarle a un proveedor que llega con
+// mercadería a mitad del día, o el dueño reforzando el cambio). Mismo
+// componente para los dos tipos (mismos campos, mismo patrón de
+// autorización — ModalConfirmarClave: quién autoriza + clave de
+// supervisor —, solo cambia el texto), con monto y motivo como campos
+// propios en vez de un dropdown de motivos — acá el motivo es libre.
+export default function ModalRetiroCaja({ tipo, onConfirmar, onCancelar }: Props) {
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [monto, setMonto] = useState("");
   const [motivo, setMotivo] = useState("");
@@ -34,11 +36,11 @@ export default function ModalRetiroCaja({ onConfirmar, onCancelar }: Props) {
       return;
     }
     if (!motivo.trim()) {
-      setError("Falta el motivo del retiro (ej. a quién se le pagó)");
+      setError(`Falta el motivo del ${tipo}`);
       return;
     }
     if (!usuarioId) {
-      setError("Elige quién autoriza el retiro");
+      setError(`Elige quién autoriza el ${tipo}`);
       return;
     }
     if (!clave.trim()) {
@@ -55,18 +57,21 @@ export default function ModalRetiroCaja({ onConfirmar, onCancelar }: Props) {
     }
   }
 
+  const esRetiro = tipo === "retiro";
+
   return (
     <div className="modal-fondo">
       <div className="modal-contenido tarjeta">
-        <h2>Retiro de caja</h2>
+        <h2>{esRetiro ? "Retiro de caja" : "Ingreso de caja"}</h2>
         <p className="ayuda">
-          Para cuando se saca plata del cajón para pagar mercadería que llega durante el día — se descuenta del
-          efectivo esperado al cerrar la caja, para que no aparezca como una diferencia.
+          {esRetiro
+            ? "Para cuando se saca plata del cajón para pagar mercadería que llega durante el día — se descuenta del efectivo esperado al cerrar la caja, para que no aparezca como una diferencia."
+            : "Para cuando entra plata al cajón fuera de una venta (ej. reforzar el cambio) — se suma al efectivo esperado al cerrar la caja, para que no aparezca como una diferencia."}
         </p>
         {error && <p className="error">{error}</p>}
         <form onSubmit={confirmar} className="formulario">
           <label>
-            Monto a retirar
+            Monto a {esRetiro ? "retirar" : "ingresar"}
             <input
               type="number"
               min="1"
@@ -76,7 +81,7 @@ export default function ModalRetiroCaja({ onConfirmar, onCancelar }: Props) {
             />
           </label>
           <label>
-            Motivo (ej. "Pago a Distribuidora Ñuble")
+            Motivo {esRetiro ? '(ej. "Pago a Distribuidora Ñuble")' : '(ej. "Refuerzo de cambio")'}
             <input type="text" value={motivo} onChange={(e) => setMotivo(e.target.value)} />
           </label>
           <label>
@@ -96,7 +101,7 @@ export default function ModalRetiroCaja({ onConfirmar, onCancelar }: Props) {
           </label>
           <div className="acciones-formulario">
             <button type="submit" className="boton boton-primario" disabled={enviando}>
-              {enviando ? "Retirando..." : "Confirmar retiro"}
+              {enviando ? "Guardando..." : esRetiro ? "Confirmar retiro" : "Confirmar ingreso"}
             </button>
             <button type="button" onClick={onCancelar} disabled={enviando}>
               Cancelar

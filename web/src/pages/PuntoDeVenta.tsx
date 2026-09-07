@@ -17,10 +17,12 @@ import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 import { useEscanerCodigoBarras } from "../hooks/useEscanerCodigoBarras";
 import { TecladoNumerico } from "../components/TecladoNumerico";
 import ModalConfirmarClave from "../components/ModalConfirmarClave";
+import ModalRetiroCaja from "../components/ModalRetiroCaja";
 import SelectorCategoria from "../components/SelectorCategoria";
 import { ValeVenta } from "../components/ValeVenta";
 import { imprimirSilencioso } from "../lib/imprimir";
 import ModalAlerta from "../components/ModalAlerta";
+import { mostrarToast } from "../lib/toast";
 
 // Mensaje exacto que devuelve POST /items/escanear cuando el código no
 // calza con ningún producto (ver server/routes/caja.ts) — se usa para
@@ -365,6 +367,21 @@ export default function PuntoDeVenta() {
     );
     if (!confirmado) return;
     window.location.reload();
+  }
+
+  // Retiro/ingreso de caja directo desde Punto de Venta — a pedido del
+  // usuario, para no tener que salir a la pantalla Caja mientras se está
+  // vendiendo (ver también Caja.tsx, que tiene el mismo botón).
+  const [movimientoTipo, setMovimientoTipo] = useState<"retiro" | "ingreso" | null>(null);
+
+  async function confirmarMovimientoCaja(monto: number, motivo: string, usuarioId: number, clave: string) {
+    if (!venta || !movimientoTipo) return;
+    await api.caja.registrarRetiro(venta.sesionCajaId, { tipo: movimientoTipo, monto, motivo, usuarioId, clave });
+    setMovimientoTipo(null);
+    mostrarToast(
+      movimientoTipo === "retiro" ? "Retiro registrado" : "Ingreso registrado",
+      `${formatoCLP(monto)} — ${motivo}`
+    );
   }
 
   // Al abrir el modal de pago, el foco arranca en el medio de pago ya
@@ -914,11 +931,20 @@ export default function PuntoDeVenta() {
     <div className="punto-de-venta no-imprimir">
       <div className="encabezado-venta">
         <h1>Punto de venta</h1>
+        <button type="button" onClick={() => setMovimientoTipo("retiro")}>
+          Retiro de caja
+        </button>
+        <button type="button" onClick={() => setMovimientoTipo("ingreso")}>
+          Ingreso de caja
+        </button>
         <button type="button" title="Si la pantalla quedó pegada" onClick={reiniciarPantalla}>
           ⟳ Reiniciar pantalla
         </button>
         <div className="total-venta-destacado">Total: {formatoCLP(totalVenta)}</div>
       </div>
+      {movimientoTipo && (
+        <ModalRetiroCaja tipo={movimientoTipo} onConfirmar={confirmarMovimientoCaja} onCancelar={() => setMovimientoTipo(null)} />
+      )}
       {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
       {mensaje && <p className="exito">{mensaje}</p>}
 

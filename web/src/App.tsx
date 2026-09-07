@@ -24,6 +24,7 @@ import ConfigurarClaveSupervisor from "./pages/ConfigurarClaveSupervisor";
 import AbrirCaja from "./pages/AbrirCaja";
 import PuntoDeVenta from "./pages/PuntoDeVenta";
 import CerrarCaja from "./pages/CerrarCaja";
+import CuadraturaCaja from "./pages/CuadraturaCaja";
 import SesionesCaja from "./pages/SesionesCaja";
 import CreditosPendientes from "./pages/CreditosPendientes";
 import BuscarVenta from "./pages/BuscarVenta";
@@ -82,6 +83,7 @@ export default function App() {
             <Route path="/caja/abrir" element={<AbrirCaja />} />
             <Route path="/caja/venta" element={<PuntoDeVenta />} />
             <Route path="/caja/cerrar" element={<CerrarCaja />} />
+            <Route path="/caja/cuadratura" element={<CuadraturaCaja />} />
             <Route path="/caja/sesiones" element={<SesionesCaja />} />
             <Route path="/caja/creditos" element={<CreditosPendientes />} />
             <Route path="/caja/buscar" element={<BuscarVenta />} />

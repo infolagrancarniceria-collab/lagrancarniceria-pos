@@ -169,3 +169,16 @@ export async function imprimirRutaDespacho() {
   await imprimirConRespaldo(obtenerImpresoraPedidosWeb(), TAMANO_A4_MICRONES);
   setTimeout(() => activarPaginaRuta(false), 500);
 }
+
+// Cuadratura de caja: a diferencia del vale/ruta (ocultos hasta imprimir),
+// este reporte se ve en pantalla mientras se revisa el rango de fechas —
+// se imprime tal cual se está viendo, en hoja A4 normal (mismo mecanismo
+// de sobrescribir el tamaño de página que ya usa la ruta de despacho).
+// Reutiliza la misma impresora configurada para "Pedidos web": ambas son
+// hojas A4 administrativas, no tiene sentido pedir una tercera impresora
+// aparte solo para esto.
+export async function imprimirCuadraturaCaja() {
+  activarPaginaRuta(true);
+  await imprimirConRespaldo(obtenerImpresoraPedidosWeb(), TAMANO_A4_MICRONES);
+  setTimeout(() => activarPaginaRuta(false), 500);
+}

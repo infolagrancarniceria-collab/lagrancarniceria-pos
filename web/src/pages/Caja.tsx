@@ -10,7 +10,7 @@ export default function Caja() {
   const [sesion, setSesion] = useState<SesionCaja | null | undefined>(undefined);
   const [resumen, setResumen] = useState<ResumenSesion | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [mostrarRetiro, setMostrarRetiro] = useState(false);
+  const [movimientoTipo, setMovimientoTipo] = useState<"retiro" | "ingreso" | null>(null);
 
   useEffect(() => {
     api.caja.estadoClave().then((r) => setClaveConfigurada(r.configurada)).catch((e) => setError(e.message));
@@ -23,11 +23,14 @@ export default function Caja() {
     }
   }, [sesion]);
 
-  async function confirmarRetiro(monto: number, motivo: string, usuarioId: number, clave: string) {
-    if (!sesion) return;
-    await api.caja.registrarRetiro(sesion.id, { monto, motivo, usuarioId, clave });
-    setMostrarRetiro(false);
-    mostrarToast("Retiro registrado", `${formatoCLP(monto)} — ${motivo}`);
+  async function confirmarMovimiento(monto: number, motivo: string, usuarioId: number, clave: string) {
+    if (!sesion || !movimientoTipo) return;
+    await api.caja.registrarRetiro(sesion.id, { tipo: movimientoTipo, monto, motivo, usuarioId, clave });
+    setMovimientoTipo(null);
+    mostrarToast(
+      movimientoTipo === "retiro" ? "Retiro registrado" : "Ingreso registrado",
+      `${formatoCLP(monto)} — ${motivo}`
+    );
     api.caja.resumenSesion(sesion.id).then(setResumen).catch((e) => setError(e.message));
   }
 
@@ -97,8 +100,14 @@ export default function Caja() {
           <Link to="/comunas" className="boton">
             Comunas de despacho
           </Link>
-          <button type="button" onClick={() => setMostrarRetiro(true)}>
+          <Link to="/caja/cuadratura" className="boton">
+            Cuadratura de caja
+          </Link>
+          <button type="button" onClick={() => setMovimientoTipo("retiro")}>
             Retiro de caja
+          </button>
+          <button type="button" onClick={() => setMovimientoTipo("ingreso")}>
+            Ingreso de caja
           </button>
         </div>
       </div>
@@ -134,26 +143,33 @@ export default function Caja() {
               <div>
                 <strong>Retiros de caja:</strong> {formatoCLP(resumen.totalRetiros)}
               </div>
+              <div>
+                <strong>Ingresos de caja:</strong> {formatoCLP(resumen.totalIngresos)}
+              </div>
             </div>
-            {resumen.retiros.length > 0 && (
+            {(resumen.retiros.length > 0 || resumen.ingresos.length > 0) && (
               <table className="tabla">
                 <thead>
                   <tr>
                     <th>Hora</th>
+                    <th>Tipo</th>
                     <th>Monto</th>
                     <th>Motivo</th>
                     <th>Autorizó</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {resumen.retiros.map((r) => (
-                    <tr key={r.id}>
-                      <td>{new Date(r.fecha).toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" })}</td>
-                      <td>{formatoCLP(r.monto)}</td>
-                      <td>{r.motivo}</td>
-                      <td>{r.usuarioAutorizo?.nombre ?? "—"}</td>
-                    </tr>
-                  ))}
+                  {[...resumen.retiros, ...resumen.ingresos]
+                    .sort((a, b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime())
+                    .map((r) => (
+                      <tr key={r.id}>
+                        <td>{new Date(r.fecha).toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" })}</td>
+                        <td>{r.tipo === "retiro" ? "Retiro" : "Ingreso"}</td>
+                        <td>{formatoCLP(r.monto)}</td>
+                        <td>{r.motivo}</td>
+                        <td>{r.usuarioAutorizo?.nombre ?? "—"}</td>
+                      </tr>
+                    ))}
                 </tbody>
               </table>
             )}
@@ -161,7 +177,9 @@ export default function Caja() {
         )}
       </div>
 
-      {mostrarRetiro && <ModalRetiroCaja onConfirmar={confirmarRetiro} onCancelar={() => setMostrarRetiro(false)} />}
+      {movimientoTipo && (
+        <ModalRetiroCaja tipo={movimientoTipo} onConfirmar={confirmarMovimiento} onCancelar={() => setMovimientoTipo(null)} />
+      )}
     </div>
   );
 }

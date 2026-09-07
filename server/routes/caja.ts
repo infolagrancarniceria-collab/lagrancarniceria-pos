@@ -206,10 +206,22 @@ async function calcularResumenSesion(sesionId: number) {
   // durante el turno sin ser parte de ninguna venta (ej. pagarle a un
   // proveedor que llega con mercadería) — se resta del efectivo esperado
   // más abajo para que no aparezca como una diferencia de caja al cerrar.
-  const retiros = await prisma.retiroCaja.findMany({ where: { sesionCajaId: sesionId }, include: { usuarioAutorizo: true } });
+  const movimientos = await prisma.retiroCaja.findMany({ where: { sesionCajaId: sesionId }, include: { usuarioAutorizo: true } });
+  const retiros = movimientos.filter((m) => m.tipo !== "ingreso");
+  const ingresos = movimientos.filter((m) => m.tipo === "ingreso");
   const totalRetiros = retiros.reduce((s, r) => s + r.monto, 0);
+  const totalIngresos = ingresos.reduce((s, r) => s + r.monto, 0);
 
-  return { cantidadVentas: ventas.length, totalVentas, totalPorMedio, totalCobrosCredito, retiros, totalRetiros };
+  return {
+    cantidadVentas: ventas.length,
+    totalVentas,
+    totalPorMedio,
+    totalCobrosCredito,
+    retiros,
+    totalRetiros,
+    ingresos,
+    totalIngresos,
+  };
 }
 
 cajaRouter.get("/sesiones/:id/resumen", async (req, res) => {
@@ -218,7 +230,8 @@ cajaRouter.get("/sesiones/:id/resumen", async (req, res) => {
   if (!sesion) return res.status(404).json({ error: "Sesión no encontrada" });
 
   const resumen = await calcularResumenSesion(id);
-  const efectivoEsperado = sesion.fondoFijoInicial + resumen.totalPorMedio.efectivo - resumen.totalRetiros;
+  const efectivoEsperado =
+    sesion.fondoFijoInicial + resumen.totalPorMedio.efectivo - resumen.totalRetiros + resumen.totalIngresos;
 
   res.json({
     sesion,
@@ -228,15 +241,76 @@ cajaRouter.get("/sesiones/:id/resumen", async (req, res) => {
   });
 });
 
-// --- Retiro de caja ---
-// Plata que sale en efectivo del cajón durante el turno sin ser parte de
-// una venta (ej. pagarle a un proveedor que llega con mercadería a mitad
-// del día) — mismo patrón de autorización que anular una venta (clave de
-// supervisor + quién autoriza), porque es plata saliendo de la caja sin
-// que quede un comprobante de venta de por medio.
+// --- Cuadratura de caja ---
+// Reporte para un rango de fechas — puede abarcar varias sesiones (cada día
+// se abre y cierra una caja aparte), así que se muestra un desglose por
+// sesión (mismos datos que /sesiones/:id/resumen, uno por día) más un total
+// general sumando todo el rango. El fondo inicial no se suma entre
+// sesiones distintas en ningún cálculo individual — es un dato propio de
+// cada una — pero sí se incluye sumado en el total general para que se
+// vea de un vistazo cuánto fondo fijo estuvo en juego en total.
+cajaRouter.get("/cuadratura", async (req, res) => {
+  const { desde, hasta } = rangoFechasDesdeTexto(req.query.desde, req.query.hasta);
+
+  const sesiones = await prisma.sesionCaja.findMany({
+    where: { fechaApertura: { gte: desde, lte: hasta } },
+    orderBy: { fechaApertura: "asc" },
+    include: { usuarioApertura: true, usuarioCierre: true },
+  });
+
+  const dias = await Promise.all(
+    sesiones.map(async (sesion) => {
+      const resumen = await calcularResumenSesion(sesion.id);
+      const efectivoEsperado =
+        sesion.fondoFijoInicial + resumen.totalPorMedio.efectivo - resumen.totalRetiros + resumen.totalIngresos;
+      return {
+        sesion,
+        ...resumen,
+        efectivoEsperado,
+        diferencia: sesion.efectivoContado != null ? sesion.efectivoContado - efectivoEsperado : null,
+      };
+    })
+  );
+
+  const totalGeneral = dias.reduce(
+    (acc, dia) => ({
+      fondoFijoInicial: acc.fondoFijoInicial + dia.sesion.fondoFijoInicial,
+      totalVentas: acc.totalVentas + dia.totalVentas,
+      totalPorMedio: {
+        efectivo: acc.totalPorMedio.efectivo + dia.totalPorMedio.efectivo,
+        tarjeta: acc.totalPorMedio.tarjeta + dia.totalPorMedio.tarjeta,
+        credito: acc.totalPorMedio.credito + dia.totalPorMedio.credito,
+      },
+      totalRetiros: acc.totalRetiros + dia.totalRetiros,
+      totalIngresos: acc.totalIngresos + dia.totalIngresos,
+      efectivoEsperado: acc.efectivoEsperado + dia.efectivoEsperado,
+      efectivoContado: acc.efectivoContado + (dia.sesion.efectivoContado ?? 0),
+    }),
+    {
+      fondoFijoInicial: 0,
+      totalVentas: 0,
+      totalPorMedio: { efectivo: 0, tarjeta: 0, credito: 0 },
+      totalRetiros: 0,
+      totalIngresos: 0,
+      efectivoEsperado: 0,
+      efectivoContado: 0,
+    }
+  );
+
+  res.json({ dias, totalGeneral });
+});
+
+// --- Retiro / ingreso de caja ---
+// Plata que sale o entra en efectivo del cajón durante el turno sin ser
+// parte de una venta (ej. pagarle a un proveedor que llega con mercadería
+// a mitad del día, o el dueño reforzando el cambio) — mismo patrón de
+// autorización que anular una venta (clave de supervisor + quién
+// autoriza) para los dos tipos, porque es plata moviéndose sin que quede
+// un comprobante de venta de por medio.
 const registrarRetiroSchema = z.object({
+  tipo: z.enum(["retiro", "ingreso"]).default("retiro"),
   monto: z.number().positive("El monto debe ser mayor a 0"),
-  motivo: z.string().trim().min(1, "Falta el motivo del retiro"),
+  motivo: z.string().trim().min(1, "Falta el motivo"),
   usuarioId: z.number().int().positive(),
   clave: z.string().trim().min(1, "Falta la clave de supervisor"),
 });
@@ -247,7 +321,7 @@ cajaRouter.post("/sesiones/:id/retiros", async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.issues[0].message });
   }
-  const { monto, motivo, usuarioId, clave } = parsed.data;
+  const { tipo, monto, motivo, usuarioId, clave } = parsed.data;
 
   const usuario = await validarUsuario(usuarioId);
   if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
@@ -269,7 +343,7 @@ cajaRouter.post("/sesiones/:id/retiros", async (req, res) => {
   }
 
   const retiro = await prisma.retiroCaja.create({
-    data: { sesionCajaId: sesionId, monto, motivo: motivo.trim(), usuarioAutorizoId: usuarioId },
+    data: { sesionCajaId: sesionId, tipo, monto, motivo: motivo.trim(), usuarioAutorizoId: usuarioId },
     include: { usuarioAutorizo: true },
   });
 
@@ -329,7 +403,8 @@ cajaRouter.post("/sesiones/:id/cerrar", async (req, res) => {
 
   const sesionActualizada = await prisma.sesionCaja.findUnique({ where: { id } });
   const resumen = await calcularResumenSesion(id);
-  const efectivoEsperado = sesionActualizada!.fondoFijoInicial + resumen.totalPorMedio.efectivo - resumen.totalRetiros;
+  const efectivoEsperado =
+    sesionActualizada!.fondoFijoInicial + resumen.totalPorMedio.efectivo - resumen.totalRetiros + resumen.totalIngresos;
 
   res.json({
     sesion: sesionActualizada,

@@ -682,6 +682,7 @@ export interface SesionCaja {
 export interface RetiroCaja {
   id: number;
   sesionCajaId: number;
+  tipo: "retiro" | "ingreso";
   monto: number;
   motivo: string;
   usuarioAutorizoId: number;
@@ -697,8 +698,23 @@ export interface ResumenSesion {
   totalCobrosCredito: number;
   retiros: RetiroCaja[];
   totalRetiros: number;
+  ingresos: RetiroCaja[];
+  totalIngresos: number;
   efectivoEsperado: number;
   diferencia: number | null;
+}
+
+export interface Cuadratura {
+  dias: ResumenSesion[];
+  totalGeneral: {
+    fondoFijoInicial: number;
+    totalVentas: number;
+    totalPorMedio: Record<string, number>;
+    totalRetiros: number;
+    totalIngresos: number;
+    efectivoEsperado: number;
+    efectivoContado: number;
+  };
 }
 
 export interface PropuestaAsistente {
@@ -1182,8 +1198,10 @@ export const api = {
       post<ResumenSesion>(`/api/caja/sesiones/${id}/cerrar`, data),
     registrarRetiro: (
       sesionId: number,
-      data: { monto: number; motivo: string; usuarioId: number; clave: string }
+      data: { tipo: "retiro" | "ingreso"; monto: number; motivo: string; usuarioId: number; clave: string }
     ) => post<RetiroCaja>(`/api/caja/sesiones/${sesionId}/retiros`, data),
+    cuadratura: (desde: string, hasta: string) =>
+      get<Cuadratura>(`/api/caja/cuadratura?desde=${desde}&hasta=${hasta}`),
     ventaAbierta: () => get<Venta | null>("/api/caja/ventas/abierta"),
     ventasAbiertas: () => get<Venta[]>("/api/caja/ventas/abiertas"),
     obtenerVenta: (id: number) => get<Venta>(`/api/caja/ventas/${id}`),

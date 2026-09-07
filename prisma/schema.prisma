@@ -411,18 +411,29 @@ model SesionCaja {
   retiros         RetiroCaja[]
 }
 
-// Plata que sale físicamente de la caja durante el turno sin ser parte de
-// una venta — el caso típico es pagarle en efectivo a un proveedor que
-// llega con mercadería a mitad del día. Se descuenta del efectivo esperado
-// al sacar el reporte X/Z (ver calcularResumenSesion) para que ese retiro
-// no aparezca como una diferencia de caja al cerrar. Mismo patrón de
-// autorización que anular una venta: clave de supervisor + quién autoriza.
+// Plata que sale o entra físicamente en la caja durante el turno sin ser
+// parte de una venta — "retiro" es el caso típico de pagarle en efectivo a
+// un proveedor que llega con mercadería a mitad del día; "ingreso" es lo
+// contrario (ej. el dueño refuerza el cambio a mitad del día). Ambos se
+// suman/restan del efectivo esperado al sacar el reporte X/Z (ver
+// calcularResumenSesion) para que no aparezcan como diferencia de caja al
+// cerrar. Mismo patrón de autorización que anular una venta: clave de
+// supervisor + quién autoriza, para los dos tipos por igual.
+//
+// El modelo se sigue llamando RetiroCaja (no se renombró a algo genérico
+// tipo MovimientoCaja) para no arrastrar un rename de tabla + todas sus
+// referencias en el resto del código — "tipo" es lo que distingue un
+// ingreso de un retiro real.
 model RetiroCaja {
   id Int @id @default(autoincrement())
 
   sesionCajaId Int
   sesionCaja   SesionCaja @relation(fields: [sesionCajaId], references: [id])
 
+  // "retiro" | "ingreso" — default "retiro" para que las filas ya
+  // existentes (todas retiros, de antes de que existiera "ingreso") sigan
+  // siendo válidas sin tocarlas.
+  tipo   String @default("retiro")
   monto  Float
   motivo String
 
