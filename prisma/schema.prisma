@@ -581,18 +581,32 @@ model PagoVenta {
   ventaId Int
   venta   Venta @relation(fields: [ventaId], references: [id])
 
-  medio String // "efectivo" | "tarjeta" | "credito"
+  // "credito" y "transferencia" funcionan igual (quedan pendientes hasta
+  // marcarse como cobrados, ver más abajo) — se dejaron como dos valores
+  // separados, en vez de uno solo, porque el dueño quiere llevarlos como
+  // registros aparte (no es lo mismo fiar que esperar que confirme una
+  // transferencia), aunque contablemente sean el mismo mecanismo.
+  medio String // "efectivo" | "tarjeta" | "credito" | "transferencia"
   monto Float
 
   // Solo aplica cuando medio = "efectivo": lo que el cliente entregó en la
   // mano (antes del redondeo/tope a lo que se debía) — para poder mostrar
   // en el vale impreso con cuánto pagó y el vuelto correspondiente. null en
-  // tarjeta/crédito, donde siempre se cobra el monto exacto.
+  // tarjeta/crédito/transferencia, donde siempre se cobra el monto exacto.
   montoEntregado Float?
 
-  // Solo aplica cuando medio = "credito": a quién se le fía, y el registro
-  // de cuándo/cómo se cobró después — puede pasar en una sesión de caja
-  // distinta a la de la venta original (el cliente vuelve otro día).
+  // Solo aplica cuando medio = "credito" o "transferencia": a quién se le
+  // fía o se le espera la transferencia, y el registro de cuándo/cómo se
+  // cobró después — puede pasar en una sesión de caja distinta a la de la
+  // venta original (el cliente vuelve otro día, o la transferencia se
+  // confirma más tarde).
+  clienteId Int?
+  cliente   Cliente? @relation(fields: [clienteId], references: [id])
+  // Copia del nombre del cliente al momento de este pago (mismo criterio
+  // que ItemVenta.precioUnitario) — así el vale impreso y el historial no
+  // dependen de que el registro de Cliente siga existiendo o no haya
+  // cambiado de nombre después. clienteId es la relación real; este campo
+  // es solo para mostrar.
   clienteNombre     String?
   cobrado           Boolean     @default(false)
   medioCobro        String? // "efectivo" | "tarjeta", cómo pagó al cobrarlo
@@ -601,6 +615,25 @@ model PagoVenta {
   usuarioCobroId    Int?
   usuarioCobro      Usuario?    @relation("CobrosDeCreditoRegistradosPorUsuario", fields: [usuarioCobroId], references: [id])
   fechaCobro        DateTime?
+}
+
+// Registro simple de clientes que compran a crédito o por transferencia —
+// antes de esto, cada venta a crédito quedaba con un nombre escrito a mano
+// (PagoVenta.clienteNombre), lo que hacía fácil duplicar al mismo cliente
+// con el nombre escrito distinto cada vez. Acá el "código" que pidió el
+// dueño para identificar al comprador es simplemente el id autoincremental
+// (se muestra como "C" + id en pantalla) — no depende de que el cliente se
+// sepa un RUT o número de memoria. RUT y teléfono quedan opcionales, solo
+// como dato de referencia.
+model Cliente {
+  id       Int      @id @default(autoincrement())
+  nombre   String
+  telefono String?
+  rut      String?
+  notas    String?
+  creadoEn DateTime @default(now())
+
+  pagos PagoVenta[]
 }
 
 // Copia local de los pedidos armados en la página web (cotización de

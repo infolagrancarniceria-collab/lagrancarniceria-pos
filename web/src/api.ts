@@ -591,8 +591,36 @@ export interface HistorialEntrada {
   fecha: string;
 }
 
-export type MedioPago = "efectivo" | "tarjeta" | "credito";
+export type MedioPago = "efectivo" | "tarjeta" | "credito" | "transferencia";
 export type MedioCobro = "efectivo" | "tarjeta";
+
+// Cliente registrado para ventas a crédito/transferencia — reemplaza el
+// nombre libre que se escribía antes en cada venta, para poder identificar
+// al mismo comprador entre ventas distintas sin depender de que el nombre
+// se escriba siempre igual. El "código" que ve el cajero es "C" + id.
+export interface Cliente {
+  id: number;
+  nombre: string;
+  telefono: string | null;
+  rut: string | null;
+  notas: string | null;
+  creadoEn: string;
+  // Solo viene en el listado completo (GET /api/clientes sin "buscar") —
+  // crédito + transferencia sin cobrar. undefined en el resultado de
+  // buscar()/crear()/actualizar(), donde no hace falta.
+  deudaPendiente?: number;
+}
+
+export interface EstadoCuentaCliente {
+  cliente: Cliente;
+  pagos: PagoVenta[];
+  pendientePorMedio: Record<string, number>;
+  totalPendiente: number;
+}
+
+export function codigoCliente(id: number): string {
+  return `C${String(id).padStart(4, "0")}`;
+}
 
 export interface ItemVenta {
   id: number;
@@ -618,6 +646,8 @@ export interface PagoVenta {
   medio: MedioPago;
   monto: number;
   montoEntregado: number | null;
+  clienteId: number | null;
+  cliente?: Cliente | null;
   clienteNombre: string | null;
   cobrado: boolean;
   medioCobro: MedioCobro | null;
@@ -697,6 +727,7 @@ export interface ResumenSesion {
   totalVentas: number;
   totalPorMedio: Record<string, number>;
   totalCobrosCredito: number;
+  totalCobrosTransferencia: number;
   retiros: RetiroCaja[];
   totalRetiros: number;
   ingresos: RetiroCaja[];
@@ -1236,7 +1267,7 @@ export const api = {
     ) => delConBody<Venta>(`/api/caja/ventas/${ventaId}/items/${itemId}`, data),
     agregarPago: (
       ventaId: number,
-      data: { medio: MedioPago; monto: number; clienteNombre?: string; montoEntregado?: number }
+      data: { medio: MedioPago; monto: number; clienteId?: number; montoEntregado?: number }
     ) => post<Venta>(`/api/caja/ventas/${ventaId}/pagos`, data),
     quitarPago: (ventaId: number, pagoId: number) =>
       del<Venta>(`/api/caja/ventas/${ventaId}/pagos/${pagoId}`),
@@ -1244,7 +1275,8 @@ export const api = {
       post<Venta>(`/api/caja/ventas/${ventaId}/confirmar`, { usuarioId }),
     cancelarVenta: (ventaId: number, data: { clave: string; usuarioId: number; motivo?: string }) =>
       post<Venta>(`/api/caja/ventas/${ventaId}/cancelar`, data),
-    creditosPendientes: () => get<PagoVenta[]>("/api/caja/creditos-pendientes"),
+    creditosPendientes: (medio?: "credito" | "transferencia") =>
+      get<PagoVenta[]>(`/api/caja/creditos-pendientes${medio ? `?medio=${medio}` : ""}`),
     cobrarCredito: (pagoId: number, data: { medioCobro: MedioCobro; usuarioId: number }) =>
       post<PagoVenta>(`/api/caja/creditos/${pagoId}/cobrar`, data),
     actualizarComentario: (ventaId: number, comentario: string | null) =>
@@ -1278,6 +1310,18 @@ export const api = {
       get<{ configurada: boolean; webSyncUrl: string | null }>("/api/configuracion/sync-web/estado"),
     guardarSyncWeb: (data: { webSyncUrl: string; syncApiKey: string }) =>
       post<void>("/api/configuracion/sync-web", data),
+  },
+  clientes: {
+    buscar: (texto: string) => get<Cliente[]>(`/api/clientes?buscar=${encodeURIComponent(texto)}`),
+    listar: () => get<Cliente[]>("/api/clientes"),
+    obtener: (id: number) => get<Cliente>(`/api/clientes/${id}`),
+    crear: (data: { nombre: string; telefono?: string | null; rut?: string | null; notas?: string | null }) =>
+      post<Cliente>("/api/clientes", data),
+    actualizar: (
+      id: number,
+      data: { nombre: string; telefono?: string | null; rut?: string | null; notas?: string | null }
+    ) => put<Cliente>(`/api/clientes/${id}`, data),
+    estadoCuenta: (id: number) => get<EstadoCuentaCliente>(`/api/clientes/${id}/estado-cuenta`),
   },
   avisos: {
     obtener: () => get<AvisosCriticos>("/api/avisos"),

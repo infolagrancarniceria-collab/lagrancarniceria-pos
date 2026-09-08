@@ -572,12 +572,13 @@ export async function ejecutarHerramientaLectura(nombre: string, input: Record<s
     }
     case "creditos_pendientes": {
       const creditos = await prisma.pagoVenta.findMany({
-        where: { medio: "credito", cobrado: false },
+        where: { medio: { in: ["credito", "transferencia"] }, cobrado: false },
         include: { venta: true },
         orderBy: { venta: { fecha: "asc" } },
       });
       return creditos.map((c) => ({
         pagoId: c.id,
+        medio: c.medio,
         cliente: c.clienteNombre,
         monto: c.monto,
         venta: c.ventaId,

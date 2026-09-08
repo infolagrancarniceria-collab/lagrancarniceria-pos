@@ -78,6 +78,12 @@ export default function CerrarCaja() {
             <strong>Cobros de crédito recibidos hoy:</strong> {formatoCLP(cerrada.totalCobrosCredito)}
           </p>
           <p>
+            <strong>Transferencias pendientes hoy:</strong> {formatoCLP(cerrada.totalPorMedio.transferencia ?? 0)}
+          </p>
+          <p>
+            <strong>Transferencias confirmadas hoy:</strong> {formatoCLP(cerrada.totalCobrosTransferencia)}
+          </p>
+          <p>
             <strong>Retiros de caja:</strong> {formatoCLP(cerrada.totalRetiros)}
           </p>
           <p>
@@ -133,6 +139,12 @@ export default function CerrarCaja() {
           </p>
           <p>
             <strong>Cobros de crédito recibidos hoy:</strong> {formatoCLP(resumen.totalCobrosCredito)}
+          </p>
+          <p>
+            <strong>Transferencias pendientes hoy:</strong> {formatoCLP(resumen.totalPorMedio.transferencia ?? 0)}
+          </p>
+          <p>
+            <strong>Transferencias confirmadas hoy:</strong> {formatoCLP(resumen.totalCobrosTransferencia)}
           </p>
           <p>
             <strong>Retiros de caja:</strong> {formatoCLP(resumen.totalRetiros)}

@@ -13,6 +13,7 @@ const etiquetaMedio: Record<string, string> = {
   efectivo: "Efectivo",
   tarjeta: "Tarjeta",
   credito: "Crédito",
+  transferencia: "Transferencia",
 };
 
 interface Props {
@@ -130,7 +131,7 @@ export function ValeVenta({ venta, onImprimir, onAnular }: Props) {
         {venta.pagos.map((p) => (
           <li key={p.id}>
             {etiquetaMedio[p.medio] ?? p.medio}
-            {p.medio === "credito" ? ` (${p.clienteNombre})` : ""}: {formatoCLP(p.monto)}
+            {p.medio === "credito" || p.medio === "transferencia" ? ` (${p.clienteNombre})` : ""}: {formatoCLP(p.monto)}
             {p.medio === "efectivo" && p.montoEntregado != null && p.montoEntregado > p.monto && (
               <>
                 {" "}

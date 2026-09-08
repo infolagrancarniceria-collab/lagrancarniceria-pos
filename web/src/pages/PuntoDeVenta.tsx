@@ -6,6 +6,7 @@ import {
   redondearA10,
   TOLERANCIA_REDONDEO_EFECTIVO,
   type Categoria,
+  type Cliente,
   type Comuna,
   type FlagBalanza,
   type MedioPago,
@@ -19,6 +20,7 @@ import { TecladoNumerico } from "../components/TecladoNumerico";
 import ModalConfirmarClave from "../components/ModalConfirmarClave";
 import ModalRetiroCaja from "../components/ModalRetiroCaja";
 import SelectorCategoria from "../components/SelectorCategoria";
+import SelectorCliente from "../components/SelectorCliente";
 import { ValeVenta } from "../components/ValeVenta";
 import { imprimirSilencioso } from "../lib/imprimir";
 import ModalAlerta from "../components/ModalAlerta";
@@ -93,7 +95,7 @@ export default function PuntoDeVenta() {
   const [cantidad, setCantidad] = useState("");
   const [medioPago, setMedioPago] = useState<MedioPago>("efectivo");
   const [montoPago, setMontoPago] = useState("");
-  const [clienteNombre, setClienteNombre] = useState("");
+  const [clienteSeleccionado, setClienteSeleccionado] = useState<Cliente | null>(null);
   const [descuentoTipo, setDescuentoTipo] = useState<"porcentaje" | "monto_fijo">("porcentaje");
   const [descuentoValor, setDescuentoValor] = useState("");
   const [mostrarFormDescuento, setMostrarFormDescuento] = useState(false);
@@ -653,8 +655,8 @@ export default function PuntoDeVenta() {
       setError("El monto debe ser mayor a 0");
       return;
     }
-    if (medioPago === "credito" && !clienteNombre.trim()) {
-      setError("Falta el nombre del cliente para dejarlo a crédito");
+    if ((medioPago === "credito" || medioPago === "transferencia") && !clienteSeleccionado) {
+      setError("Falta seleccionar el cliente");
       return;
     }
     // No más de lo que efectivamente se debe (ya redondeado) — si lo
@@ -670,12 +672,13 @@ export default function PuntoDeVenta() {
       const actualizada = await api.caja.agregarPago(venta.id, {
         medio: medioPago,
         monto: montoACobrar,
-        clienteNombre: medioPago === "credito" ? clienteNombre.trim() : undefined,
+        clienteId:
+          medioPago === "credito" || medioPago === "transferencia" ? clienteSeleccionado!.id : undefined,
         montoEntregado: medioPago === "efectivo" ? monto : undefined,
       });
       actualizarVenta(actualizada);
       setMontoPago("");
-      setClienteNombre("");
+      setClienteSeleccionado(null);
       // Si este pago ya deja los pagos cubriendo el total completo (el caso
       // normal: un solo pago que paga toda la venta), se confirma sola — a
       // pedido del usuario, para no tener que cerrar esta ventana y apretar
@@ -1168,7 +1171,7 @@ export default function PuntoDeVenta() {
                       setMedioPago("credito");
                       // Igual que Tarjeta: el crédito también se deja siempre por
                       // el monto exacto que falta, no tiene sentido escribirlo a
-                      // mano cada vez. El foco queda en el nombre del cliente (el
+                      // mano cada vez. El foco queda en el selector de cliente (el
                       // único dato que falta completar) para que Enter ahí mismo
                       // agregue el pago.
                       if (faltaPagarPositivo > 0) setMontoPago(String(faltaPagarPositivo));
@@ -1178,6 +1181,20 @@ export default function PuntoDeVenta() {
                     <span className="medio-pago-icono">🧾</span>
                     Crédito
                   </button>
+                  <button
+                    type="button"
+                    className={`medio-pago-tile ${medioPago === "transferencia" ? "activo" : ""}`}
+                    onClick={() => {
+                      setMedioPago("transferencia");
+                      // Igual que Crédito: queda pendiente hasta confirmarla (ver
+                      // Créditos pendientes), por eso también necesita cliente.
+                      if (faltaPagarPositivo > 0) setMontoPago(String(faltaPagarPositivo));
+                      setTimeout(() => inputClienteNombreRef.current?.focus(), 0);
+                    }}
+                  >
+                    <span className="medio-pago-icono">🏦</span>
+                    Transferencia
+                  </button>
                 </div>
                 <p className="ayuda ayuda-linea">Usa ← → y Enter para elegir sin mouse.</p>
                 {medioPago === "efectivo" && montoACobrarEfectivo > 0 && montoACobrarEfectivo !== faltaPagarPositivo && (
@@ -1186,13 +1203,11 @@ export default function PuntoDeVenta() {
                   </p>
                 )}
                 <form onSubmit={agregarPago} onKeyDown={manejarEnterComoTab} className="fila-inline">
-                  {medioPago === "credito" && (
-                    <input
-                      ref={inputClienteNombreRef}
-                      type="text"
-                      placeholder="Nombre del cliente"
-                      value={clienteNombre}
-                      onChange={(e) => setClienteNombre(e.target.value)}
+                  {(medioPago === "credito" || medioPago === "transferencia") && (
+                    <SelectorCliente
+                      seleccionado={clienteSeleccionado}
+                      onSeleccionar={setClienteSeleccionado}
+                      autoFocusRef={inputClienteNombreRef}
                     />
                   )}
                   <input
@@ -1219,7 +1234,13 @@ export default function PuntoDeVenta() {
                     {venta.pagos.map((p) => (
                       <tr key={p.id}>
                         <td>
-                          {p.medio === "efectivo" ? "Efectivo" : p.medio === "tarjeta" ? "Tarjeta" : `Crédito (${p.clienteNombre})`}
+                          {p.medio === "efectivo"
+                            ? "Efectivo"
+                            : p.medio === "tarjeta"
+                              ? "Tarjeta"
+                              : p.medio === "transferencia"
+                                ? `Transferencia (${p.clienteNombre})`
+                                : `Crédito (${p.clienteNombre})`}
                         </td>
                         <td>{formatoCLP(p.monto)}</td>
                         <td>

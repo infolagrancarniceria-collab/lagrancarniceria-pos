@@ -179,7 +179,7 @@ async function calcularResumenSesion(sesionId: number) {
     include: { pagos: true },
   });
 
-  const totalPorMedio: Record<string, number> = { efectivo: 0, tarjeta: 0, credito: 0 };
+  const totalPorMedio: Record<string, number> = { efectivo: 0, tarjeta: 0, credito: 0, transferencia: 0 };
   let totalVentas = 0;
   for (const venta of ventas) {
     totalVentas += venta.total;
@@ -188,18 +188,26 @@ async function calcularResumenSesion(sesionId: number) {
     }
   }
 
-  // Créditos de ventas de OTRAS sesiones que se cobraron durante esta —
-  // esa plata entra a la caja hoy, aunque la venta original haya sido
-  // fiada en otro día. Se suma al medio real con el que se cobró
-  // (efectivo/tarjeta), no queda como "credito" (eso ya se descontó cuando
-  // se dio el crédito originalmente).
+  // Créditos/transferencias de ventas de OTRAS sesiones que se cobraron o
+  // confirmaron durante esta — esa plata entra a la caja hoy, aunque la
+  // venta original haya sido de otro día. Se suma al medio real con el que
+  // se cobró (efectivo/tarjeta), no queda como "credito"/"transferencia"
+  // (eso ya se descontó cuando se dio el crédito/transferencia
+  // originalmente). Se llevan separados (totalCobrosCredito vs
+  // totalCobrosTransferencia) a pedido del dueño, que quiere ese registro
+  // aparte aunque el mecanismo sea el mismo.
   const cobrosHoy = await prisma.pagoVenta.findMany({
     where: { sesionCajaCobroId: sesionId, cobrado: true },
   });
   let totalCobrosCredito = 0;
+  let totalCobrosTransferencia = 0;
   for (const cobro of cobrosHoy) {
     totalPorMedio[cobro.medioCobro!] = (totalPorMedio[cobro.medioCobro!] ?? 0) + cobro.monto;
-    totalCobrosCredito += cobro.monto;
+    if (cobro.medio === "transferencia") {
+      totalCobrosTransferencia += cobro.monto;
+    } else {
+      totalCobrosCredito += cobro.monto;
+    }
   }
 
   // Retiros de caja (ver modelo RetiroCaja) — plata que salió en efectivo
@@ -217,6 +225,7 @@ async function calcularResumenSesion(sesionId: number) {
     totalVentas,
     totalPorMedio,
     totalCobrosCredito,
+    totalCobrosTransferencia,
     retiros,
     totalRetiros,
     ingresos,
@@ -280,6 +289,7 @@ cajaRouter.get("/cuadratura", async (req, res) => {
         efectivo: acc.totalPorMedio.efectivo + dia.totalPorMedio.efectivo,
         tarjeta: acc.totalPorMedio.tarjeta + dia.totalPorMedio.tarjeta,
         credito: acc.totalPorMedio.credito + dia.totalPorMedio.credito,
+        transferencia: acc.totalPorMedio.transferencia + dia.totalPorMedio.transferencia,
       },
       totalRetiros: acc.totalRetiros + dia.totalRetiros,
       totalIngresos: acc.totalIngresos + dia.totalIngresos,
@@ -289,7 +299,7 @@ cajaRouter.get("/cuadratura", async (req, res) => {
     {
       fondoFijoInicial: 0,
       totalVentas: 0,
-      totalPorMedio: { efectivo: 0, tarjeta: 0, credito: 0 },
+      totalPorMedio: { efectivo: 0, tarjeta: 0, credito: 0, transferencia: 0 },
       totalRetiros: 0,
       totalIngresos: 0,
       efectivoEsperado: 0,
@@ -933,17 +943,20 @@ cajaRouter.delete("/ventas/:id/items/:itemId", async (req, res) => {
 
 const agregarPagoSchema = z
   .object({
-    medio: z.enum(["efectivo", "tarjeta", "credito"]),
+    medio: z.enum(["efectivo", "tarjeta", "credito", "transferencia"]),
     monto: z.number().positive("El monto debe ser mayor a 0"),
-    clienteNombre: z.string().trim().optional().nullable(),
+    // Crédito y transferencia necesitan un Cliente ya registrado (ver
+    // selector de cliente en Punto de Venta) — reemplaza el nombre libre
+    // que se escribía antes, para no duplicar al mismo cliente por typos.
+    clienteId: z.number().int().positive().optional().nullable(),
     // Solo tiene sentido en efectivo: lo que el cliente entregó en la mano,
     // antes del tope/redondeo aplicado a "monto" — para poder mostrar en el
     // vale con cuánto pagó y el vuelto correspondiente.
     montoEntregado: z.number().positive().optional(),
   })
-  .refine((data) => data.medio !== "credito" || !!data.clienteNombre?.trim(), {
-    message: "Falta el nombre del cliente para dejarlo a crédito",
-    path: ["clienteNombre"],
+  .refine((data) => (data.medio !== "credito" && data.medio !== "transferencia") || !!data.clienteId, {
+    message: "Falta seleccionar el cliente",
+    path: ["clienteId"],
   });
 
 cajaRouter.post("/ventas/:id/pagos", async (req, res) => {
@@ -952,18 +965,28 @@ cajaRouter.post("/ventas/:id/pagos", async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.issues[0].message });
   }
-  const { medio, monto, clienteNombre, montoEntregado } = parsed.data;
+  const { medio, monto, clienteId, montoEntregado } = parsed.data;
 
   const venta = await prisma.venta.findUnique({ where: { id: ventaId } });
   if (!venta) return res.status(404).json({ error: "Venta no encontrada" });
   if (venta.estado !== "abierta") return res.status(400).json({ error: "Esta venta ya no admite cambios" });
+
+  let cliente = null;
+  if (medio === "credito" || medio === "transferencia") {
+    cliente = await prisma.cliente.findUnique({ where: { id: clienteId! } });
+    if (!cliente) return res.status(400).json({ error: "El cliente seleccionado no existe" });
+  }
 
   await prisma.pagoVenta.create({
     data: {
       ventaId,
       medio,
       monto,
-      clienteNombre: medio === "credito" ? clienteNombre!.trim() : null,
+      clienteId: cliente?.id ?? null,
+      // Copia del nombre al momento de este pago (ver comentario en el
+      // schema) — así el vale/historial no dependen de que el Cliente siga
+      // existiendo con el mismo nombre después.
+      clienteNombre: cliente?.nombre ?? null,
       montoEntregado: medio === "efectivo" ? montoEntregado ?? null : null,
     },
   });
@@ -1142,12 +1165,14 @@ cajaRouter.post("/ventas/:id/cancelar", async (req, res) => {
   res.json(ventaCancelada);
 });
 
-// --- Créditos pendientes (ventas fiadas, a cobrar después) ---
+// --- Créditos y transferencias pendientes (ventas fiadas o esperando que se
+// confirme una transferencia, a cobrar/confirmar después) ---
 
-cajaRouter.get("/creditos-pendientes", async (_req, res) => {
+cajaRouter.get("/creditos-pendientes", async (req, res) => {
+  const medio = req.query.medio === "credito" || req.query.medio === "transferencia" ? req.query.medio : undefined;
   const creditos = await prisma.pagoVenta.findMany({
-    where: { medio: "credito", cobrado: false },
-    include: { venta: true },
+    where: { medio: medio ?? { in: ["credito", "transferencia"] }, cobrado: false },
+    include: { venta: true, cliente: true },
     orderBy: { venta: { fecha: "asc" } },
   });
   res.json(creditos);
@@ -1170,8 +1195,10 @@ cajaRouter.post("/creditos/:pagoId/cobrar", async (req, res) => {
   if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
 
   const pago = await prisma.pagoVenta.findUnique({ where: { id: pagoId } });
-  if (!pago || pago.medio !== "credito") return res.status(404).json({ error: "Crédito no encontrado" });
-  if (pago.cobrado) return res.status(400).json({ error: "Este crédito ya estaba marcado como cobrado" });
+  if (!pago || (pago.medio !== "credito" && pago.medio !== "transferencia")) {
+    return res.status(404).json({ error: "Crédito o transferencia no encontrado" });
+  }
+  if (pago.cobrado) return res.status(400).json({ error: "Esto ya estaba marcado como cobrado" });
 
   const sesion = await prisma.sesionCaja.findFirst({ where: { estado: "abierta" } });
   if (!sesion) return res.status(400).json({ error: "No hay una caja abierta para registrar el cobro" });

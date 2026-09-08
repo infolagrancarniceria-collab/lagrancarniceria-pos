@@ -535,6 +535,17 @@ pedidosWebRouter.post("/:id/enviar-a-caja", async (req, res) => {
     comunaId = comuna.id;
   }
 
+  // El pedido web ya trae nombre + teléfono del cliente (ver PedidoWeb) —
+  // se busca un Cliente existente con ese mismo teléfono para no duplicar
+  // al mismo comprador cada vez que vuelve a pedir por la web, y si no
+  // existe se crea uno nuevo con esos datos.
+  let cliente = await prisma.cliente.findFirst({ where: { telefono: pedido.clienteTelefono } });
+  if (!cliente) {
+    cliente = await prisma.cliente.create({
+      data: { nombre: pedido.clienteNombre, telefono: pedido.clienteTelefono },
+    });
+  }
+
   const subtotalItems = itemsConProducto.reduce((suma, i) => suma + Math.round(i.producto.precio * i.cantidad), 0);
   let descuentoMonto = 0;
   if (pedido.descuentoTipo === "porcentaje" && pedido.descuentoValor) {
@@ -569,7 +580,7 @@ pedidosWebRouter.post("/:id/enviar-a-caja", async (req, res) => {
           })),
         },
         pagos: {
-          create: { medio: "credito", monto: total, clienteNombre: pedido.clienteNombre },
+          create: { medio: "credito", monto: total, clienteId: cliente.id, clienteNombre: cliente.nombre },
         },
       },
     }),

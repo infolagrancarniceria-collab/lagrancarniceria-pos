@@ -30,6 +30,7 @@ import { cortesRouter } from "./routes/cortes";
 import { whatsappRouter } from "./routes/whatsapp";
 import { pedidosWebRouter } from "./routes/pedidosWeb";
 import { diagnosticoRouter } from "./routes/diagnostico";
+import { clientesRouter } from "./routes/clientes";
 import {
   aplicarMigracionesPendientes,
   reconstruirLotesCamaraFaltantes,
@@ -100,6 +101,7 @@ app.use("/api/configuracion", configuracionRouter);
 app.use("/api/asistente", asistenteRouter);
 app.use("/api/balanza", balanzaRouter);
 app.use("/api/gastos", gastosRouter);
+app.use("/api/clientes", clientesRouter);
 app.use("/api/comunas", comunasRouter);
 app.use("/api/camara", camaraRouter);
 app.use("/api/avisos", avisosRouter);
