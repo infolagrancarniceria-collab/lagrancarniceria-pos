@@ -59,29 +59,6 @@ pedidosWebRouter.post("/sincronizar", async (_req, res) => {
   res.json({ nuevos });
 });
 
-const atenderSchema = z.object({ usuarioId: z.number().int().positive() });
-
-pedidosWebRouter.put("/:id/atender", async (req, res) => {
-  const id = Number(req.params.id);
-  const parsed = atenderSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({ error: parsed.error.issues[0].message });
-  }
-
-  const existente = await prisma.pedidoWeb.findUnique({ where: { id } });
-  if (!existente) return res.status(404).json({ error: "Pedido no encontrado" });
-
-  const usuario = await prisma.usuario.findUnique({ where: { id: parsed.data.usuarioId } });
-  if (!usuario || !usuario.activo) return res.status(400).json({ error: "Usuario inválido" });
-
-  const pedido = await prisma.pedidoWeb.update({
-    where: { id },
-    data: { estado: "atendido", atendidoPorId: parsed.data.usuarioId, atendidoEn: new Date() },
-    include: CON_RELACIONES,
-  });
-  res.json(serializar(pedido));
-});
-
 // Anular un pedido web (el cliente canceló, pedido duplicado, no contesta,
 // etc.) pide clave de supervisor — mismo nivel de control que anular una
 // venta ya pagada (ver POST /api/caja/ventas/:id/cancelar), aunque acá no
@@ -437,24 +414,30 @@ pedidosWebRouter.delete("/:id/regalos/:regaloId", async (req, res) => {
   res.json(serializar(pedidoActualizado!));
 });
 
-// --- Enviar a Caja como venta a crédito ---
+// --- Marcar atendido + generar la venta ya pagada ---
 //
-// El equipo suele recibir el pago (transferencia, efectivo o tarjeta) recién
-// cuando el cliente retira o recibe el pedido, no al cotizar por la web —
-// mismo caso que una venta fiada. Por eso esto no cobra nada acá: arma la
-// venta completa (con los productos reales del catálogo, a precio actual) y
-// la deja pagada con un pago "credito" sin cobrar, para que aparezca en
-// Créditos pendientes y el equipo lo cobre ahí cuando corresponda (ver
-// GET/POST /api/caja/creditos-pendientes). Los regalos NO se agregan como
-// ítems acá — ya descontaron su stock al agregarse (ver POST .../regalos),
-// volver a incluirlos duplicaría la merma.
+// El pago se coordina con el cliente al momento de retirar o recibir el
+// pedido — recién ahí quien atiende sabe con qué medio pagó realmente
+// (efectivo, tarjeta o transferencia), así que se pide elegirlo acá (no se
+// puede adivinar del campo "medio de pago" del pedido, que es texto libre
+// sin garantía de estar bien escrito). Antes esto dejaba la venta a
+// crédito sin cobrar (pendiente en Créditos pendientes) — a pedido del
+// usuario, ahora queda pagada de una vez con el medio elegido, para que
+// "marcar atendido" y "generar la venta" sean la misma acción y las ventas
+// online salgan reflejadas de inmediato en Reportes → Ventas online. Los
+// regalos NO se agregan como ítems acá — ya descontaron su stock al
+// agregarse (ver POST .../regalos), volver a incluirlos duplicaría la
+// merma.
 interface ItemPedidoWebCrudo {
   plu: string;
   cantidad: number;
   unidad: string;
 }
 
-const enviarACajaSchema = z.object({ usuarioId: z.number().int().positive() });
+const enviarACajaSchema = z.object({
+  usuarioId: z.number().int().positive(),
+  medio: z.enum(["efectivo", "tarjeta", "transferencia"]),
+});
 
 pedidosWebRouter.post("/:id/enviar-a-caja", async (req, res) => {
   const id = Number(req.params.id);
@@ -462,7 +445,7 @@ pedidosWebRouter.post("/:id/enviar-a-caja", async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.issues[0].message });
   }
-  const { usuarioId } = parsed.data;
+  const { usuarioId, medio } = parsed.data;
 
   const usuario = await validarUsuario(usuarioId);
   if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
@@ -557,6 +540,17 @@ pedidosWebRouter.post("/:id/enviar-a-caja", async (req, res) => {
   const costoEnvio = pedido.tipoEntrega === "despacho" ? (pedido.costoEnvio ?? 0) : 0;
   const total = subtotalItems - descuentoMonto + costoEnvio;
 
+  // Efectivo/tarjeta quedan cobrados en el momento, como cualquier venta
+  // normal. Transferencia también queda como pagada de una vez (a
+  // diferencia del tile de Punto de Venta, acá quien atiende recién elige
+  // "transferencia" cuando ya confirmó que la plata llegó, no antes) — se
+  // marca cobrado=true al tiro para que no aparezca en Créditos y
+  // transferencias pendientes.
+  const datosPago =
+    medio === "transferencia"
+      ? { medio, monto: total, clienteId: cliente.id, clienteNombre: cliente.nombre, cobrado: true, fechaCobro: new Date() }
+      : { medio, monto: total, clienteId: cliente.id, clienteNombre: cliente.nombre };
+
   const [venta] = await prisma.$transaction([
     prisma.venta.create({
       data: {
@@ -580,7 +574,7 @@ pedidosWebRouter.post("/:id/enviar-a-caja", async (req, res) => {
           })),
         },
         pagos: {
-          create: { medio: "credito", monto: total, clienteId: cliente.id, clienteNombre: cliente.nombre },
+          create: datosPago,
         },
       },
     }),

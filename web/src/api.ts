@@ -1091,8 +1091,6 @@ export const api = {
   pedidosWeb: {
     listar: (estado?: "pendiente" | "atendido" | "anulado") =>
       get<PedidoWeb[]>(`/api/pedidos-web${estado ? `?estado=${estado}` : ""}`),
-    marcarAtendido: (id: number, usuarioId: number) =>
-      put<PedidoWeb>(`/api/pedidos-web/${id}/atender`, { usuarioId }),
     anular: (id: number, usuarioId: number, clave: string, motivo: string) =>
       put<PedidoWeb>(`/api/pedidos-web/${id}/anular`, { usuarioId, clave, motivo }),
     aplicarDescuento: (
@@ -1130,8 +1128,8 @@ export const api = {
       cantidad: number,
       instrucciones?: string | null
     ) => post<PedidoWeb>(`/api/pedidos-web/${id}/items`, { usuarioId, productoId, cantidad, instrucciones }),
-    enviarACaja: (id: number, usuarioId: number) =>
-      post<{ pedido: PedidoWeb; ventaId: number }>(`/api/pedidos-web/${id}/enviar-a-caja`, { usuarioId }),
+    enviarACaja: (id: number, usuarioId: number, medio: "efectivo" | "tarjeta" | "transferencia") =>
+      post<{ pedido: PedidoWeb; ventaId: number }>(`/api/pedidos-web/${id}/enviar-a-caja`, { usuarioId, medio }),
     sincronizar: () => post<{ nuevos: number }>("/api/pedidos-web/sincronizar", {}),
   },
   inventario: {

@@ -99,6 +99,10 @@ export default function PedidosWeb() {
   const [seleccionRuta, setSeleccionRuta] = useState<Map<number, PedidoWeb>>(new Map());
   const [rutaParaImprimir, setRutaParaImprimir] = useState<PedidoWeb[] | null>(null);
   const [enviandoACajaId, setEnviandoACajaId] = useState<number | null>(null);
+  // Antes de generar la venta, quien atiende elige con qué medio pagó
+  // realmente el cliente (efectivo/tarjeta/transferencia) — no se puede
+  // adivinar del campo "medio de pago" del pedido (texto libre).
+  const [eligiendoMedioId, setEligiendoMedioId] = useState<number | null>(null);
   const [comunas, setComunas] = useState<Comuna[]>([]);
   const [direccionRuta, setDireccionRuta] = useState<DireccionRuta>("cercana");
 
@@ -175,17 +179,6 @@ export default function PedidosWeb() {
 
   function imprimirRuta() {
     setRutaParaImprimir(Array.from(seleccionRuta.values()));
-  }
-
-  async function marcarAtendido(p: PedidoWeb) {
-    if (!usuario) return;
-    try {
-      await api.pedidosWeb.marcarAtendido(p.id, usuario.id);
-      mostrarToast("Pedido atendido", `El pedido de ${p.clienteNombre} quedó marcado como atendido.`);
-      cargar();
-    } catch (e) {
-      setError((e as Error).message);
-    }
   }
 
   async function confirmarAnular(usuarioId: number, clave: string, motivo?: string) {
@@ -432,15 +425,14 @@ export default function PedidosWeb() {
     }
   }
 
-  async function enviarACaja(p: PedidoWeb) {
+  async function marcarAtendidoYCobrar(p: PedidoWeb, medio: "efectivo" | "tarjeta" | "transferencia") {
     if (!usuario) return;
     setEnviandoACajaId(p.id);
     try {
-      const { ventaId } = await api.pedidosWeb.enviarACaja(p.id, usuario.id);
-      mostrarToast(
-        "Enviado a Caja",
-        `Pedido de ${p.clienteNombre} quedó como venta #${ventaId}, a crédito pendiente de cobrar.`
-      );
+      const { ventaId } = await api.pedidosWeb.enviarACaja(p.id, usuario.id, medio);
+      const etiquetaMedio = medio === "efectivo" ? "efectivo" : medio === "tarjeta" ? "tarjeta" : "transferencia";
+      mostrarToast("Pedido atendido y cobrado", `Pedido de ${p.clienteNombre} quedó como venta #${ventaId}, pagada con ${etiquetaMedio}.`);
+      setEligiendoMedioId(null);
       cargar();
     } catch (e) {
       setError((e as Error).message);
@@ -690,9 +682,7 @@ export default function PedidosWeb() {
               </div>
             )}
 
-            {p.ventaGeneradaId && (
-              <p className="exito">Enviado a Caja — venta #{p.ventaGeneradaId} (crédito pendiente de cobrar).</p>
-            )}
+            {p.ventaGeneradaId && <p className="exito">Atendido y cobrado — venta #{p.ventaGeneradaId}.</p>}
 
             {p.comentario && (
               <p>
@@ -945,11 +935,6 @@ export default function PedidosWeb() {
             )}
 
             <div className="acciones-formulario">
-              {p.estado === "pendiente" && (
-                <button type="button" className="boton boton-primario" onClick={() => marcarAtendido(p)}>
-                  Marcar como atendido
-                </button>
-              )}
               {p.estado !== "anulado" && (
                 <button type="button" onClick={() => setAnulando(p)}>
                   Anular pedido
@@ -975,10 +960,39 @@ export default function PedidosWeb() {
                   Agregar regalo
                 </button>
               )}
-              {p.estado !== "anulado" && !p.ventaGeneradaId && (
-                <button type="button" onClick={() => enviarACaja(p)} disabled={enviandoACajaId === p.id}>
-                  {enviandoACajaId === p.id ? "Enviando..." : "Enviar a Caja"}
+              {p.estado !== "anulado" && !p.ventaGeneradaId && eligiendoMedioId !== p.id && (
+                <button type="button" className="boton boton-primario" onClick={() => setEligiendoMedioId(p.id)}>
+                  Marcar atendido y cobrar
                 </button>
+              )}
+              {eligiendoMedioId === p.id && (
+                <span className="fila-inline">
+                  ¿Con qué pagó?
+                  <button
+                    type="button"
+                    disabled={enviandoACajaId === p.id}
+                    onClick={() => marcarAtendidoYCobrar(p, "efectivo")}
+                  >
+                    Efectivo
+                  </button>
+                  <button
+                    type="button"
+                    disabled={enviandoACajaId === p.id}
+                    onClick={() => marcarAtendidoYCobrar(p, "tarjeta")}
+                  >
+                    Tarjeta
+                  </button>
+                  <button
+                    type="button"
+                    disabled={enviandoACajaId === p.id}
+                    onClick={() => marcarAtendidoYCobrar(p, "transferencia")}
+                  >
+                    Transferencia
+                  </button>
+                  <button type="button" disabled={enviandoACajaId === p.id} onClick={() => setEligiendoMedioId(null)}>
+                    Cancelar
+                  </button>
+                </span>
               )}
               <button type="button" onClick={() => setPedidoParaImprimir(p)}>
                 Imprimir
