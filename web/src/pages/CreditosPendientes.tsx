@@ -24,12 +24,23 @@ export default function CreditosPendientes() {
   const [error, setError] = useState<string | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
   const [cargando, setCargando] = useState(true);
+  // Selección múltiple — a pedido del usuario, para cobrar de una vez varios
+  // pedidos antiguos que quedaron pendientes con el flujo viejo (antes
+  // "Enviar a Caja" siempre dejaba crédito, ahora ya queda pagado desde el
+  // principio) y que el equipo ya sabe que se pagaron. No inventa ningún
+  // cobro nuevo: repite el mismo cobro individual de siempre, uno por cada
+  // fila marcada.
+  const [seleccionados, setSeleccionados] = useState<Set<number>>(new Set());
+  const [cobrandoLote, setCobrandoLote] = useState(false);
 
   function cargar() {
     setCargando(true);
     api.caja
       .creditosPendientes(filtro === "todos" ? undefined : filtro)
-      .then(setCreditos)
+      .then((datos) => {
+        setCreditos(datos);
+        setSeleccionados(new Set());
+      })
       .catch((e) => setError(e.message))
       .finally(() => setCargando(false));
   }
@@ -59,7 +70,54 @@ export default function CreditosPendientes() {
     }
   }
 
+  function alternarSeleccion(id: number) {
+    setSeleccionados((prev) => {
+      const copia = new Set(prev);
+      if (copia.has(id)) copia.delete(id);
+      else copia.add(id);
+      return copia;
+    });
+  }
+
+  function alternarSeleccionTodos() {
+    setSeleccionados((prev) => (prev.size === creditos.length ? new Set() : new Set(creditos.map((c) => c.id))));
+  }
+
+  async function cobrarSeleccionados(medioCobro: MedioCobro) {
+    if (!usuario || seleccionados.size === 0) return;
+    setError(null);
+    setMensaje(null);
+    const filas = creditos.filter((c) => seleccionados.has(c.id));
+    const totalLote = filas.reduce((s, c) => s + c.monto, 0);
+    const confirmado = window.confirm(
+      `¿Registrar el cobro de ${filas.length} pendiente(s) por ${formatoCLP(totalLote)} como ${
+        medioCobro === "efectivo" ? "efectivo" : "tarjeta"
+      }? Esto asume que TODOS se pagaron con el mismo medio — si alguno se pagó distinto, cóbralo aparte.`
+    );
+    if (!confirmado) return;
+
+    setCobrandoLote(true);
+    let exitosos = 0;
+    const fallidos: string[] = [];
+    for (const pago of filas) {
+      try {
+        await api.caja.cobrarCredito(pago.id, { medioCobro, usuarioId: usuario.id });
+        exitosos++;
+      } catch (e) {
+        fallidos.push(`${pago.clienteNombre ?? "—"} (${(e as Error).message})`);
+      }
+    }
+    setCobrandoLote(false);
+    if (fallidos.length > 0) {
+      setError(`Se cobraron ${exitosos} de ${filas.length}. Fallaron: ${fallidos.join("; ")}`);
+    } else {
+      setMensaje(`Se registraron ${exitosos} cobro(s) por ${formatoCLP(totalLote)}.`);
+    }
+    cargar();
+  }
+
   const totalPendiente = creditos.reduce((suma, c) => suma + c.monto, 0);
+  const totalSeleccionado = creditos.filter((c) => seleccionados.has(c.id)).reduce((s, c) => s + c.monto, 0);
 
   const subtotalesPorCliente = new Map<string, number>();
   for (const c of creditos) {
@@ -119,9 +177,34 @@ export default function CreditosPendientes() {
         </div>
       )}
 
+      {seleccionados.size > 0 && (
+        <div className="tarjeta fila-inline">
+          <strong>
+            {seleccionados.size} seleccionado(s) — {formatoCLP(totalSeleccionado)}
+          </strong>
+          <button type="button" disabled={cobrandoLote} onClick={() => cobrarSeleccionados("efectivo")}>
+            {cobrandoLote ? "Cobrando..." : "Cobrar seleccionados en efectivo"}
+          </button>
+          <button type="button" disabled={cobrandoLote} onClick={() => cobrarSeleccionados("tarjeta")}>
+            {cobrandoLote ? "Cobrando..." : "Cobrar seleccionados con tarjeta"}
+          </button>
+          <button type="button" disabled={cobrandoLote} onClick={() => setSeleccionados(new Set())}>
+            Quitar selección
+          </button>
+        </div>
+      )}
+
       <table className="tabla">
         <thead>
           <tr>
+            <th>
+              <input
+                type="checkbox"
+                checked={creditos.length > 0 && seleccionados.size === creditos.length}
+                onChange={alternarSeleccionTodos}
+                disabled={creditos.length === 0}
+              />
+            </th>
             <th>Medio</th>
             <th>Cliente</th>
             <th>Monto</th>
@@ -133,6 +216,9 @@ export default function CreditosPendientes() {
         <tbody>
           {creditos.map((c) => (
             <tr key={c.id}>
+              <td>
+                <input type="checkbox" checked={seleccionados.has(c.id)} onChange={() => alternarSeleccion(c.id)} />
+              </td>
               <td>{c.medio === "transferencia" ? "Transferencia" : "Crédito"}</td>
               <td>{c.clienteId != null ? `${codigoCliente(c.clienteId)} — ${c.clienteNombre}` : c.clienteNombre}</td>
               <td>{formatoCLP(c.monto)}</td>
@@ -150,7 +236,7 @@ export default function CreditosPendientes() {
           ))}
           {!cargando && creditos.length === 0 && (
             <tr>
-              <td colSpan={6}>No hay créditos ni transferencias pendientes.</td>
+              <td colSpan={7}>No hay créditos ni transferencias pendientes.</td>
             </tr>
           )}
         </tbody>

@@ -48,6 +48,11 @@ export default function PedidosWeb() {
   const { usuario } = useUsuario();
   const [estado, setEstado] = useState<(typeof ESTADOS)[number]>("pendiente");
   const [pedidos, setPedidos] = useState<PedidoWeb[]>([]);
+  // Filtro extra dentro de "Atendidos" — a pedido del usuario, para
+  // encontrar rápido los pedidos que quedaron atendidos con el flujo viejo
+  // (antes de que "marcar atendido" generara la venta) y todavía no tienen
+  // ninguna venta asociada, sin tener que revisarlos uno por uno.
+  const [soloSinVenta, setSoloSinVenta] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(false);
   const [sincronizando, setSincronizando] = useState(false);
@@ -468,6 +473,15 @@ export default function PedidosWeb() {
         <button type="button" onClick={actualizar} disabled={sincronizando || cargando}>
           {sincronizando ? "Actualizando..." : "Actualizar"}
         </button>
+        {estado === "atendido" && (
+          <button
+            type="button"
+            className={`chip-categoria${soloSinVenta ? " activo" : ""}`}
+            onClick={() => setSoloSinVenta((v) => !v)}
+          >
+            Solo sin venta generada
+          </button>
+        )}
       </div>
 
       {seleccionRuta.size > 0 && (
@@ -504,7 +518,13 @@ export default function PedidosWeb() {
         </p>
       )}
 
-      {pedidos.map((p) => {
+      {!cargando &&
+        pedidos.length > 0 &&
+        estado === "atendido" &&
+        soloSinVenta &&
+        pedidos.every((p) => p.ventaGeneradaId) && <p className="ayuda">Todos los atendidos ya tienen venta generada.</p>}
+
+      {(estado === "atendido" && soloSinVenta ? pedidos.filter((p) => !p.ventaGeneradaId) : pedidos).map((p) => {
         const total = totalPedido(p);
         return (
           <section key={p.id} className="tarjeta">
