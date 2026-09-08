@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, formatoCLP, type CajaCamara } from "../api";
 import ModalConfirmarClave from "../components/ModalConfirmarClave";
+import { EtiquetaCamara } from "../components/EtiquetaCamara";
+import { imprimirEtiquetaCamara } from "../lib/imprimir";
 import { mostrarToast } from "../lib/toast";
 import ModalAlerta from "../components/ModalAlerta";
 
@@ -40,6 +42,7 @@ export default function CamaraEntradas() {
   const [cargando, setCargando] = useState(false);
 
   const [anulandoId, setAnulandoId] = useState<number | null>(null);
+  const [reimprimiendoId, setReimprimiendoId] = useState<number | null>(null);
 
   async function buscar(e?: React.FormEvent) {
     e?.preventDefault();
@@ -71,6 +74,21 @@ export default function CamaraEntradas() {
     mostrarToast("Entrada anulada", `Caja ${String(anulandoId).padStart(6, "0")}.`, "eliminado");
     setAnulandoId(null);
     await buscar();
+  }
+
+  // Reimprimir la etiqueta de una caja directamente desde esta pantalla —
+  // antes solo se podía desde Cámara → Existencias, buscando el lote al que
+  // pertenece la caja (varios pasos). Acá ya está la caja en pantalla, así
+  // que basta con mostrar su etiqueta oculta (ver ".vale-oculto-hasta-
+  // imprimir" en styles.css, mismo patrón que usa el vale de Punto de
+  // Venta) y mandar a imprimir. El número original se conserva, no se crea
+  // ninguna caja nueva.
+  function reimprimir(id: number) {
+    setReimprimiendoId(id);
+    setTimeout(() => {
+      imprimirEtiquetaCamara();
+      setTimeout(() => setReimprimiendoId(null), 500);
+    }, 0);
   }
 
   return (
@@ -132,7 +150,10 @@ export default function CamaraEntradas() {
               <td>{formatoCLP(c.costoNetoKg)}</td>
               <td>{ETIQUETAS_ESTADO[c.estado] ?? c.estado}</td>
               <td>{c.creadoPor.nombre}</td>
-              <td>
+              <td className="fila-inline">
+                <button type="button" className="boton" onClick={() => reimprimir(c.id)}>
+                  Reimprimir
+                </button>
                 {puedeAnular(c) && (
                   <button type="button" className="boton" onClick={() => setAnulandoId(c.id)}>
                     Anular entrada
@@ -143,6 +164,27 @@ export default function CamaraEntradas() {
           ))}
         </tbody>
       </table>
+
+      {reimprimiendoId != null && (
+        <div className="vale-oculto-hasta-imprimir">
+          {(() => {
+            const caja = cajas.find((c) => c.id === reimprimiendoId);
+            if (!caja) return null;
+            return (
+              <EtiquetaCamara
+                numero={String(caja.id).padStart(6, "0")}
+                producto={caja.producto.descripcion}
+                familia={caja.familiaNombre}
+                procedencia={caja.procedencia}
+                fechaIngreso={caja.fechaIngreso}
+                pesoInicialKg={caja.pesoInicialKg}
+                pesoEstimado={caja.pesoEstimado}
+                imprimiendo
+              />
+            );
+          })()}
+        </div>
+      )}
 
       {anulandoId != null && (
         <ModalConfirmarClave

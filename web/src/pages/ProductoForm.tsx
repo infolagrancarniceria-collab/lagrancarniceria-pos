@@ -15,6 +15,13 @@ import { useUsuario } from "../context/UsuarioContext";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 import { mostrarToast } from "../lib/toast";
 import ModalAlerta from "../components/ModalAlerta";
+import ModalConfirmarClave from "../components/ModalConfirmarClave";
+
+const ETIQUETAS_FLAG_BALANZA: Record<FlagBalanza, string> = {
+  NORMAL: "Normal (unidad)",
+  PESABLE: "Pesable",
+  IMPORTE: "Importe",
+};
 
 interface FormState {
   plu: string;
@@ -88,6 +95,9 @@ export default function ProductoForm() {
   const [form, setForm] = useState<FormState>(formVacio);
   const [productoActual, setProductoActual] = useState<ProductoConCosto | null>(null);
   const [precioNuevo, setPrecioNuevo] = useState("");
+  const [flagBalanzaNuevoValor, setFlagBalanzaNuevoValor] = useState<FlagBalanza>("NORMAL");
+  const [editandoFlagBalanza, setEditandoFlagBalanza] = useState(false);
+  const [autorizandoFlagBalanza, setAutorizandoFlagBalanza] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
@@ -370,6 +380,28 @@ export default function ProductoForm() {
     }
   }
 
+  // Cambio de flag balanza (Normal/Pesable/Importe) — a diferencia del resto
+  // del formulario (que se guarda todo junto con "Guardar cambios"), este
+  // campo tiene su propio endpoint con clave de supervisor obligatoria (ver
+  // PUT /api/productos/:id/flag-balanza) porque afecta cómo se calcula el
+  // precio de ahí en adelante, no solo cómo se ve el formulario — mismo
+  // motivo por el que Punto de Venta pide clave para el mismo cambio.
+  async function confirmarCambioFlagBalanza(usuarioId: number, clave: string, motivo?: string) {
+    if (!productoActual) return;
+    const actualizado = await api.productos.cambiarFlagBalanza(productoActual.id, {
+      flagBalanza: flagBalanzaNuevoValor,
+      usuarioId,
+      clave,
+      motivoAutorizacion: motivo,
+    });
+    setProductoActual({ ...productoActual, flagBalanza: actualizado.flagBalanza, codigoBarras: actualizado.codigoBarras });
+    actualizarCampo("flagBalanza", actualizado.flagBalanza);
+    actualizarCampo("codigoBarras", actualizado.codigoBarras ?? "");
+    setMensaje(`Ahora es "${ETIQUETAS_FLAG_BALANZA[actualizado.flagBalanza]}"`);
+    setAutorizandoFlagBalanza(false);
+    setEditandoFlagBalanza(false);
+  }
+
   const margenActual = productoActual ? calcularMargen(productoActual.precio, productoActual.costoEfectivo) : null;
   const margenNuevo =
     productoActual && precioNuevo && Number(precioNuevo) > 0
@@ -438,6 +470,48 @@ export default function ProductoForm() {
             <Link to="/inventario/entrada">Registrar entrada</Link> ·{" "}
             <Link to="/inventario/salida">Registrar salida</Link>
           </p>
+        </div>
+      )}
+
+      {!esNuevo && productoActual && (
+        <div className="tarjeta cambio-precio">
+          <h2>Flag balanza: {ETIQUETAS_FLAG_BALANZA[productoActual.flagBalanza]}</h2>
+          {!editandoFlagBalanza ? (
+            <button
+              type="button"
+              onClick={() => {
+                setFlagBalanzaNuevoValor(productoActual.flagBalanza);
+                setEditandoFlagBalanza(true);
+              }}
+            >
+              Cambiar
+            </button>
+          ) : (
+            <div className="fila-inline">
+              <select value={flagBalanzaNuevoValor} onChange={(e) => setFlagBalanzaNuevoValor(e.target.value as FlagBalanza)}>
+                <option value="NORMAL">Normal (unidad)</option>
+                <option value="PESABLE">Pesable</option>
+                <option value="IMPORTE">Importe</option>
+              </select>
+              <button
+                type="button"
+                className="boton boton-primario"
+                onClick={() => {
+                  if (flagBalanzaNuevoValor === productoActual.flagBalanza) {
+                    setEditandoFlagBalanza(false);
+                    return;
+                  }
+                  setAutorizandoFlagBalanza(true);
+                }}
+              >
+                Guardar
+              </button>
+              <button type="button" onClick={() => setEditandoFlagBalanza(false)}>
+                Cancelar
+              </button>
+            </div>
+          )}
+          <p className="ayuda">Este cambio pide clave de supervisor porque afecta cómo se calcula el precio de ahí en adelante.</p>
         </div>
       )}
 
@@ -822,6 +896,21 @@ export default function ProductoForm() {
           </button>
         </div>
       </form>
+
+      {autorizandoFlagBalanza && productoActual && (
+        <ModalConfirmarClave
+          titulo="Autorizar cambio de flag balanza"
+          descripcion={`${productoActual.descripcion}: de "${ETIQUETAS_FLAG_BALANZA[productoActual.flagBalanza]}" a "${ETIQUETAS_FLAG_BALANZA[flagBalanzaNuevoValor]}". Este cambio queda para todas las ventas futuras y puede afectar el precio.`}
+          motivoOpciones={[
+            "Se vende por peso, no por unidad",
+            "Se vende por unidad, no por peso",
+            "Se vende por importe/monto",
+            "Ajuste puntual",
+          ]}
+          onConfirmar={confirmarCambioFlagBalanza}
+          onCancelar={() => setAutorizandoFlagBalanza(false)}
+        />
+      )}
     </div>
   );
 }
