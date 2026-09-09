@@ -54,9 +54,24 @@ function construirItem(producto: ProductoParaBalanza): string {
 
 // Arma el mensaje con el catálogo completo (así es como lo manda el sistema
 // actual: siempre todo el catálogo pesable/importe, no solo lo que cambió).
-export function construirMensajeActualizacion(productos: ProductoParaBalanza[]): string {
+//
+// ActionCode "Update" — el que se usó siempre — sirve para refrescar
+// precio/nombre de un PLU que la balanza YA tiene cargado, pero no crea uno
+// que no existía (la balanza responde OK igual, como si el mensaje se
+// hubiese recibido bien, pero no llega a poder teclearse ese PLU en el
+// mesón). El formato se sacó de una captura de red del sistema viejo
+// (Gexus) actualizando su catálogo de 200 productos ya cargados — nunca se
+// capturó el caso de agregar un PLU realmente nuevo. Por eso ahora se manda
+// primero una pasada con "Add" (para que la balanza cree los PLU que le
+// falten) y después la de siempre con "Update" (para que todos —nuevos y
+// viejos— queden con el precio/nombre al día). Pendiente confirmar con las
+// balanzas físicas reales que "Add" es el ActionCode correcto para crear.
+export function construirMensajeActualizacion(
+  productos: ProductoParaBalanza[],
+  actionCode: "Add" | "Update" = "Update"
+): string {
   const items = productos.map(construirItem).filter(Boolean).join("");
-  return `<Message><ARTSCommonHeader MessageType="Request"/><ItemTransaction ActionCode="Update">${items}</ItemTransaction></Message>`;
+  return `<Message><ARTSCommonHeader MessageType="Request"/><ItemTransaction ActionCode="${actionCode}">${items}</ItemTransaction></Message>`;
 }
 
 const TIMEOUT_MS = 20000;
@@ -117,11 +132,21 @@ export async function actualizarBalanzas(
   puerto: number,
   productos: ProductoParaBalanza[]
 ): Promise<ResultadoEnvioBalanza[]> {
-  const mensaje = construirMensajeActualizacion(productos);
+  const mensajeAgregar = construirMensajeActualizacion(productos, "Add");
+  const mensajeActualizar = construirMensajeActualizacion(productos, "Update");
   const resultados: ResultadoEnvioBalanza[] = [];
   for (const ip of ips) {
+    // La pasada "Add" es best-effort: si la balanza no tiene nada que crear
+    // (o si le molesta que ya existan), no debe impedir la pasada "Update"
+    // de siempre, que es la que hoy sabemos que funciona para lo que ya
+    // estaba cargado.
     try {
-      await enviarABalanza(ip, puerto, mensaje);
+      await enviarABalanza(ip, puerto, mensajeAgregar);
+    } catch {
+      // se ignora — se reporta el resultado real más abajo, con "Update"
+    }
+    try {
+      await enviarABalanza(ip, puerto, mensajeActualizar);
       resultados.push({ ip, exito: true });
     } catch (e) {
       resultados.push({ ip, exito: false, error: (e as Error).message });
