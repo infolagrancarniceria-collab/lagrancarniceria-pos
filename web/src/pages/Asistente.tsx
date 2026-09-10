@@ -287,10 +287,8 @@ export default function Asistente() {
   const [confirmando, setConfirmando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function enviar(e: React.FormEvent) {
-    e.preventDefault();
+  async function enviarTexto(mensaje: string) {
     setError(null);
-    const mensaje = texto.trim();
     if (!mensaje || !usuario) return;
 
     setMensajes((m) => [...m, { autor: "usuario", texto: mensaje }]);
@@ -309,6 +307,22 @@ export default function Asistente() {
     } finally {
       setEnviando(false);
     }
+  }
+
+  async function enviar(e: React.FormEvent) {
+    e.preventDefault();
+    await enviarTexto(texto.trim());
+  }
+
+  // Botón "Analizar mi negocio": manda un pedido fijo por el mismo canal de
+  // chat de siempre (no hay un endpoint aparte) — el SYSTEM_PROMPT reconoce
+  // este tipo de pedido y consulta varias herramientas de reporte antes de
+  // responder (ver asistenteIA.ts).
+  const MENSAJE_ANALISIS_NEGOCIO =
+    "Hazme un análisis completo del negocio de los últimos 30 días: ventas, márgenes, inventario, precios, gastos, despachos y cualquier otra cosa a la que debería estar atento. Dime qué está funcionando bien, qué debería corregir ahora, y a qué debo estar atento.";
+
+  async function analizarNegocio() {
+    await enviarTexto(MENSAJE_ANALISIS_NEGOCIO);
   }
 
   async function confirmar() {
@@ -356,6 +370,21 @@ export default function Asistente() {
     <div>
       <h1>Asistente</h1>
       {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
+
+      <div className="fila-inline">
+        <button
+          type="button"
+          className="boton boton-primario"
+          onClick={analizarNegocio}
+          disabled={enviando || !!propuesta}
+        >
+          🔍 Analizar mi negocio
+        </button>
+        <span className="ayuda">
+          Revisa ventas, márgenes, inventario, precios y más de los últimos 30 días, y te dice qué corregir y a qué
+          estar atento.
+        </span>
+      </div>
 
       <section className="tarjeta">
         <div className="chat-mensajes">

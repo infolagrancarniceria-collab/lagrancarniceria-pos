@@ -56,7 +56,7 @@ export async function calcularReporteVentas(desdeTexto?: unknown, hastaTexto?: u
 
   const items = await prisma.itemVenta.findMany({
     where: { anulado: false, venta: { estado: "pagada", fecha: { gte: desde, lte: hasta } } },
-    include: { producto: true },
+    include: { producto: { include: { categoria: true } } },
   });
   const ventasEnRango = await prisma.venta.findMany({
     where: { estado: "pagada", fecha: { gte: desde, lte: hasta } },
@@ -94,6 +94,37 @@ export async function calcularReporteVentas(desdeTexto?: unknown, hastaTexto?: u
     .sort((a, b) => b.ingreso - a.ingreso)
     .slice(0, 10);
 
+  // Ventas por categoría (agrupadas por la categoría RAÍZ, nivel 1 — ej.
+  // Vacuno/Cerdo/Pollo — no la subcategoría directa del producto, que puede
+  // ser de nivel 2/3 y daría demasiadas filas para que el desglose sirva de
+  // un vistazo) — a pedido del usuario, para ver de un vistazo qué rubro
+  // mueve más plata, sin tener que sumarlo a mano desde el ranking de
+  // productos individuales.
+  const todasCategorias = await prisma.categoria.findMany({ select: { id: true, nombre: true, padreId: true } });
+  const categoriaPorId = new Map(todasCategorias.map((c) => [c.id, c]));
+  const raizCache = new Map<number, string>();
+  function categoriaRaizNombre(categoriaId: number): string {
+    const cacheada = raizCache.get(categoriaId);
+    if (cacheada) return cacheada;
+    let actual = categoriaPorId.get(categoriaId);
+    while (actual?.padreId != null) {
+      actual = categoriaPorId.get(actual.padreId);
+    }
+    const nombre = actual?.nombre ?? "Sin categoría";
+    raizCache.set(categoriaId, nombre);
+    return nombre;
+  }
+
+  const porCategoriaMapa = new Map<string, { categoria: string; cantidad: number; ingreso: number }>();
+  for (const i of items) {
+    const nombre = categoriaRaizNombre(i.producto.categoriaId);
+    const actual = porCategoriaMapa.get(nombre) ?? { categoria: nombre, cantidad: 0, ingreso: 0 };
+    actual.cantidad += i.cantidad;
+    actual.ingreso += i.subtotal;
+    porCategoriaMapa.set(nombre, actual);
+  }
+  const porCategoria = Array.from(porCategoriaMapa.values()).sort((a, b) => b.ingreso - a.ingreso);
+
   // Evolución diaria — a pedido del usuario, para graficar cómo se mueven
   // las ventas día a día en el rango elegido (no solo el total acumulado).
   const porDiaMapa = new Map<string, { cantidadVentas: number; totalVentas: number }>();
@@ -117,6 +148,7 @@ export async function calcularReporteVentas(desdeTexto?: unknown, hastaTexto?: u
     totalVentasOnline,
     masVendidosPorCantidad,
     masVendidosPorIngreso,
+    porCategoria,
     porDia,
   };
 }

@@ -7,6 +7,7 @@ import { obtenerIdsCategoriaYDescendientes } from "../lib/categorias";
 import { verificarClaveConLimite } from "../lib/clave";
 import { sincronizarCatalogoConWeb } from "../lib/syncWeb";
 import { calcularProximoPlu } from "../lib/proximoPlu";
+import { calcularMargen, calcularMargenReal } from "../lib/margen";
 
 export const productosRouter = Router();
 
@@ -107,15 +108,14 @@ productosRouter.get("/proximo-plu", async (_req, res) => {
   res.json({ plu: await calcularProximoPlu() });
 });
 
-// Para la pantalla "Mejor margen" (filtrar rápido qué productos convienen
-// más para armar combos): trae, para cada producto activo con al menos una
-// compra registrada, su último costo — el margen (%) en sí se calcula en el
-// frontend con calcularMargen() (misma fórmula ya usada en la ficha de
-// producto), para no duplicar la cuenta en dos lugares. Productos sin
-// ninguna compra registrada (sin costo conocido) quedan afuera, para no
-// mostrar un margen inventado.
-productosRouter.get("/margenes", async (req, res) => {
-  const categoriaId = req.query.categoriaId ? Number(req.query.categoriaId) : undefined;
+// Compartido entre la pantalla "Mejor margen" y el reporte de márgenes del
+// Asistente (ver calcularReporteMargenes más abajo): productos activos (de
+// una categoría o de todo el catálogo) con su costo efectivo resuelto —
+// último costo real de compra si existe, o el costo de referencia manual
+// como respaldo (ver calcularCostoEfectivo). Productos sin ningún costo
+// conocido quedan en `total` pero no en `conCosto`, para no calcular un
+// margen inventado.
+async function productosConCostoEfectivo(categoriaId?: number) {
   let categoriaIds: number[] | undefined;
   if (categoriaId) {
     categoriaIds = await obtenerIdsCategoriaYDescendientes(categoriaId);
@@ -141,7 +141,7 @@ productosRouter.get("/margenes", async (req, res) => {
     }
   }
 
-  const resultado = productos
+  const conCosto = productos
     .map((p) => {
       const ultima = ultimaCompraPorProducto.get(p.id);
       const ultimoCosto = ultima?.costoUnitario ?? null;
@@ -152,10 +152,88 @@ productosRouter.get("/margenes", async (req, res) => {
         ...calcularCostoEfectivo(ultimoCosto, p.costoReferencia),
       };
     })
-    .filter((p) => p.costoEfectivo != null);
+    .filter((p): p is typeof p & { costoEfectivo: number } => p.costoEfectivo != null);
 
-  res.json(resultado);
+  return { total: productos.length, conCosto };
+}
+
+// Para la pantalla "Mejor margen" (filtrar rápido qué productos convienen
+// más para armar combos): trae, para cada producto activo con al menos una
+// compra registrada, su último costo — el margen (%) en sí se calcula en el
+// frontend con calcularMargen() (misma fórmula ya usada en la ficha de
+// producto), para no duplicar la cuenta en dos lugares.
+productosRouter.get("/margenes", async (req, res) => {
+  const categoriaId = req.query.categoriaId ? Number(req.query.categoriaId) : undefined;
+  const { conCosto } = await productosConCostoEfectivo(categoriaId);
+  res.json(conCosto);
 });
+
+// Para el Asistente (herramienta "reporte_margenes", ver asistenteIA.ts): a
+// diferencia de "Mejor margen" (que le deja el cálculo al frontend), acá SÍ
+// se calcula el margen en el servidor, porque el Asistente no tiene
+// frontend — y se resume a lo que sirve para un análisis de negocio:
+// promedios, y los productos que más urgen revisar (margen negativo,
+// vendiendo bajo el costo; o margen bajo, con poco colchón). 20% de recargo
+// como umbral de "margen bajo" es un valor de referencia razonable para una
+// carnicería, no una regla de negocio estricta — solo para priorizar qué
+// mostrarle a la persona en el análisis.
+const UMBRAL_MARGEN_BAJO = 20;
+
+export async function calcularReporteMargenes(categoriaId?: number) {
+  const { total, conCosto } = await productosConCostoEfectivo(categoriaId);
+
+  const filas = conCosto.map((p) => ({
+    productoId: p.id,
+    plu: p.plu,
+    descripcion: p.descripcion,
+    categoria: p.categoria.nombre,
+    costo: p.costoEfectivo,
+    costoEsEstimado: p.costoEsEstimado,
+    precio: p.precio,
+    recargo: calcularMargen(p.precio, p.costoEfectivo),
+    margenReal: calcularMargenReal(p.precio, p.costoEfectivo),
+  }));
+
+  const conRecargo = filas.filter(
+    (f): f is typeof f & { recargo: number; margenReal: number } => f.recargo != null && f.margenReal != null
+  );
+  const recargoPromedio = conRecargo.length ? conRecargo.reduce((s, f) => s + f.recargo, 0) / conRecargo.length : null;
+  const margenRealPromedio = conRecargo.length
+    ? conRecargo.reduce((s, f) => s + f.margenReal, 0) / conRecargo.length
+    : null;
+
+  const resumenFila = ({ productoId, plu, descripcion, categoria, costo, precio, recargo }: (typeof conRecargo)[number]) => ({
+    productoId,
+    plu,
+    descripcion,
+    categoria,
+    costo,
+    precio,
+    recargo: Number(recargo.toFixed(1)),
+  });
+
+  const productosConMargenNegativo = conRecargo
+    .filter((f) => f.recargo < 0)
+    .sort((a, b) => a.recargo - b.recargo)
+    .slice(0, 15)
+    .map(resumenFila);
+
+  const productosConMargenBajo = conRecargo
+    .filter((f) => f.recargo >= 0 && f.recargo < UMBRAL_MARGEN_BAJO)
+    .sort((a, b) => a.recargo - b.recargo)
+    .slice(0, 15)
+    .map(resumenFila);
+
+  return {
+    cantidadProductosActivos: total,
+    cantidadConCostoConocido: filas.length,
+    cantidadSinCostoConocido: total - filas.length,
+    recargoPromedio: recargoPromedio != null ? Number(recargoPromedio.toFixed(1)) : null,
+    margenRealPromedio: margenRealPromedio != null ? Number(margenRealPromedio.toFixed(1)) : null,
+    productosConMargenNegativo,
+    productosConMargenBajo,
+  };
+}
 
 productosRouter.get("/:id", async (req, res) => {
   const producto = await prisma.producto.findUnique({

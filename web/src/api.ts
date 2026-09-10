@@ -575,6 +575,7 @@ export interface ReporteVentas {
   totalVentasOnline: number;
   masVendidosPorCantidad: { productoId: number; plu: string; descripcion: string; cantidad: number; ingreso: number }[];
   masVendidosPorIngreso: { productoId: number; plu: string; descripcion: string; cantidad: number; ingreso: number }[];
+  porCategoria: { categoria: string; cantidad: number; ingreso: number }[];
   porDia: { fecha: string; cantidadVentas: number; totalVentas: number }[];
 }
 

@@ -3,6 +3,7 @@ import { prisma } from "../db";
 import { rangoFechasDesdeTexto, calcularReporteVentas, calcularReporteDespachos } from "../routes/reportes";
 import { calcularReporteGastos } from "../routes/gastos";
 import { calcularReporteAnulaciones } from "../routes/caja";
+import { calcularReporteMargenes } from "../routes/productos";
 
 // Herramientas de solo lectura: el asistente las ejecuta directo, nunca
 // cambian datos. Las herramientas "proponer_*" son distintas a propósito:
@@ -67,6 +68,17 @@ export const herramientas: Anthropic.Tool[] = [
       properties: {
         desde: { type: "string", description: "Fecha de inicio, formato YYYY-MM-DD" },
         hasta: { type: "string", description: "Fecha de fin, formato YYYY-MM-DD" },
+      },
+    },
+  },
+  {
+    name: "reporte_margenes",
+    description:
+      "Estado de los márgenes del catálogo AHORA (no es por rango de fechas, es una foto del momento): recargo y margen real promedio, y los productos que más urgen revisar — con margen negativo (vendiendo bajo el costo) o con margen bajo (menos de 20% de recargo). Usar para saber qué precios corregir.",
+    input_schema: {
+      type: "object",
+      properties: {
+        categoriaId: { type: "integer", description: "Opcional, para limitar a una categoría y sus subcategorías" },
       },
     },
   },
@@ -538,6 +550,8 @@ export async function ejecutarHerramientaLectura(nombre: string, input: Record<s
         .slice(0, 10);
       return { desde: desde.toISOString(), hasta: hasta.toISOString(), totalCambios: cambios.length, mayoresCambios };
     }
+    case "reporte_margenes":
+      return calcularReporteMargenes(input.categoriaId ? Number(input.categoriaId) : undefined);
     case "reporte_ventas":
       return calcularReporteVentas(input.desde, input.hasta);
     case "consultar_venta": {
@@ -747,7 +761,9 @@ Sobre la cámara frigorífica: cada caja tiene una "version" que cambia cada vez
 
 Sobre créditos (ventas fiadas): usa creditos_pendientes primero para tener el pagoId real antes de proponer_marcar_credito_cobrado — nunca inventes un pagoId.
 
-Sobre crear un producto nuevo: usa buscar_productos primero para confirmar que el PLU que te dieron no esté ya en uso (si ya existe, avisa en vez de proponer un duplicado) y listar_categorias para tener el categoriaId real. Si no te dan la categoría, pregunta antes de asumir una.`;
+Sobre crear un producto nuevo: usa buscar_productos primero para confirmar que el PLU que te dieron no esté ya en uso (si ya existe, avisa en vez de proponer un duplicado) y listar_categorias para tener el categoriaId real. Si no te dan la categoría, pregunta antes de asumir una.
+
+Sobre un análisis general del negocio (ej. "cómo va el negocio", "qué debería revisar", "analiza mi negocio", o el botón "Analizar mi negocio"): a diferencia del resto de las respuestas, acá SÍ conviene ser más extenso — es el único momento en que la persona pide una mirada completa, no un dato puntual. Antes de responder, consulta TODAS las herramientas de reporte que apliquen para el período pedido (o los últimos 30 días si no se especifica): reporte_ventas, reporte_margenes, reporte_inventario, reporte_precios, reporte_gastos, reporte_despachos, productos_stock_negativo, productos_sin_venta_reciente, reporte_anulaciones, creditos_pendientes y ventas_mayoristas_pendientes — podés llamar varias en la misma vuelta. Con esos datos, arma una respuesta estructurada en 3 partes: (1) qué está funcionando bien, con el número que lo respalda; (2) qué corregir ahora (ej. productos con margen negativo, stock negativo, créditos vencidos hace mucho); (3) a qué estar atento (ej. productos sin venta reciente que ocupan cámara, categorías con margen bajo, seguido de mermas). Siempre con números concretos citados de las herramientas, nunca genérico ("las ventas van bien" sin decir cuánto).`;
 
 export async function procesarMensaje(
   apiKey: string,

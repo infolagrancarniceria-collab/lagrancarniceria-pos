@@ -417,7 +417,7 @@ export default function ProductoForm() {
       {!esNuevo && productoActual && (
         <div className="tarjeta cambio-precio">
           <h2>Precio actual: {formatoCLP(productoActual.precio)}</h2>
-          {productoActual.costoEfectivo == null ? (
+          {!productoActual.costoEfectivo ? (
             <p className="ayuda">
               Sin costo registrado — registra una entrada de compra para este producto en Inventario, o escribe un
               costo de referencia más abajo, para ver el margen (%).

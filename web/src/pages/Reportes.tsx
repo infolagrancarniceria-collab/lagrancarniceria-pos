@@ -31,12 +31,52 @@ function fechaCorta(fecha: string): string {
   return `${dia}/${mes}`;
 }
 
+// El mismo largo de días, inmediatamente antes del rango elegido — para
+// poder comparar "¿vendimos más o menos que el período anterior?" sin que
+// la persona tenga que ir a buscar las fechas a mano.
+function periodoAnterior(desde: string, hasta: string): { desde: string; hasta: string } {
+  const msPorDia = 24 * 60 * 60 * 1000;
+  const d1 = new Date(`${desde}T00:00:00`);
+  const d2 = new Date(`${hasta}T00:00:00`);
+  const duracionDias = Math.max(1, Math.round((d2.getTime() - d1.getTime()) / msPorDia) + 1);
+  const nuevoHasta = new Date(d1.getTime() - msPorDia);
+  const nuevoDesde = new Date(nuevoHasta.getTime() - (duracionDias - 1) * msPorDia);
+  return { desde: nuevoDesde.toISOString().slice(0, 10), hasta: nuevoHasta.toISOString().slice(0, 10) };
+}
+
+// Flecha ▲/▼ con el % de variación contra el período anterior — para no
+// tener que comparar los dos números a mano cada vez.
+function Comparacion({ actual, anterior }: { actual: number; anterior: number }) {
+  if (anterior <= 0) {
+    return actual > 0 ? <span className="ayuda">(sin datos en el período anterior para comparar)</span> : null;
+  }
+  const variacion = ((actual - anterior) / anterior) * 100;
+  const positivo = variacion >= 0;
+  return (
+    <span className={positivo ? "exito" : "error"}>
+      {positivo ? "▲" : "▼"} {Math.abs(variacion).toFixed(1)}% vs período anterior
+    </span>
+  );
+}
+
+type Pestana = "resumen" | "ventas" | "despachos" | "inventario" | "precios";
+
+const PESTANAS: { id: Pestana; etiqueta: string }[] = [
+  { id: "resumen", etiqueta: "Resumen" },
+  { id: "ventas", etiqueta: "Ventas" },
+  { id: "despachos", etiqueta: "Despachos" },
+  { id: "inventario", etiqueta: "Inventario" },
+  { id: "precios", etiqueta: "Precios" },
+];
+
 export default function Reportes() {
   const [desde, setDesde] = useState(fechaHace(30));
   const [hasta, setHasta] = useState(hoy());
+  const [pestana, setPestana] = useState<Pestana>("resumen");
   const [reporteInventario, setReporteInventario] = useState<ReporteInventario | null>(null);
   const [reportePrecios, setReportePrecios] = useState<ReportePrecios | null>(null);
   const [reporteVentas, setReporteVentas] = useState<ReporteVentas | null>(null);
+  const [reporteVentasAnterior, setReporteVentasAnterior] = useState<ReporteVentas | null>(null);
   const [reporteDespachos, setReporteDespachos] = useState<ReporteDespachos | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(false);
@@ -44,16 +84,19 @@ export default function Reportes() {
   function cargar() {
     setError(null);
     setCargando(true);
+    const anterior = periodoAnterior(desde, hasta);
     Promise.all([
       api.reportes.inventario(desde, hasta),
       api.reportes.precios(desde, hasta),
       api.reportes.ventas(desde, hasta),
+      api.reportes.ventas(anterior.desde, anterior.hasta),
       api.reportes.despachos(desde, hasta),
     ])
-      .then(([inv, prec, ventas, despachos]) => {
+      .then(([inv, prec, ventas, ventasAnterior, despachos]) => {
         setReporteInventario(inv);
         setReportePrecios(prec);
         setReporteVentas(ventas);
+        setReporteVentasAnterior(ventasAnterior);
         setReporteDespachos(despachos);
       })
       .catch((e) => setError(e.message))
@@ -81,7 +124,78 @@ export default function Reportes() {
         </button>
       </div>
 
-      {reporteVentas && (
+      <div className="chips-categoria">
+        {PESTANAS.map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            className={`chip-categoria ${pestana === p.id ? "activo" : ""}`}
+            onClick={() => setPestana(p.id)}
+          >
+            {p.etiqueta}
+          </button>
+        ))}
+      </div>
+
+      {cargando && !reporteVentas && <p>Cargando...</p>}
+
+      {pestana === "resumen" && (
+        <section className="tarjeta">
+          <h2>Lo más importante del período</h2>
+          <p className="ayuda">
+            {desde} a {hasta} — comparado contra el mismo largo de días justo antes.
+          </p>
+          <div className="fila-inline" style={{ alignItems: "stretch" }}>
+            {reporteVentas && reporteVentasAnterior && (
+              <div className="tarjeta tarjeta-mini">
+                <strong>Ventas</strong>
+                <p style={{ fontSize: "1.4rem", margin: "0.25rem 0" }}>{formatoCLP(reporteVentas.totalVentas)}</p>
+                <p className="ayuda">{reporteVentas.cantidadVentas} venta{reporteVentas.cantidadVentas === 1 ? "" : "s"}</p>
+                <Comparacion actual={reporteVentas.totalVentas} anterior={reporteVentasAnterior.totalVentas} />
+              </div>
+            )}
+            {reporteDespachos && (
+              <div className="tarjeta tarjeta-mini">
+                <strong>Despachos</strong>
+                <p style={{ fontSize: "1.4rem", margin: "0.25rem 0" }}>{reporteDespachos.cantidadDespachos}</p>
+                <p className="ayuda">{formatoCLP(reporteDespachos.totalCostoEnvio)} cobrado por envío</p>
+              </div>
+            )}
+            {reporteInventario && (
+              <div className="tarjeta tarjeta-mini">
+                <strong>Merma</strong>
+                <p style={{ fontSize: "1.4rem", margin: "0.25rem 0" }}>
+                  {reporteInventario.salidasPorMotivo.descarte ?? 0}
+                </p>
+                <p className="ayuda">unidades/kg descartados en el período</p>
+              </div>
+            )}
+            {reportePrecios && (
+              <div className="tarjeta tarjeta-mini">
+                <strong>Cambios de precio</strong>
+                <p style={{ fontSize: "1.4rem", margin: "0.25rem 0" }}>{reportePrecios.totalCambios}</p>
+                <p className="ayuda">en el período — ver pestaña Precios para el detalle</p>
+              </div>
+            )}
+          </div>
+
+          {reporteVentas && reporteVentas.porCategoria.length > 0 && (
+            <>
+              <h3>Ventas por categoría</h3>
+              <GraficoBarras
+                datos={reporteVentas.porCategoria.map((c) => ({ etiqueta: c.categoria, valor: c.ingreso }))}
+                formatoValor={formatoCLP}
+              />
+            </>
+          )}
+
+          <p className="ayuda">
+            Usa las pestañas de arriba para el detalle completo de cada área, con sus propias tablas y gráficos.
+          </p>
+        </section>
+      )}
+
+      {pestana === "ventas" && reporteVentas && (
         <section className="tarjeta">
           <h2>Ventas</h2>
           <div className="fila-inline">
@@ -91,6 +205,9 @@ export default function Reportes() {
             <div>
               <strong>Total vendido:</strong> {formatoCLP(reporteVentas.totalVentas)}
             </div>
+            {reporteVentasAnterior && (
+              <Comparacion actual={reporteVentas.totalVentas} anterior={reporteVentasAnterior.totalVentas} />
+            )}
           </div>
           <p className="ayuda">
             De eso, <strong>{reporteVentas.cantidadVentasOnline}</strong> venta
@@ -103,6 +220,35 @@ export default function Reportes() {
             datos={reporteVentas.porDia.map((d) => ({ etiqueta: fechaCorta(d.fecha), valor: d.totalVentas }))}
             formatoValor={formatoCLP}
           />
+
+          <h3>Ventas por categoría</h3>
+          <GraficoBarras
+            datos={reporteVentas.porCategoria.map((c) => ({ etiqueta: c.categoria, valor: c.ingreso }))}
+            formatoValor={formatoCLP}
+          />
+          <table className="tabla">
+            <thead>
+              <tr>
+                <th>Categoría</th>
+                <th>Cantidad vendida</th>
+                <th>Ingreso</th>
+              </tr>
+            </thead>
+            <tbody>
+              {reporteVentas.porCategoria.map((c) => (
+                <tr key={c.categoria}>
+                  <td>{c.categoria}</td>
+                  <td>{c.cantidad}</td>
+                  <td>{formatoCLP(c.ingreso)}</td>
+                </tr>
+              ))}
+              {reporteVentas.porCategoria.length === 0 && (
+                <tr>
+                  <td colSpan={3}>No hubo ventas en este período.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
 
           <h3>Más vendidos por cantidad</h3>
           <GraficoBarras
@@ -164,7 +310,7 @@ export default function Reportes() {
         </section>
       )}
 
-      {reporteDespachos && (
+      {pestana === "despachos" && reporteDespachos && (
         <section className="tarjeta">
           <h2>Despachos</h2>
           <div className="fila-inline">
@@ -208,7 +354,7 @@ export default function Reportes() {
         </section>
       )}
 
-      {reporteInventario && (
+      {pestana === "inventario" && reporteInventario && (
         <section className="tarjeta">
           <h2>Inventario</h2>
           <div className="fila-inline">
@@ -260,7 +406,7 @@ export default function Reportes() {
         </section>
       )}
 
-      {reportePrecios && (
+      {pestana === "precios" && reportePrecios && (
         <section className="tarjeta">
           <h2>Precios</h2>
           <div className="fila-inline">
