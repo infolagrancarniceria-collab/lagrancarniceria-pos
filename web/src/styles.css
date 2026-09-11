@@ -1388,12 +1388,33 @@ select {
   }
   /* "Imprimir lote completo": varias etiquetas quedan marcadas
      imprimir-ahora a la vez — cada una en su propia página, para que no se
-     corten entre sí. */
-  .etiquetas-camara.imprimiendo-lote .etiqueta.imprimir-ahora {
+     corten entre sí.
+     BUG real encontrado (etiquetas descuadradas y perdidas al imprimir un
+     lote): ".etiquetas-camara" es "display: flex" para la grilla en
+     pantalla, y el salto de página forzado (page-break-after/break-after)
+     no es confiable dentro de un contenedor flex/grid — el spec de
+     fragmentación de CSS lo deja como "mejor esfuerzo", y en la práctica
+     el motor de impresión (Chromium, vía Electron) puede apretar dos o
+     más etiquetas de 100×50mm en una sola página física en vez de crear
+     una por cada una, cortando o perdiendo las que quedan después.
+     Además el salto estaba puesto en ".etiqueta" (nieto de
+     ".etiquetas-camara", metido dentro de ".etiqueta-bloque"), no en el
+     elemento que en realidad es hijo directo del contenedor — un salto
+     forzado en un descendiente que no es él mismo un ítem flex/grid
+     tampoco se propaga de forma confiable. Al imprimir un lote se cambia
+     todo a flujo de bloque normal (donde el salto de página SÍ es
+     confiable en cualquier motor) y el salto se pone en ".etiqueta-bloque"
+     — el hijo directo real — en vez de en ".etiqueta". Solo aplica
+     mientras se imprime; en pantalla sigue siendo la grilla de siempre. */
+  .etiquetas-camara.imprimiendo-lote {
+    display: block;
+  }
+  .etiquetas-camara.imprimiendo-lote .etiqueta-bloque {
+    display: block;
     break-after: page;
     page-break-after: always;
   }
-  .etiquetas-camara.imprimiendo-lote .etiqueta.imprimir-ahora:last-child {
+  .etiquetas-camara.imprimiendo-lote .etiqueta-bloque:last-child {
     break-after: auto;
     page-break-after: auto;
   }
