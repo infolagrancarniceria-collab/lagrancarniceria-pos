@@ -93,77 +93,82 @@ export default function CamaraEntradas() {
 
   return (
     <div>
-      <div className="encabezado-pantalla">
-        <h1>Revisar entradas</h1>
-        <Link to="/camara">Volver a Cámara</Link>
-      </div>
-      <p className="ayuda">
-        Todas las cajas que entraron a cámara en el rango elegido. "Anular" solo está disponible para una caja que
-        sigue tal cual se creó (sin ninguna salida registrada todavía) — pensado para corregir entradas de prueba o
-        duplicadas antes de que se les saque algo.
-      </p>
-      {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
+      {/* Todo lo que no sea la etiqueta oculta va acá adentro — sin esto, al
+          reimprimir una caja el navegador imprimía la pantalla completa (esta
+          tabla con todas las cajas del rango, no solo la etiqueta pedida). */}
+      <div className="no-imprimir">
+        <div className="encabezado-pantalla">
+          <h1>Revisar entradas</h1>
+          <Link to="/camara">Volver a Cámara</Link>
+        </div>
+        <p className="ayuda">
+          Todas las cajas que entraron a cámara en el rango elegido. "Anular" solo está disponible para una caja que
+          sigue tal cual se creó (sin ninguna salida registrada todavía) — pensado para corregir entradas de prueba o
+          duplicadas antes de que se les saque algo.
+        </p>
+        {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
 
-      <form onSubmit={buscar} className="fila-inline">
-        <label>
-          Desde <input type="date" value={desde} onChange={(e) => setDesde(e.target.value)} />
-        </label>
-        <label>
-          Hasta <input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} />
-        </label>
-        <button type="submit">{cargando ? "Buscando..." : "Buscar"}</button>
-      </form>
+        <form onSubmit={buscar} className="fila-inline">
+          <label>
+            Desde <input type="date" value={desde} onChange={(e) => setDesde(e.target.value)} />
+          </label>
+          <label>
+            Hasta <input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} />
+          </label>
+          <button type="submit">{cargando ? "Buscando..." : "Buscar"}</button>
+        </form>
 
-      <table className="tabla">
-        <thead>
-          <tr>
-            <th>Caja</th>
-            <th>Producto</th>
-            <th>Familia</th>
-            <th>Procedencia</th>
-            <th>Ingreso</th>
-            <th>Salida</th>
-            <th>Peso inicial (kg)</th>
-            <th>Saldo (kg)</th>
-            <th>Costo/kg</th>
-            <th>Estado</th>
-            <th>Creó</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {cajas.length === 0 && !cargando && (
+        <table className="tabla">
+          <thead>
             <tr>
-              <td colSpan={12}>Sin cajas en este rango.</td>
+              <th>Caja</th>
+              <th>Producto</th>
+              <th>Familia</th>
+              <th>Procedencia</th>
+              <th>Ingreso</th>
+              <th>Salida</th>
+              <th>Peso inicial (kg)</th>
+              <th>Saldo (kg)</th>
+              <th>Costo/kg</th>
+              <th>Estado</th>
+              <th>Creó</th>
+              <th></th>
             </tr>
-          )}
-          {cajas.map((c) => (
-            <tr key={c.id}>
-              <td>{String(c.id).padStart(6, "0")}</td>
-              <td>{c.producto.descripcion}</td>
-              <td>{c.familiaNombre}</td>
-              <td>{c.procedencia ?? "—"}</td>
-              <td>{new Date(c.fechaIngreso).toLocaleString("es-CL")}</td>
-              <td>{c.fechaSalida ? new Date(c.fechaSalida).toLocaleString("es-CL") : "—"}</td>
-              <td>{c.pesoInicialKg.toFixed(3)}</td>
-              <td>{c.saldoKg.toFixed(3)}</td>
-              <td>{formatoCLP(c.costoNetoKg)}</td>
-              <td>{ETIQUETAS_ESTADO[c.estado] ?? c.estado}</td>
-              <td>{c.creadoPor.nombre}</td>
-              <td className="fila-inline">
-                <button type="button" className="boton" onClick={() => reimprimir(c.id)}>
-                  Reimprimir
-                </button>
-                {puedeAnular(c) && (
-                  <button type="button" className="boton" onClick={() => setAnulandoId(c.id)}>
-                    Anular entrada
+          </thead>
+          <tbody>
+            {cajas.length === 0 && !cargando && (
+              <tr>
+                <td colSpan={12}>Sin cajas en este rango.</td>
+              </tr>
+            )}
+            {cajas.map((c) => (
+              <tr key={c.id}>
+                <td>{String(c.id).padStart(6, "0")}</td>
+                <td>{c.producto.descripcion}</td>
+                <td>{c.familiaNombre}</td>
+                <td>{c.procedencia ?? "—"}</td>
+                <td>{new Date(c.fechaIngreso).toLocaleString("es-CL")}</td>
+                <td>{c.fechaSalida ? new Date(c.fechaSalida).toLocaleString("es-CL") : "—"}</td>
+                <td>{c.pesoInicialKg.toFixed(3)}</td>
+                <td>{c.saldoKg.toFixed(3)}</td>
+                <td>{formatoCLP(c.costoNetoKg)}</td>
+                <td>{ETIQUETAS_ESTADO[c.estado] ?? c.estado}</td>
+                <td>{c.creadoPor.nombre}</td>
+                <td className="fila-inline">
+                  <button type="button" className="boton" onClick={() => reimprimir(c.id)}>
+                    Reimprimir
                   </button>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+                  {puedeAnular(c) && (
+                    <button type="button" className="boton" onClick={() => setAnulandoId(c.id)}>
+                      Anular entrada
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
       {reimprimiendoId != null && (
         <div className="vale-oculto-hasta-imprimir">
