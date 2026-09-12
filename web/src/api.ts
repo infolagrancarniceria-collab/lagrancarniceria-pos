@@ -805,9 +805,18 @@ export interface ResultadoEnvioBalanza {
   error?: string;
 }
 
+export interface DetalleEnvioBalanza {
+  plu: string;
+  descripcion: string;
+  precioEnviado: number;
+  unidad: "KGM" | "PCS" | null;
+  incluido: boolean;
+}
+
 export interface ResultadoActualizarBalanza {
   cantidadProductos: number;
   resultados: ResultadoEnvioBalanza[];
+  detalle: DetalleEnvioBalanza[];
 }
 
 class ApiError extends Error {}
@@ -1342,7 +1351,15 @@ export const api = {
     configuracion: () => get<ConfiguracionBalanza>("/api/balanza/configuracion"),
     guardarConfiguracion: (data: { ip1: string; ip2: string; puerto: number }) =>
       post<ConfiguracionBalanza>("/api/balanza/configuracion", data),
-    actualizar: () => post<ResultadoActualizarBalanza>("/api/balanza/actualizar", {}),
+    // Límite de tiempo propio, más alto que el genérico de post(): el
+    // servidor intenta conectarse a 2 balanzas, dos pasadas cada una
+    // (Add + Update), con hasta 20s de espera por intento — hasta 80s en
+    // el peor caso si una balanza está apagada o no responde. Con el
+    // límite genérico (15s) el aviso de "el programa no respondió a
+    // tiempo" saltaba igual, aunque el servidor sí terminaba bien poco
+    // después, ocultando el resultado real (incluido el detalle de qué
+    // se envió a cada producto).
+    actualizar: () => post<ResultadoActualizarBalanza>("/api/balanza/actualizar", {}, 90000),
   },
   gastos: {
     listar: (params: { desde?: string; hasta?: string; categoria?: string } = {}) => {

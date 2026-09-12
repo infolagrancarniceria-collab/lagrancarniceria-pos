@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../db";
-import { actualizarBalanzas } from "../lib/balanza";
+import { actualizarBalanzas, detalleEnvio } from "../lib/balanza";
 
 export const balanzaRouter = Router();
 
@@ -42,16 +42,14 @@ balanzaRouter.post("/actualizar", async (_req, res) => {
     where: { activo: true, flagBalanza: { in: ["PESABLE", "IMPORTE"] } },
   });
 
-  const resultados = await actualizarBalanzas(
-    [config.ip1, config.ip2],
-    config.puerto,
-    productos.map((p) => ({
-      plu: p.plu,
-      descripcion: p.descripcion,
-      precio: p.precio,
-      flagBalanza: p.flagBalanza,
-    }))
-  );
+  const productosParaBalanza = productos.map((p) => ({
+    plu: p.plu,
+    descripcion: p.descripcion,
+    precio: p.precio,
+    flagBalanza: p.flagBalanza,
+  }));
 
-  res.json({ cantidadProductos: productos.length, resultados });
+  const resultados = await actualizarBalanzas([config.ip1, config.ip2], config.puerto, productosParaBalanza);
+
+  res.json({ cantidadProductos: productos.length, resultados, detalle: detalleEnvio(productosParaBalanza) });
 });

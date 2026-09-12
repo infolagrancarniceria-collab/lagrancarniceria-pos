@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api, type ResultadoActualizarBalanza } from "../api";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 import ModalAlerta from "../components/ModalAlerta";
@@ -14,6 +14,7 @@ export default function Balanza() {
   const [actualizando, setActualizando] = useState(false);
   const [resultado, setResultado] = useState<ResultadoActualizarBalanza | null>(null);
   const [errorActualizar, setErrorActualizar] = useState<string | null>(null);
+  const [busquedaDetalle, setBusquedaDetalle] = useState("");
 
   useEffect(() => {
     api.balanza
@@ -44,6 +45,7 @@ export default function Balanza() {
   async function actualizarBalanza() {
     setErrorActualizar(null);
     setResultado(null);
+    setBusquedaDetalle("");
     setActualizando(true);
     try {
       const r = await api.balanza.actualizar();
@@ -54,6 +56,15 @@ export default function Balanza() {
       setActualizando(false);
     }
   }
+
+  const detalleFiltrado = useMemo(() => {
+    if (!resultado) return [];
+    const texto = busquedaDetalle.trim().toLowerCase();
+    if (!texto) return resultado.detalle;
+    return resultado.detalle.filter(
+      (d) => d.descripcion.toLowerCase().includes(texto) || d.plu.toLowerCase().includes(texto)
+    );
+  }, [resultado, busquedaDetalle]);
 
   return (
     <div>
@@ -85,6 +96,47 @@ export default function Balanza() {
                   <tr key={r.ip} className={r.exito ? "" : "fila-error"}>
                     <td>{r.ip}</td>
                     <td className={r.exito ? "exito" : "error"}>{r.exito ? "OK" : r.error}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            <h3 style={{ marginTop: "1.5rem" }}>Detalle de lo enviado</h3>
+            <p className="ayuda">
+              Busca un producto para confirmar el precio exacto que se mandó en este envío — útil cuando la
+              balanza responde "OK" pero un producto puntual no muestra el precio nuevo, para descartar que el
+              dato enviado desde el POS ya estuviera mal.
+            </p>
+            <input
+              type="text"
+              value={busquedaDetalle}
+              onChange={(e) => setBusquedaDetalle(e.target.value)}
+              placeholder="Buscar por nombre o PLU..."
+              style={{ marginBottom: "0.75rem" }}
+            />
+            <table className="tabla">
+              <thead>
+                <tr>
+                  <th>PLU</th>
+                  <th>Producto</th>
+                  <th>Precio enviado</th>
+                  <th>Unidad</th>
+                  <th>Incluido</th>
+                </tr>
+              </thead>
+              <tbody>
+                {detalleFiltrado.length === 0 && (
+                  <tr>
+                    <td colSpan={5}>Sin resultados.</td>
+                  </tr>
+                )}
+                {detalleFiltrado.map((d) => (
+                  <tr key={d.plu} className={d.incluido ? "" : "fila-error"}>
+                    <td>{d.plu}</td>
+                    <td>{d.descripcion}</td>
+                    <td>${d.precioEnviado.toLocaleString("es-CL")}</td>
+                    <td>{d.unidad === "KGM" ? "Por kilo" : d.unidad === "PCS" ? "Por unidad" : "—"}</td>
+                    <td className={d.incluido ? "exito" : "error"}>{d.incluido ? "Sí" : "No se envió"}</td>
                   </tr>
                 ))}
               </tbody>

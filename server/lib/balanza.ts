@@ -66,6 +66,34 @@ function construirItem(producto: ProductoParaBalanza): string {
 // falten) y después la de siempre con "Update" (para que todos —nuevos y
 // viejos— queden con el precio/nombre al día). Pendiente confirmar con las
 // balanzas físicas reales que "Add" es el ActionCode correcto para crear.
+export interface DetalleEnvioItem {
+  plu: string;
+  descripcion: string;
+  precioEnviado: number;
+  unidad: "KGM" | "PCS" | null;
+  incluido: boolean;
+}
+
+// Detalle de qué se mandó realmente por cada producto — a pedido del
+// usuario, para poder confirmar desde la pantalla Balanza (sin depender de
+// entrar al menú de la balanza física) qué precio exacto viajó en el
+// último envío. La balanza puede responder "OK" en el protocolo (el
+// mensaje se recibió bien) sin que eso garantice que actualizó el precio
+// de un PLU puntual — este detalle ayuda a descartar que el problema sea
+// del lado del POS antes de sospechar de la balanza.
+export function detalleEnvio(productos: ProductoParaBalanza[]): DetalleEnvioItem[] {
+  return productos.map((p) => {
+    const unidad = unidadDeMedida(p.flagBalanza);
+    return {
+      plu: p.plu,
+      descripcion: p.descripcion,
+      precioEnviado: Math.round(p.precio),
+      unidad,
+      incluido: unidad != null,
+    };
+  });
+}
+
 export function construirMensajeActualizacion(
   productos: ProductoParaBalanza[],
   actionCode: "Add" | "Update" = "Update"
