@@ -803,6 +803,8 @@ export interface ResultadoEnvioBalanza {
   ip: string;
   exito: boolean;
   error?: string;
+  respuestaAdd?: string;
+  respuestaUpdate?: string;
 }
 
 export interface DetalleEnvioBalanza {

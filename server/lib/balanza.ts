@@ -119,7 +119,13 @@ const TIMEOUT_MS = 20000;
 
 // Envía el mensaje por socket TCP directo y espera la respuesta de
 // confirmación de la balanza (mensaje vacío con MessageType="Response").
-export function enviarABalanza(ip: string, puerto: number, mensaje: string): Promise<void> {
+// Devuelve el texto crudo de esa respuesta — antes se descartaba apenas se
+// confirmaba que era un <Message>...Response</Message> bien formado, así
+// que un "OK" de protocolo (mensaje recibido) nunca se distinguía de un
+// posible rechazo/error dentro del propio contenido de esa respuesta. Sin
+// verlo no hay forma de saber por qué la pasada "Add" no deja un PLU
+// realmente vendible.
+export function enviarABalanza(ip: string, puerto: number, mensaje: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const socket = new net.Socket();
     let respuesta = "";
@@ -144,7 +150,7 @@ export function enviarABalanza(ip: string, puerto: number, mensaje: string): Pro
     socket.on("data", (chunk) => {
       respuesta += chunk.toString("ascii");
       if (respuesta.includes('MessageType="Response"') && respuesta.trim().endsWith("</Message>")) {
-        finalizar(() => resolve());
+        finalizar(() => resolve(respuesta));
       }
     });
 
@@ -166,6 +172,13 @@ export interface ResultadoEnvioBalanza {
   ip: string;
   exito: boolean;
   error?: string;
+  // Texto crudo de lo que respondió la balanza en cada pasada (o el error,
+  // si no llegó a responder) — para diagnosticar sin depender de adivinar
+  // el protocolo. La pasada "Add" antes se descartaba en silencio (ni
+  // siquiera se veía si fallaba), así que quedaba invisible cualquier
+  // pista de por qué un PLU nuevo no queda realmente vendible.
+  respuestaAdd?: string;
+  respuestaUpdate?: string;
 }
 
 export async function actualizarBalanzas(
@@ -180,17 +193,19 @@ export async function actualizarBalanzas(
     // La pasada "Add" es best-effort: si la balanza no tiene nada que crear
     // (o si le molesta que ya existan), no debe impedir la pasada "Update"
     // de siempre, que es la que hoy sabemos que funciona para lo que ya
-    // estaba cargado.
+    // estaba cargado. Pero su resultado (respuesta u error) igual se
+    // guarda para poder revisarlo.
+    let respuestaAdd: string;
     try {
-      await enviarABalanza(ip, puerto, mensajeAgregar);
-    } catch {
-      // se ignora — se reporta el resultado real más abajo, con "Update"
+      respuestaAdd = await enviarABalanza(ip, puerto, mensajeAgregar);
+    } catch (e) {
+      respuestaAdd = `[error] ${(e as Error).message}`;
     }
     try {
-      await enviarABalanza(ip, puerto, mensajeActualizar);
-      resultados.push({ ip, exito: true });
+      const respuestaUpdate = await enviarABalanza(ip, puerto, mensajeActualizar);
+      resultados.push({ ip, exito: true, respuestaAdd, respuestaUpdate });
     } catch (e) {
-      resultados.push({ ip, exito: false, error: (e as Error).message });
+      resultados.push({ ip, exito: false, error: (e as Error).message, respuestaAdd });
     }
   }
   return resultados;

@@ -101,6 +101,40 @@ export default function Balanza() {
               </tbody>
             </table>
 
+            {resultado.resultados.map((r) => (
+              <details key={`respuesta-${r.ip}`} style={{ marginTop: "0.75rem" }}>
+                <summary>Ver respuesta cruda de la balanza {r.ip} (para diagnóstico)</summary>
+                <p className="ayuda" style={{ marginTop: "0.5rem" }}>
+                  Pasada "Add" (crear PLU nuevos):
+                </p>
+                <pre
+                  style={{
+                    whiteSpace: "pre-wrap",
+                    wordBreak: "break-all",
+                    background: "var(--color-superficie-2)",
+                    padding: "0.5rem",
+                    borderRadius: "4px",
+                    fontSize: "0.8rem",
+                  }}
+                >
+                  {r.respuestaAdd || "(sin datos)"}
+                </pre>
+                <p className="ayuda">Pasada "Update" (refrescar PLU existentes):</p>
+                <pre
+                  style={{
+                    whiteSpace: "pre-wrap",
+                    wordBreak: "break-all",
+                    background: "var(--color-superficie-2)",
+                    padding: "0.5rem",
+                    borderRadius: "4px",
+                    fontSize: "0.8rem",
+                  }}
+                >
+                  {r.respuestaUpdate || "(sin datos)"}
+                </pre>
+              </details>
+            ))}
+
             <h3 style={{ marginTop: "1.5rem" }}>Detalle de lo enviado</h3>
             <p className="ayuda">
               Busca un producto para confirmar el precio exacto que se mandó en este envío — útil cuando la
