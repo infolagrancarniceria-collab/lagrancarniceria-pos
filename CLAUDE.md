@@ -299,8 +299,31 @@ Todo corre **local**, en el PC de la carnicería, sin depender de internet:
    veces por balanza — primero con `ActionCode="Add"` (best-effort, para
    crear los PLU que falten) y después con `ActionCode="Update"` de
    siempre (para que todos, nuevos y viejos, queden con precio/nombre al
-   día). **Pendiente confirmar con el usuario** que "Add" sí crea el PLU en
-   la balanza física (probado con PLU 1028 y el PLU de Aletilla).
+   día). ~~**Pendiente confirmar con el usuario** que "Add" sí crea el PLU
+   en la balanza física (probado con PLU 1028 y el PLU de Aletilla).~~
+
+   **Segundo bug real, más serio (reportado por el usuario en producción):**
+   PLU nuevos creados desde el POS (ej. PLU 2020 "Pollo Entero 1", PLU 1029
+   "Lomo Vetado de Cerdo") tirando "error de conexión con el servidor" en
+   la pantalla de la balanza misma al intentar pesarlos/venderlos — o sea,
+   la pasada "Add" de arriba no estaba dejando un registro realmente
+   vendible, aunque "Actualizar balanza" mostrara "OK". Causa encontrada:
+   dentro de `construirItem`, el sub-elemento `<ItemPrices>` mandaba
+   siempre `Action="Update"`, **incluso en la pasada "Add"** — es decir,
+   para un PLU que todavía no existe, se le pedía a la balanza "actualiza
+   el precio de este ítem" en vez de "créale un precio a este ítem", lo
+   que probablemente dejaba el ítem creado sin un precio válido asociado
+   (de ahí el error al venderlo — la balanza no tiene con qué calcular el
+   total). Arreglo: `construirItem` ahora recibe el `ActionCode` de la
+   pasada y usa `Action="Create"` en `<ItemPrices>` solo durante la pasada
+   "Add"; la pasada "Update" (la única confirmada carácter-por-carácter
+   contra tráfico real de Gexus) queda exactamente igual que antes, sin
+   tocar el patrón ya validado. **Pendiente confirmar con el usuario que
+   esto resuelve PLU 2020 y 1029** — sigue siendo una hipótesis (no hay
+   documentación oficial del protocolo Mettler Toledo a mano, solo la
+   captura de red original), así que si el error persiste después de este
+   cambio, el siguiente sospechoso es `TargetWeights`/`LabelFormats`
+   fijos en vez de configurables (ver hipótesis sin confirmar más arriba).
 5. **Caja / punto de venta** — listo (apertura con fondo fijo, punto de venta con carrito y pagos combinados efectivo/tarjeta/crédito, anulación de ítems y cancelación de venta completa siempre con clave de supervisor + nombre de quien autoriza + motivo, cierre con reporte X/Z y diferencia de efectivo). Crédito (fiado) agregado luego a pedido del usuario — ver "Decisiones tomadas en el módulo de caja" para el detalle (solo pide nombre del cliente, pantalla aparte de "Créditos pendientes" para cobrar después). También "Buscar venta" (por fecha o N° de venta, con opción de anular ahí mismo una venta ya pagada — devuelve el stock, ver "Anular una venta ya confirmada" más abajo), "Anulaciones" (historial de productos anulados/ventas canceladas, antes o después de pagar) y "Revisiones" (productos con stock negativo pendientes de ajustar). Cada venta confirmada genera automáticamente movimientos de inventario (motivo "venta") — no bloquea por falta de stock, se corrige después con un ajuste manual si queda negativo.
 6. **Asistente de IA** — listo y **confirmado funcionando con una clave de API real** por el usuario. Ver "Decisiones tomadas en el asistente de IA" más abajo.
 7. **Gastos generales** — listo: registro de gastos del negocio (sueldos, luz, agua, etc., separado de las compras de mercadería) con resumen por categoría y total por rango de fechas. Ver "Módulo de gastos generales" más abajo.

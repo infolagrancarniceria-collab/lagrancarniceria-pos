@@ -32,19 +32,32 @@ function unidadDeMedida(flagBalanza: string): "KGM" | "PCS" | null {
   return null;
 }
 
-function construirItem(producto: ProductoParaBalanza): string {
+// El Action del sub-elemento <ItemPrices> venía siempre fijo en "Update",
+// sin importar si el Item completo se estaba mandando en la pasada "Add"
+// (PLU realmente nuevo) o "Update" (PLU que ya existe en la balanza). Eso
+// es contradictorio para un PLU nuevo: no puede "actualizarse" un precio
+// que todavía no existe. Como el patrón "Update" está confirmado contra
+// tráfico real (captura de red del sistema Gexus actualizando productos ya
+// cargados), se mantiene intacto para esa pasada — el ajuste es solo para
+// la pasada "Add", donde ahora ItemPrices también pide "Create". Hipótesis
+// concreta para el caso reportado: PLU nuevos (ej. 2020, 1029) quedaban
+// creados sin un precio válido asociado, y por eso la balanza no los podía
+// vender ("error de conexión con el servidor" al pesar) ni mostraban el
+// precio nuevo.
+function construirItem(producto: ProductoParaBalanza, actionCode: "Add" | "Update"): string {
   const unidad = unidadDeMedida(producto.flagBalanza);
   if (!unidad) return "";
   const pluNumerico = producto.plu.replace(/\D/g, "");
   const alternativeItemId = pluNumerico.padStart(13, "0");
   const nombre = escaparXml(producto.descripcion);
   const precio = Math.round(producto.precio);
+  const actionPrecio = actionCode === "Add" ? "Create" : "Update";
 
   return (
     `<Item><PLU>${pluNumerico}</PLU><DepartmentID>0</DepartmentID>` +
     `<AlternativeItemIDs Action="Create"><AlternativeItemID>${alternativeItemId}</AlternativeItemID></AlternativeItemIDs>` +
     `<Descriptions Action="Create"><Description Type="ItemName">${nombre}</Description><Description ID="0" Type="ExtraText"></Description></Descriptions>` +
-    `<ItemPrices Action="Update"><ItemPrice ValueTypeCode="BasePrice" Index="0" UnitOfMeasureCode="${unidad}" PriceOverrideFlag="false" DiscountFlag="false" Hidden="false">${precio}</ItemPrice></ItemPrices>` +
+    `<ItemPrices Action="${actionPrecio}"><ItemPrice ValueTypeCode="BasePrice" Index="0" UnitOfMeasureCode="${unidad}" PriceOverrideFlag="false" DiscountFlag="false" Hidden="false">${precio}</ItemPrice></ItemPrices>` +
     `<Dates Action="Create"><DateOffset Type="PackedDate" UnitOfOffset="day" IsPrintEnabled="true">0</DateOffset><DateOffset Type="SellBy" UnitOfOffset="day" IsPrintEnabled="true">005</DateOffset></Dates>` +
     `<LabelFormats Action="Create"><LabelFormatID Index="0">2</LabelFormatID></LabelFormats>` +
     `<TargetWeights Action="Create"><TargetWeight Index="0" LowerTolerance="0" UpperTolerance="0" UnitOfMeasureCode="KGM">0</TargetWeight></TargetWeights>` +
@@ -98,7 +111,7 @@ export function construirMensajeActualizacion(
   productos: ProductoParaBalanza[],
   actionCode: "Add" | "Update" = "Update"
 ): string {
-  const items = productos.map(construirItem).filter(Boolean).join("");
+  const items = productos.map((p) => construirItem(p, actionCode)).filter(Boolean).join("");
   return `<Message><ARTSCommonHeader MessageType="Request"/><ItemTransaction ActionCode="${actionCode}">${items}</ItemTransaction></Message>`;
 }
 
