@@ -100,7 +100,17 @@ export default function PuntoDeVenta() {
   const [descuentoValor, setDescuentoValor] = useState("");
   const [mostrarFormDescuento, setMostrarFormDescuento] = useState(false);
   const [itemDescuentoEditando, setItemDescuentoEditando] = useState<number | null>(null);
-  const [itemDescuentoTipo, setItemDescuentoTipo] = useState<"porcentaje" | "monto_fijo">("porcentaje");
+  // "precio_final" es un modo solo de esta pantalla, no un tipo de
+  // descuento real — a pedido del usuario, para escribir directo el precio
+  // final que paga el cliente por esa línea (sin calcular a mano el % o el
+  // $ de descuento equivalente, que era lento y daba margen para
+  // equivocarse). aplicarDescuentoItem() lo convierte a "monto_fijo" antes
+  // de mandarlo, reutilizando el mismo descuento por producto de siempre —
+  // no toca el precio del catálogo ni pide clave de supervisor, a
+  // diferencia del lápiz de "Cambiar precio".
+  const [itemDescuentoTipo, setItemDescuentoTipo] = useState<"porcentaje" | "monto_fijo" | "precio_final">(
+    "precio_final"
+  );
   const [itemDescuentoValor, setItemDescuentoValor] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
@@ -761,11 +771,25 @@ export default function PuntoDeVenta() {
     setError(null);
     const valor = Number(itemDescuentoValor);
     if (!valor || valor <= 0) {
-      setError("Ingresa un descuento válido");
+      setError(itemDescuentoTipo === "precio_final" ? "Ingresa el precio final de esta línea" : "Ingresa un descuento válido");
       return;
     }
+
+    let tipo: "porcentaje" | "monto_fijo" = itemDescuentoTipo === "precio_final" ? "monto_fijo" : itemDescuentoTipo;
+    let valorFinal = valor;
+    if (itemDescuentoTipo === "precio_final") {
+      const item = venta.items.find((i) => i.id === itemId);
+      if (!item) return;
+      const rawSubtotal = Math.round(item.precioUnitario * item.cantidad);
+      if (valor >= rawSubtotal) {
+        setError(`El precio final debe ser menor al subtotal actual (${formatoCLP(rawSubtotal)})`);
+        return;
+      }
+      valorFinal = rawSubtotal - valor;
+    }
+
     try {
-      const actualizada = await api.caja.actualizarDescuentoItem(venta.id, itemId, { tipo: itemDescuentoTipo, valor });
+      const actualizada = await api.caja.actualizarDescuentoItem(venta.id, itemId, { tipo, valor: valorFinal });
       actualizarVenta(actualizada);
       setItemDescuentoEditando(null);
       setItemDescuentoValor("");
@@ -1369,10 +1393,15 @@ export default function PuntoDeVenta() {
                                   <button
                                     type="button"
                                     className="boton-chico"
-                                    title="Agregar descuento"
+                                    title="Ajustar precio de esta línea (solo esta venta)"
                                     onClick={() => {
-                                      setItemDescuentoEditando(itemDescuentoEditando === item.id ? null : item.id);
-                                      setItemDescuentoValor("");
+                                      const abriendo = itemDescuentoEditando !== item.id;
+                                      setItemDescuentoEditando(abriendo ? item.id : null);
+                                      setItemDescuentoTipo("precio_final");
+                                      // Precarga con el subtotal actual — el cajero solo tiene que
+                                      // bajar el número al precio final acordado con el cliente,
+                                      // en vez de partir de un campo vacío y calcular a mano.
+                                      setItemDescuentoValor(abriendo ? String(rawSubtotal) : "");
                                     }}
                                   >
                                     🏷️
@@ -1395,11 +1424,18 @@ export default function PuntoDeVenta() {
                         <tr>
                           <td colSpan={5}>
                             <span className="fila-inline">
-                              Descuento para {item.producto.descripcion}:
+                              {itemDescuentoTipo === "precio_final"
+                                ? `Precio final de esta línea (${item.producto.descripcion}), solo para esta venta:`
+                                : `Descuento para ${item.producto.descripcion}:`}
                               <select
                                 value={itemDescuentoTipo}
-                                onChange={(e) => setItemDescuentoTipo(e.target.value as "porcentaje" | "monto_fijo")}
+                                onChange={(e) => {
+                                  const nuevoTipo = e.target.value as "porcentaje" | "monto_fijo" | "precio_final";
+                                  setItemDescuentoTipo(nuevoTipo);
+                                  setItemDescuentoValor(nuevoTipo === "precio_final" ? String(rawSubtotal) : "");
+                                }}
                               >
+                                <option value="precio_final">Precio final</option>
                                 <option value="porcentaje">%</option>
                                 <option value="monto_fijo">$</option>
                               </select>
@@ -1407,7 +1443,9 @@ export default function PuntoDeVenta() {
                                 type="number"
                                 min="1"
                                 className="input-chico"
-                                placeholder={itemDescuentoTipo === "porcentaje" ? "10" : "500"}
+                                placeholder={
+                                  itemDescuentoTipo === "porcentaje" ? "10" : itemDescuentoTipo === "monto_fijo" ? "500" : "7000"
+                                }
                                 value={itemDescuentoValor}
                                 onChange={(e) => setItemDescuentoValor(e.target.value)}
                                 autoFocus
