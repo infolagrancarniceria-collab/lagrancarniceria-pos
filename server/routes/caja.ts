@@ -865,7 +865,7 @@ cajaRouter.post("/ventas/:id/items/crear-rapido", async (req, res) => {
   res.status(201).json(ventaActualizada);
 });
 
-async function recalcularTotal(ventaId: number) {
+export async function recalcularTotal(ventaId: number) {
   const venta = await prisma.venta.findUnique({ where: { id: ventaId } });
   const items = await prisma.itemVenta.findMany({ where: { ventaId, anulado: false } });
   const subtotalItems = items.reduce((suma, i) => suma + i.subtotal, 0);

@@ -6,6 +6,7 @@ import { prisma } from "../db";
 import { obtenerIdsCategoriaYDescendientes } from "../lib/categorias";
 import { verificarClaveConLimite } from "../lib/clave";
 import { sincronizarCatalogoConWeb } from "../lib/syncWeb";
+import { recalcularTotal } from "./caja";
 
 export const preciosRouter = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -14,6 +15,41 @@ async function validarUsuario(usuarioId: number) {
   const usuario = await prisma.usuario.findUnique({ where: { id: usuarioId } });
   if (!usuario || !usuario.activo) return null;
   return usuario;
+}
+
+// A pedido del usuario: un cambio de precio (desde acá, desde el lápiz de
+// Caja, o de una carga masiva) se refleja de inmediato en cualquier venta
+// TODAVÍA ABIERTA (no pagada ni anulada) que ya tenga este producto en el
+// carrito — antes quedaba con el precio viejo hasta que se agregaba de
+// nuevo, aunque el cajero recién hubiera corregido el precio para esa
+// misma venta. Una venta ya pagada/anulada nunca se toca — ahí
+// precioUnitario/subtotal son el registro de lo que realmente se cobró.
+// Si el ítem tenía su propio descuento (ver /ventas/:id/items/:itemId/
+// descuento), se recalcula sobre el precio nuevo para no perderlo.
+async function actualizarItemsAbiertosPorProducto(productoId: number, precioNuevo: number) {
+  const items = await prisma.itemVenta.findMany({
+    where: { productoId, anulado: false, venta: { estado: "abierta" } },
+  });
+  const ventaIds = new Set<number>();
+  for (const item of items) {
+    const subtotalSinDescuento = Math.round(precioNuevo * item.cantidad);
+    let descuentoMonto = 0;
+    if (item.descuentoTipo === "porcentaje" && item.descuentoValor) {
+      descuentoMonto = Math.round(subtotalSinDescuento * (item.descuentoValor / 100));
+    } else if (item.descuentoTipo === "monto_fijo" && item.descuentoValor) {
+      descuentoMonto = item.descuentoValor;
+    }
+    descuentoMonto = Math.min(descuentoMonto, subtotalSinDescuento);
+
+    await prisma.itemVenta.update({
+      where: { id: item.id },
+      data: { precioUnitario: precioNuevo, subtotal: subtotalSinDescuento - descuentoMonto },
+    });
+    ventaIds.add(item.ventaId);
+  }
+  for (const ventaId of ventaIds) {
+    await recalcularTotal(ventaId);
+  }
 }
 
 // --- Cambio de precio individual ---
@@ -71,6 +107,8 @@ preciosRouter.post("/individual", async (req, res) => {
       },
     }),
   ]);
+
+  await actualizarItemsAbiertosPorProducto(productoId, precioNuevo);
 
   void sincronizarCatalogoConWeb();
   res.json(productoActualizado);
@@ -132,6 +170,10 @@ preciosRouter.post("/masivo-categoria", async (req, res) => {
       }),
     ])
   );
+
+  for (const c of cambios) {
+    await actualizarItemsAbiertosPorProducto(c.productoId, c.precioNuevo);
+  }
 
   void sincronizarCatalogoConWeb();
   res.json({ previsualizacion: false, cambios });
@@ -227,6 +269,10 @@ preciosRouter.post("/masivo-csv", upload.single("archivo"), async (req, res) => 
       }),
     ])
   );
+
+  for (const f of filasValidas) {
+    await actualizarItemsAbiertosPorProducto(f.productoId!, f.precioNuevo!);
+  }
 
   void sincronizarCatalogoConWeb();
   res.json({ previsualizacion: false, filas, aplicados: filasValidas.length });

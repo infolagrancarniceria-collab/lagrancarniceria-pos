@@ -618,8 +618,10 @@ export default function PuntoDeVenta() {
     setItemAutorizandoPrecio(null);
     setItemEditandoPrecio(null);
     setPrecioNuevoValor("");
-    // Refresca la venta para que el precio mostrado en el carrito (el del
-    // catálogo, no el ya cobrado en esta línea) quede al día.
+    // El servidor ya actualizó en cascada esta misma línea (sigue "abierta"
+    // — ver actualizarItemsAbiertosPorProducto en precios.ts), así que este
+    // refetch trae el precio y el subtotal de esta venta ya al día, no solo
+    // una referencia del catálogo.
     const actualizada = await api.caja.obtenerVenta(venta.id);
     actualizarVenta(actualizada);
   }
@@ -1680,10 +1682,10 @@ export default function PuntoDeVenta() {
               titulo="Autorizar cambio de precio"
               descripcion={
                 item
-                  ? `${item.producto.descripcion}: de ${formatoCLP(item.producto.precio)} a ${formatoCLP(nuevo)}. Este precio queda para todas las ventas futuras, no solo esta.`
+                  ? `${item.producto.descripcion}: de ${formatoCLP(item.producto.precio)} a ${formatoCLP(nuevo)}. Este precio queda para todas las ventas futuras (incluida esta), no es un ajuste solo para este cliente — para eso usa "Precio final" en vez del lápiz.`
                   : undefined
               }
-              motivoOpciones={["Precio desactualizado", "Error de tipeo", "Ajuste puntual para el cliente"]}
+              motivoOpciones={["Precio desactualizado", "Error de tipeo"]}
               onConfirmar={confirmarCambioPrecioItem}
               onCancelar={() => setItemAutorizandoPrecio(null)}
             />

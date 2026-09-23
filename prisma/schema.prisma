@@ -558,7 +558,10 @@ model ItemVenta {
   producto   Producto @relation(fields: [productoId], references: [id])
 
   cantidad       Float
-  precioUnitario Float // copia del precio al momento de vender, no cambia si después se actualiza el precio del producto
+  precioUnitario Float // copia del precio al momento de vender — mientras la venta sigue "abierta" SÍ se
+  // actualiza en cascada si el precio del producto cambia después (ver actualizarItemsAbiertosPorProducto
+  // en server/routes/precios.ts); una vez la venta queda "pagada"/"anulada" ya no se toca, para que quede
+  // el registro real de lo que se cobró
   subtotal       Float // ya con el descuento de este ítem aplicado, si tiene uno
 
   // Descuento por producto (opcional) — alternativo al descuento de toda la
