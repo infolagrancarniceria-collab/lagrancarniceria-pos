@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, calcularMargen, formatoCLP, type Producto, type Proveedor } from "../api";
+import { api, formatoCLP, type Producto, type Proveedor } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 import { mostrarToast } from "../lib/toast";
 import ModalAlerta from "../components/ModalAlerta";
+import ParMargen from "../components/ParMargen";
 
 interface LineaForm {
   id: number;
@@ -236,11 +237,11 @@ export default function CargarFactura() {
             </thead>
             <tbody>
               {lineas.map((l) => {
-                // El margen se calcula con el costo que se está escribiendo
+                // El costo usado para el margen es el que se está escribiendo
                 // AHORA en esta línea (no hace falta ninguna compra previa
                 // registrada) — es lo que realmente importa al decidir si el
                 // precio de venta sigue teniendo sentido con este costo nuevo.
-                const margen = l.producto ? calcularMargen(l.producto.precio, Number(l.costoUnitario) || null) : null;
+                const costoTipeado = Number(l.costoUnitario) || null;
                 return (
                   <tr key={l.id}>
                     <td>
@@ -306,15 +307,7 @@ export default function CargarFactura() {
                         />
                       )}
                     </td>
-                    <td>
-                      {margen != null ? (
-                        <span className={`margen-destacado ${margen < 0 ? "margen-negativo" : ""}`}>
-                          {margen.toFixed(1)}%
-                        </span>
-                      ) : (
-                        <span className="ayuda">—</span>
-                      )}
-                    </td>
+                    <td>{l.producto ? <ParMargen precio={l.producto.precio} costo={costoTipeado} /> : <span className="ayuda">—</span>}</td>
                     <td>
                       <button type="button" className="boton-quitar-item" title="Quitar línea" onClick={() => quitarLinea(l.id)}>
                         ✕

@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, calcularMargen, formatoCLP, type Producto, type ProductoConCosto, type Proveedor } from "../api";
+import { api, formatoCLP, type Producto, type ProductoConCosto, type Proveedor } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 import { mostrarToast } from "../lib/toast";
 import ModalAlerta from "../components/ModalAlerta";
+import ParMargen from "../components/ParMargen";
 
 export default function RegistrarEntrada() {
   const { usuario } = useUsuario();
@@ -185,26 +186,38 @@ export default function RegistrarEntrada() {
               <strong>Precio de venta actual:</strong> {formatoCLP(infoProducto.precio)}
             </p>
             {(() => {
-              // Igual que en Entrada de cámara: si ya hay una compra
-              // registrada se usa ese costo; si no, el costo que se está
-              // escribiendo ahora mismo en "Costo unitario" — no hace falta
-              // ninguna compra previa para ver el margen.
+              // Antes solo mostraba el margen con el costo de la última
+              // compra registrada, cayendo al costo recién escrito nada más
+              // cuando no había ninguna compra previa — así que si ya
+              // existía una compra, escribir un costo nuevo acá no movía el
+              // margen mostrado para nada. Ahora, a pedido del usuario,
+              // siempre se ve en vivo el margen con el costo que se está
+              // escribiendo, junto al margen "actual" (con el costo de la
+              // última compra) cuando existe, para poder comparar.
               const costoConHistorial = infoProducto.ultimoCosto;
               const costoEscrito = Number(costoUnitario) || null;
-              const costoUsado = costoConHistorial ?? costoEscrito;
-              const margen = calcularMargen(infoProducto.precio, costoUsado);
-              if (margen == null) return null;
               return (
-                <p>
-                  <span className={`margen-destacado ${margen < 0 ? "margen-negativo" : ""}`}>
-                    <span className="margen-etiqueta">Margen</span> {margen.toFixed(2)}%
-                  </span>{" "}
-                  <span className="ayuda">
-                    {costoConHistorial != null
-                      ? "(según la última compra registrada)"
-                      : "(con el costo recién escrito — todavía no hay ninguna compra registrada)"}
-                  </span>
-                </p>
+                <div className="fila-inline">
+                  {costoConHistorial != null && (
+                    <div>
+                      <p className="ayuda" style={{ margin: 0 }}>
+                        Margen actual (última compra)
+                      </p>
+                      <ParMargen precio={infoProducto.precio} costo={costoConHistorial} />
+                    </div>
+                  )}
+                  {costoEscrito != null && (
+                    <>
+                      {costoConHistorial != null && "→"}
+                      <div>
+                        <p className="ayuda" style={{ margin: 0 }}>
+                          Con el costo recién escrito
+                        </p>
+                        <ParMargen precio={infoProducto.precio} costo={costoEscrito} />
+                      </div>
+                    </>
+                  )}
+                </div>
               );
             })()}
             <div className="fila-inline">

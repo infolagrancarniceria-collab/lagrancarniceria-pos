@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   api,
-  calcularMargen,
   formatoCLP,
   FAMILIAS_CAMARA,
   type Categoria,
@@ -10,6 +9,7 @@ import {
   type Producto,
   type ProductoConCosto,
 } from "../api";
+import ParMargen from "../components/ParMargen";
 import SelectorCategoria from "../components/SelectorCategoria";
 import { useUsuario } from "../context/UsuarioContext";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
@@ -402,11 +402,7 @@ export default function ProductoForm() {
     setEditandoFlagBalanza(false);
   }
 
-  const margenActual = productoActual ? calcularMargen(productoActual.precio, productoActual.costoEfectivo) : null;
-  const margenNuevo =
-    productoActual && precioNuevo && Number(precioNuevo) > 0
-      ? calcularMargen(Number(precioNuevo), productoActual.costoEfectivo)
-      : null;
+  const hayPrecioNuevo = !!productoActual && !!precioNuevo && Number(precioNuevo) > 0;
 
   return (
     <div>
@@ -429,15 +425,21 @@ export default function ProductoForm() {
                 {productoActual.costoEsEstimado && " (estimado — sin ninguna compra real registrada todavía)"}
               </p>
               <div className="fila-inline">
-                <span className={`margen-destacado ${margenActual! < 0 ? "margen-negativo" : ""}`}>
-                  <span className="margen-etiqueta">Margen actual</span> {margenActual?.toFixed(2)}%
-                </span>
-                {margenNuevo != null && (
+                <div>
+                  <p className="ayuda" style={{ margin: 0 }}>
+                    Margen actual
+                  </p>
+                  <ParMargen precio={productoActual.precio} costo={productoActual.costoEfectivo} />
+                </div>
+                {hayPrecioNuevo && (
                   <>
                     →
-                    <span className={`margen-destacado ${margenNuevo < 0 ? "margen-negativo" : ""}`}>
-                      <span className="margen-etiqueta">Con el precio nuevo</span> {margenNuevo.toFixed(2)}%
-                    </span>
+                    <div>
+                      <p className="ayuda" style={{ margin: 0 }}>
+                        Con el precio nuevo
+                      </p>
+                      <ParMargen precio={Number(precioNuevo)} costo={productoActual.costoEfectivo} />
+                    </div>
                   </>
                 )}
               </div>

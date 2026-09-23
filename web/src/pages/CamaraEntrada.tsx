@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   api,
-  calcularMargen,
   formatoCLP,
   FAMILIAS_CAMARA,
   PROCEDENCIAS_VACUNO,
@@ -19,6 +18,7 @@ import { EtiquetaCamara } from "../components/EtiquetaCamara";
 import { imprimirEtiquetaCamara, imprimirEtiquetasLoteCamara } from "../lib/imprimir";
 import { mostrarToast } from "../lib/toast";
 import ModalAlerta from "../components/ModalAlerta";
+import ParMargen from "../components/ParMargen";
 
 interface LineaForm {
   id: number;
@@ -538,26 +538,36 @@ export default function CamaraEntrada() {
                     {l.info.precioMayor != null ? formatoCLP(l.info.precioMayor) : "sin definir"}
                   </p>
                   {(() => {
-                    // Si ya hubo una compra en cámara, el margen usa ese costo
-                    // real; si no, se calcula igual con el costo que se está
-                    // escribiendo ahora en "Valor neto por kilo" — no hace
-                    // falta ninguna compra previa registrada para verlo.
+                    // Antes, si ya hubo una compra en cámara, el margen se
+                    // quedaba pegado a ese costo — escribir un valor nuevo en
+                    // "Valor neto por kilo" no movía el margen mostrado. Ahora,
+                    // a pedido del usuario, siempre se ve en vivo el margen con
+                    // el costo recién escrito, junto al margen "actual" (con la
+                    // última compra en cámara) cuando existe, para comparar.
                     const costoConHistorial = l.info!.ultimoCostoCamaraKg;
                     const costoEscrito = Number(l.costoNetoKg) || null;
-                    const costoUsado = costoConHistorial ?? costoEscrito;
-                    const margen = calcularMargen(l.info!.precio, costoUsado);
-                    if (margen == null) return null;
                     return (
-                      <p>
-                        <span className={`margen-destacado ${margen < 0 ? "margen-negativo" : ""}`}>
-                          <span className="margen-etiqueta">Margen</span> {margen.toFixed(2)}%
-                        </span>{" "}
-                        <span className="ayuda">
-                          {costoConHistorial != null
-                            ? `(según la última compra en cámara, ${formatoCLP(costoConHistorial)}/kg)`
-                            : `(con el costo recién escrito, ${formatoCLP(costoEscrito!)}/kg — todavía no hay ninguna compra registrada)`}
-                        </span>
-                      </p>
+                      <div className="fila-inline">
+                        {costoConHistorial != null && (
+                          <div>
+                            <p className="ayuda" style={{ margin: 0 }}>
+                              Margen actual (última compra en cámara, {formatoCLP(costoConHistorial)}/kg)
+                            </p>
+                            <ParMargen precio={l.info!.precio} costo={costoConHistorial} />
+                          </div>
+                        )}
+                        {costoEscrito != null && (
+                          <>
+                            {costoConHistorial != null && "→"}
+                            <div>
+                              <p className="ayuda" style={{ margin: 0 }}>
+                                Con el costo recién escrito ({formatoCLP(costoEscrito)}/kg)
+                              </p>
+                              <ParMargen precio={l.info!.precio} costo={costoEscrito} />
+                            </div>
+                          </>
+                        )}
+                      </div>
                     );
                   })()}
                   {/* Estos dos campos son para cambiar el precio de venta y el de
