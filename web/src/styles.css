@@ -752,12 +752,15 @@ select {
   font-size: 0.85rem;
   line-height: 1;
 }
-/* La fila de "Nuevo precio de venta" reusa .boton-chico para "Guardar"/
-   "Cancelar" (texto, no un ícono) — el cuadrado fijo de arriba (pensado
-   para los íconos 🏷️/✕ del carrito) les recortaba el texto casi entero
-   (Chrome clipea el contenido de un <button> a su caja). Se pisa acá con
-   más especificidad para que vuelvan a su tamaño normal según el texto. */
-.carrito-scroll .fila-edicion-precio .boton-chico {
+/* Las filas de "Nuevo precio de venta" (lápiz) y "Precio final"/Descuento
+   (🏷️) reusan .boton-chico para "Guardar/Cancelar" u "OK/Cancelar" (texto,
+   no un ícono) — el cuadrado fijo de arriba (pensado para los íconos 🏷️/✕
+   del carrito) les recortaba el texto casi entero (Chrome clipea el
+   contenido de un <button> a su caja). Se pisa acá con más especificidad
+   para que vuelvan a su tamaño normal según el texto. Comparten la clase
+   .fila-edicion-monto porque las dos filas editan un monto en pesos con el
+   mismo problema de ancho. */
+.carrito-scroll .fila-edicion-monto .boton-chico {
   width: auto;
   height: auto;
   padding: 0.35rem 0.7rem;
@@ -835,14 +838,16 @@ select {
   opacity: 1;
   background: var(--color-superficie-2);
 }
-.fila-edicion-precio td {
+.fila-edicion-monto td {
   background: var(--color-oro-fondo);
 }
 /* El ancho genérico de .input-chico (4.5rem, pensado para descuentos de
    pocos dígitos) dejaba cortada la cifra al escribir un precio de hasta
    6 dígitos (ej. $100.000), más aún con el tamaño de letra agrandado de
-   Punto de venta (".punto-de-venta .tabla"). */
-.fila-edicion-precio input.input-chico {
+   Punto de venta (".punto-de-venta .tabla") — pasa igual en el precio
+   final/monto de descuento de la fila del 🏷️, no solo en el precio nuevo
+   del lápiz. */
+.fila-edicion-monto input.input-chico {
   width: 7rem;
 }
 

@@ -38,6 +38,15 @@ const ETIQUETAS_FLAG_BALANZA: Record<FlagBalanza, string> = {
   IMPORTE: "Importe",
 };
 
+// Unidad en la que se pesa/cuenta un producto en el carrito (cantidad de
+// ItemVenta) — Pesable se vende por kilo, el resto (Normal/Importe) por
+// unidad. Se usa para que el "Precio de venta" puntual pida un precio por
+// kg o por unidad según corresponda, no un monto total que haya que
+// calcular a mano.
+function unidadDeVenta(flagBalanza: FlagBalanza): "kg" | "unidad" {
+  return flagBalanza === "PESABLE" ? "kg" : "unidad";
+}
+
 export default function PuntoDeVenta() {
   const { usuario } = useUsuario();
   const navigate = useNavigate();
@@ -773,21 +782,28 @@ export default function PuntoDeVenta() {
     setError(null);
     const valor = Number(itemDescuentoValor);
     if (!valor || valor <= 0) {
-      setError(itemDescuentoTipo === "precio_final" ? "Ingresa el precio final de esta línea" : "Ingresa un descuento válido");
+      setError(itemDescuentoTipo === "precio_final" ? "Ingresa el precio de venta para esta línea" : "Ingresa un descuento válido");
       return;
     }
 
     let tipo: "porcentaje" | "monto_fijo" = itemDescuentoTipo === "precio_final" ? "monto_fijo" : itemDescuentoTipo;
     let valorFinal = valor;
     if (itemDescuentoTipo === "precio_final") {
+      // "valor" acá es el precio de venta por kg/unidad para esta persona
+      // (no el total de la línea) — a pedido del usuario, para que el
+      // cajero escriba el mismo tipo de número que usa el lápiz de
+      // "Cambiar precio" (precio por kg/unidad), y sea el sistema el que
+      // multiplique por la cantidad ya pesada/contada de esta venta.
       const item = venta.items.find((i) => i.id === itemId);
       if (!item) return;
+      const unidad = unidadDeVenta(item.producto.flagBalanza);
       const rawSubtotal = Math.round(item.precioUnitario * item.cantidad);
-      if (valor >= rawSubtotal) {
-        setError(`El precio final debe ser menor al subtotal actual (${formatoCLP(rawSubtotal)})`);
+      const subtotalNuevo = Math.round(valor * item.cantidad);
+      if (valor >= item.precioUnitario) {
+        setError(`El precio de venta debe ser menor al precio actual (${formatoCLP(item.precioUnitario)}/${unidad})`);
         return;
       }
-      valorFinal = rawSubtotal - valor;
+      valorFinal = rawSubtotal - subtotalNuevo;
     }
 
     try {
@@ -1395,15 +1411,15 @@ export default function PuntoDeVenta() {
                                   <button
                                     type="button"
                                     className="boton-chico"
-                                    title="Ajustar precio de esta línea (solo esta venta)"
+                                    title="Precio de venta de esta línea, solo para esta venta"
                                     onClick={() => {
                                       const abriendo = itemDescuentoEditando !== item.id;
                                       setItemDescuentoEditando(abriendo ? item.id : null);
                                       setItemDescuentoTipo("precio_final");
-                                      // Precarga con el subtotal actual — el cajero solo tiene que
-                                      // bajar el número al precio final acordado con el cliente,
+                                      // Precarga con el precio por kg/unidad actual — el cajero
+                                      // solo tiene que bajarlo al precio acordado con el cliente,
                                       // en vez de partir de un campo vacío y calcular a mano.
-                                      setItemDescuentoValor(abriendo ? String(rawSubtotal) : "");
+                                      setItemDescuentoValor(abriendo ? String(item.precioUnitario) : "");
                                     }}
                                   >
                                     🏷️
@@ -1423,21 +1439,21 @@ export default function PuntoDeVenta() {
                         </td>
                       </tr>
                       {itemDescuentoEditando === item.id && (
-                        <tr>
+                        <tr className="fila-edicion-monto">
                           <td colSpan={5}>
                             <span className="fila-inline">
                               {itemDescuentoTipo === "precio_final"
-                                ? `Precio final de esta línea (${item.producto.descripcion}), solo para esta venta:`
+                                ? `Precio de venta por ${unidadDeVenta(item.producto.flagBalanza)} para ${item.producto.descripcion} (solo esta venta):`
                                 : `Descuento para ${item.producto.descripcion}:`}
                               <select
                                 value={itemDescuentoTipo}
                                 onChange={(e) => {
                                   const nuevoTipo = e.target.value as "porcentaje" | "monto_fijo" | "precio_final";
                                   setItemDescuentoTipo(nuevoTipo);
-                                  setItemDescuentoValor(nuevoTipo === "precio_final" ? String(rawSubtotal) : "");
+                                  setItemDescuentoValor(nuevoTipo === "precio_final" ? String(item.precioUnitario) : "");
                                 }}
                               >
-                                <option value="precio_final">Precio final</option>
+                                <option value="precio_final">Precio de venta</option>
                                 <option value="porcentaje">%</option>
                                 <option value="monto_fijo">$</option>
                               </select>
@@ -1463,7 +1479,7 @@ export default function PuntoDeVenta() {
                         </tr>
                       )}
                       {itemEditandoPrecio === item.id && (
-                        <tr className="fila-edicion-precio">
+                        <tr className="fila-edicion-monto">
                           <td colSpan={5}>
                             <span className="fila-inline">
                               Nuevo precio de venta para {item.producto.descripcion}:
