@@ -8,6 +8,7 @@ prisma/dev.db-journal
 prisma/plantilla.db
 prisma/plantilla.db-journal
 prisma/respaldos/
+server/__tests__/test.db*
 *.log
 .DS_Store
 .env

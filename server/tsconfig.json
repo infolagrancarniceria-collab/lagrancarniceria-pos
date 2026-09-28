@@ -4,5 +4,9 @@
     "outDir": "../dist-server",
     "rootDir": "."
   },
-  "include": ["."]
+  "include": ["."],
+  // Los tests (vitest/supertest) no deben terminar compilados dentro del
+  // instalador (dist-server) — vitest los corre directo desde el fuente,
+  // sin pasar por este build.
+  "exclude": ["__tests__"]
 }

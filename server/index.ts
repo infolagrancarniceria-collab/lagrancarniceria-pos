@@ -46,6 +46,10 @@ import { ejecutarRespaldoAutomaticoSiCorresponde } from "./lib/respaldos";
 import { iniciarSyncWeb } from "./lib/syncWeb";
 
 const app = express();
+// Exportado para los tests (ver server/__tests__/): permite montar el mismo
+// app con supertest sin llamar a iniciarServidor() (que abre el puerto real
+// y corre migraciones/respaldos/sync — nada de eso debe pasar en un test).
+export { app };
 const PORT = Number(process.env.PORT) || 5175;
 
 // Límite explícito de tamaño para el cuerpo de las peticiones — antes no

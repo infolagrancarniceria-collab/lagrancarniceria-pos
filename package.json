@@ -17,6 +17,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "typecheck": "tsc --noEmit -p server/tsconfig.json && tsc --noEmit -p web/tsconfig.json",
+    "test": "vitest run",
     "db:plantilla": "node scripts/generar-plantilla-db.js",
     "catalogo:real": "tsx scripts/cargar-catalogo-real.ts",
     "dist:win": "npm run build && npm run db:plantilla && electron-builder --win --publish never"
@@ -78,15 +79,18 @@
     "@types/node": "^22.7.4",
     "@types/react": "^18.3.10",
     "@types/react-dom": "^18.3.0",
+    "@types/supertest": "^7.2.1",
     "@vitejs/plugin-react": "^6.0.5",
     "concurrently": "^9.0.1",
     "cross-env": "^7.0.3",
     "electron": "^43.3.0",
     "electron-builder": "^26.15.3",
     "prisma": "^5.20.0",
+    "supertest": "^7.3.0",
     "tsx": "^4.19.1",
     "typescript": "^5.6.2",
     "vite": "^8.2.1",
+    "vitest": "^5.0.2",
     "wait-on": "^8.0.1"
   }
 }
