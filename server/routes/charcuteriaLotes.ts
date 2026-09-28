@@ -162,6 +162,19 @@ charcuteriaLotesRouter.post("/:id/insumos", async (req, res) => {
 
   const costoUnitarioAlMomento = costoPorUnidadMedida(item);
 
+  // La transferencia/compra exacta que trajo este gramaje puntual no se
+  // rastrea (no hay un sistema de lotes de compra para materia prima) — se
+  // vincula a la más reciente de ese ítem como referencia documental para
+  // trazabilidad, no como un descuento exacto de saldo por transferencia.
+  let origenId: number | null = null;
+  if (data.origenTipo === "transferencia") {
+    const ultimaTransferencia = await prisma.transferenciaInterna.findFirst({
+      where: { itemDestinoId: data.itemId },
+      orderBy: { fecha: "desc" },
+    });
+    origenId = ultimaTransferencia?.id ?? null;
+  }
+
   const actualizado = await prisma.$transaction(async (tx) => {
     await tx.loteInsumoConsumido.create({
       data: {
@@ -169,6 +182,7 @@ charcuteriaLotesRouter.post("/:id/insumos", async (req, res) => {
         itemId: data.itemId,
         cantidad: data.cantidad,
         origenTipo: data.origenTipo,
+        origenId,
         costoUnitarioAlMomento,
       },
     });

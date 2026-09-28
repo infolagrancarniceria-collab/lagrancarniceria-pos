@@ -1081,12 +1081,19 @@ cajaRouter.post("/ventas/:id/confirmar", async (req, res) => {
   // SKU a granel (sin formatoGramos, no pasan por Envasado/StockLoteSku)
   // quedan fuera de este chequeo, igual que cualquier producto normal de
   // carnicería.
+  // Si CUALQUIER producto vendido es de charcutería (businessUnitId=2 en su
+  // fila espejo — ver ItemCharcuteria.productoEspejoId), la venta entera
+  // queda etiquetada como charcutería para los reportes consolidados. Un
+  // carro mezclado entre ambas unidades es un caso raro que no se separa
+  // línea por línea (ver informe de cierre de fase).
+  let esVentaCharcuteria = false;
   const loteFefoPorProducto = new Map<number, { loteId: number; stockLoteSkuId: number }>();
   for (const [productoId, cantidad] of cantidadPorProducto) {
     const producto = await prisma.producto.findUnique({ where: { id: productoId } });
     if (!producto) {
       return res.status(400).json({ error: "Uno de los productos de la venta ya no existe" });
     }
+    if (producto.businessUnitId === 2) esVentaCharcuteria = true;
     const skuId = await skuCharcuteriaDeProducto(productoId);
     if (skuId != null) {
       const seleccion = await elegirLoteFefo(skuId, cantidad);
@@ -1098,7 +1105,10 @@ cajaRouter.post("/ventas/:id/confirmar", async (req, res) => {
   }
 
   await prisma.$transaction([
-    prisma.venta.update({ where: { id: ventaId }, data: { estado: "pagada" } }),
+    prisma.venta.update({
+      where: { id: ventaId },
+      data: { estado: "pagada", ...(esVentaCharcuteria ? { businessUnitId: 2 } : {}) },
+    }),
     ...Array.from(cantidadPorProducto.entries()).flatMap(([productoId, cantidad]) => {
       const fefo = loteFefoPorProducto.get(productoId);
       const operaciones: Prisma.PrismaPromise<unknown>[] = [
