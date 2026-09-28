@@ -330,6 +330,7 @@ Todo corre **local**, en el PC de la carnicería, sin depender de internet:
 8. **Despachos a domicilio** — listo: comunas con costo de envío fijo, marcar una venta como despacho (suma el costo al total), y reporte por comuna. Ver "Módulo de despachos a domicilio" más abajo.
 9. **Cámara frigorífica** — listo (las 7 etapas: entrada de cajas con etiqueta impresa, salida con aviso FIFO y venta por mayor, inventario por escaneo con conciliación de faltantes, importador del sistema anterior, modo sin conexión del celular, y pruebas de punta a punta de todo junto). Ver "Módulo de cámara frigorífica" más abajo para el detalle completo. **Pendiente:** prueba con la impresora Gainscha real y confirmación del usuario usando el flujo completo con datos y hardware reales del local.
 10. **Sincronización con la página web** — listo (catálogo/comunas/opciones de corte hacia lagrancarniceria.com, y pedidos web hacia el panel "Pedidos web"). Ver "Sincronización con la página web (lagrancarniceria.com)" más abajo. **Pendiente:** el usuario todavía no cargó el catálogo real completo (falta confirmar los PLU de Pollo y de algunos productos de Artesanales — ver esa sección) ni configuró la sync desde una instalación real (todo probado contra `dev.db` local).
+11. **Charcutería** — Fase 1 y Fase 2 listas (catálogo propio, recetas versionadas, transferencias desde carnicería, lotes con costeo/merma real, envasado, venta con FEFO, alertas de vencimiento, trazabilidad, consolidado). Fase 3 (packs) es solo diseño de esquema, sin construir. Ver "Módulo de charcutería" más abajo para el detalle completo, qué falta y las decisiones de diseño. **Pendiente:** probar contra datos e instalación reales (todo probado contra `dev.db` local + tests automatizados); no se implementó lectura en vivo de peso desde la balanza (decisión explícita del usuario, ver esa sección).
 
 ## Instalador de Windows
 Armado con `electron-builder` (`npm run dist:win`, ver README para el
@@ -3544,3 +3545,177 @@ el usuario: (1) configure la sync en su instalación real con la
 `SYNC_API_KEY` real, (2) confirme los PLU reales de los ~25 productos que
 quedaron fuera de la carga, y (3) corra `cargar-catalogo-real.ts
 --confirmar` una vez revisado.
+
+## Módulo de charcutería
+
+Submarca de charcutería y ahumados artesanales (pastrami, tocino ahumado,
+longanizas, etc.), bajo la misma razón social que la carnicería pero con
+gestión propia: costos, márgenes, stock y trazabilidad separados, aunque
+comparte local, equipo y el mismo POS. La separación es de gestión, no
+legal — ver el informe de Fase 0 (en el historial de esta conversación, no
+un archivo aparte) para el contexto completo de negocio y las preguntas que
+se le hicieron al usuario antes de diseñar nada.
+
+**Decisiones de diseño clave** (todas confirmadas con el usuario antes de
+construir):
+- **Catálogo paralelo, no compartido**: `ItemCharcuteria` es una tabla
+  aparte de `Producto` (materia_prima/insumo/envase_etiqueta/
+  producto_elaborado/producto_terminado, ver `tipoItem`) — separación real
+  de gestión, no solo un filtro sobre el mismo catálogo. Solo el
+  `producto_terminado` vendible tiene una fila **espejo** en `Producto`
+  (`ItemCharcuteria.productoEspejoId`), para venderse por el flujo de Caja
+  existente sin tocarlo. Los SKU a granel (sin `formatoGramos`) usan
+  `flagBalanza=PESABLE` en su espejo igual que cualquier producto pesable
+  de carnicería; los de formato fijo usan `NORMAL`.
+- **Unidades de negocio** (`BusinessUnit`, seed fijo id 1=carniceria,
+  2=charcuteria): agregado a `Producto`/`MovimientoInventario`/`Venta` con
+  default 1, así que todo registro que ya existía antes de este módulo
+  quedó asignado a carnicería sin tocar ninguna fila a mano.
+- **Roles solo dentro de este módulo** (`Usuario.rol`:
+  admin/producción/caja + `hashClavePersonal` opcional) — el resto del
+  sistema sigue exactamente igual, sin roles, con la clave de supervisor
+  compartida de siempre. Asignar un rol requiere la clave de supervisor
+  (autoridad ya establecida, evita el problema de "quién es el primer
+  admin"); la clave personal de cada usuario solo se usa después para sus
+  propias acciones del día a día (ej. editar vencimiento de un lote).
+- **Convención numérica**: gramos enteros (`Int`) para todo peso del
+  módulo (igual que `itemsJson` de pedidos web), `Float` redondeado a peso
+  entero para dinero — mismo criterio que el 100% del resto del sistema,
+  a propósito, para no mezclar convenciones (SQLite tampoco tiene un
+  `numeric` real).
+- **Sin lectura en vivo de la balanza**: decisión explícita del usuario
+  ("no lo consideres... que no afecte la venta directa en el mesón ni el
+  funcionamiento interno del sistema actual"). El pesaje en lotes/envasado
+  es manual. La integración con balanza que ya existía (`server/lib/
+  balanza.ts`) es de solo escritura y quedó explícitamente excluida del
+  catálogo de charcutería (filtro `businessUnitId: 1` en `POST /api/
+  balanza/actualizar`) para no cambiar nada de su funcionamiento actual.
+
+**Fase 1 — mínimo viable:**
+- Catálogo (`server/routes/charcuteria.ts`): CRUD de `ItemCharcuteria`,
+  crea el espejo en `Producto` al vuelo para `producto_terminado`.
+- Recetas versionadas (`server/routes/charcuteriaRecetas.ts`): siempre
+  crea una versión nueva (nunca se edita una existente, ni la activa) —
+  para que "de qué versión salió cada lote" nunca quede ambiguo. Crear una
+  nueva desactiva automáticamente la anterior.
+- Transferencias internas (`server/routes/charcuteriaTransferencias.ts`):
+  precio configurable por ítem con historial (`PrecioTransferencia`, nunca
+  costo cero). Default: precio de venta neto vigente del producto de
+  origen; si ese no sirve (0, o el producto no se vende directo al
+  público), cae al costo de la última compra registrada; si tampoco hay
+  ninguna, al costo de referencia ya cargado en el ítem destino; si nada
+  de eso existe, se exige ingresarlo a mano. `TransferenciaInterna.
+  cantidad` viaja en kg (mismo criterio que el stock de carnicería, de
+  donde sale) y se convierte a gramos enteros al sumar el stock de
+  destino.
+- Lotes de producción (`server/routes/charcuteriaLotes.ts`): mismo patrón
+  que el módulo de Cámara Frigorífica (cabecera + registro de consumo +
+  cierre con cálculo real, correcciones auditadas aparte —
+  `LoteVencimientoCambio` nunca sobrescribe en silencio, mismo principio
+  que `CorreccionLoteCamara`). Código autogenerado `CH-AAMMDD-NN` (NN
+  reinicia cada día). Costo total = insumos consumidos (a su costo
+  congelado al momento, no el actual) + mano de obra imputada + envases/
+  etiquetas + otros costos manuales — recalculado (`recalcularCostoLote`)
+  cada vez que algo lo afecta (agregar insumo, cerrar, envasar). Merma
+  real = `(1 - pesoSalidaKg/pesoEntradaKg) * 100`; merma esperada se copia
+  de `receta.rendimientoEsperadoPct` al crear el lote. Editar el
+  vencimiento requiere rol admin + clave personal.
+- Envasado (`server/routes/charcuteriaEnvasado.ts`): fracciona el peso a
+  granel del lote en unidades de un SKU de formato fijo, descuenta envase/
+  etiqueta, suma `StockLoteSku` (saldo **por lote**, no agregado — necesario
+  para vencimiento y FEFO). **Solo soporta SKU de formato fijo** — un SKU a
+  granel (sin `formatoGramos`) no pasa por Envasado/`StockLoteSku`, queda
+  fuera de este flujo (limitación conocida, ver "Qué falta" más abajo).
+- Reporte de costo y margen por SKU y lote (`GET /api/charcuteria/
+  reportes/costo-margen`) — nada se guarda, todo se calcula al vuelo a
+  partir de `LoteProduccion.costoTotal` y el precio vigente del espejo,
+  reusando `calcularMargen`/`calcularMargenReal` (`server/lib/margen.ts`,
+  IVA 19%, mismas fórmulas que el resto del sistema).
+
+**Fase 2 — ventas, alertas, trazabilidad:**
+- FEFO al confirmar una venta (`POST /api/caja/ventas/:id/confirmar`,
+  `server/lib/charcuteriaFefo.ts`): si el producto vendido es la fila
+  espejo de un SKU de formato fijo, elige el lote con vencimiento más
+  próximo **que alcance a cubrir solo toda la cantidad pedida** —
+  **nunca reparte una misma línea de venta entre varios lotes** (si el
+  más próximo a vencer no alcanza, salta entero al siguiente que sí
+  alcance, no completa mezclando ambos: limitación conocida y a propósito,
+  ver "Qué falta"). Excluye lotes anulados y ya vencidos — si no hay
+  stock vigente suficiente en ningún lote, la venta se rechaza (a
+  diferencia del resto de carnicería, que nunca bloquea por falta de
+  stock). Anular una venta pagada devuelve el stock al lote de origen
+  exacto (`ItemVenta.loteId`), no solo al agregado de `Producto`. La venta
+  queda etiquetada `businessUnitId=2` si cualquiera de sus productos es de
+  charcutería.
+- Alerta de "lotes por vencer" en Avisos, umbral configurable
+  (`ConfiguracionCharcuteria.umbralVencimientoDias`, default 7 — editable
+  desde el hub de Charcutería).
+- Trazabilidad (`GET /api/charcuteria/reportes/trazabilidad/lote/:id` y
+  `/trazabilidad/item/:id`, con export CSV este último): de un lote hacia
+  la transferencia que trajo su materia prima (vínculo por
+  `LoteInsumoConsumido.origenId` → la transferencia **más reciente** de
+  ese ítem al momento de consumirlo, no una asignación exacta por partida
+  — no hay un sistema de lotes de compra para materia prima, es una
+  referencia documental), y de una materia prima hacia los lotes y ventas
+  que la usaron.
+- Reporte consolidado (`GET /api/charcuteria/reportes/consolidado`):
+  ventas por unidad de negocio en un rango de fechas — no reemplaza ni
+  modifica los reportes generales existentes (`Reportes.tsx`), que siguen
+  mostrando todo mezclado (carnicería + los espejos de charcutería) porque
+  comparten `Venta`/`Producto`; separar esos reportes generales por unidad
+  de negocio no se hizo (ver "Qué falta").
+
+**Fase 3 (packs):** solo diseño, no construido — reusaría el patrón que ya
+existe para combos de carnicería (`Producto.esCombo` + `ComboComponente`)
+casi tal cual, en vez de tablas nuevas.
+
+**Frontend:** hub en `/charcuteria` (`web/src/pages/Charcuteria.tsx`) +
+pantallas de catálogo, recetas, transferencias, lotes (lista + detalle con
+registrar insumo/cerrar/envasar/editar vencimiento/anular), reporte de
+costo/margen, trazabilidad, consolidado, mi clave personal y roles. Nav
+"🥓 Charcutería" en el sidebar.
+
+**Qué falta / limitaciones conocidas (a propósito, no por descuido):**
+- SKU a granel no pasa por Envasado/`StockLoteSku` — no tiene stock por
+  lote ni FEFO, solo el flujo genérico de `Producto.stockActual`.
+- FEFO nunca reparte una línea de venta entre dos lotes (ver arriba) — si
+  eso alguna vez hace falta de verdad, el carrito tendría que agregar el
+  mismo producto en dos líneas separadas a mano.
+- Los reportes generales existentes (Reportes.tsx, Avisos de stock bajo,
+  etc.) no distinguen carnicería de charcutería — muestran todo junto
+  porque comparten `Producto`/`Venta`. El reporte de consolidado de
+  charcutería es un endpoint nuevo aparte, no una modificación de esos.
+- Lectura en vivo de peso desde la balanza: no implementada (decisión
+  explícita del usuario).
+- Compra directa de insumos/envases (sin pasar por transferencia desde
+  carnicería) no tiene una pantalla propia — se ajusta el stock a mano
+  (`asegurarStockInsumo` en el seed es un ejemplo de ese patrón: `entrada`/
+  `compra` directo en `MovimientoCharcuteria`), no hay un formulario de
+  "Cargar factura" equivalente al de Inventario para este catálogo.
+
+**Probado:** contra `dev.db` local con datos reales de extremo a extremo
+(Playwright, ver el historial de esta conversación) y con tests
+automatizados (`npm test`, ver "Tests" más abajo) — **no probado contra
+una instalación real** con hardware/datos del local.
+
+**Seed de desarrollo:** `npx tsx scripts/seed-charcuteria-dev.ts` (con el
+servidor local corriendo primero) — 3 recetas (pastrami, tocino ahumado,
+longaniza con ciruela), 2 lotes completos (costeados, con merma real y
+envasados) y una venta de prueba con FEFO. Llama a la API real para todo
+lo que tiene endpoint propio (no reimplementa la lógica), así que si algo
+de esa lógica cambia y rompe una validación, el seed también falla en vez
+de insertar datos que el sistema real nunca produciría. Idempotente.
+
+**Tests** (`npm test`, primer framework de tests del repo — vitest +
+supertest, no existía ninguno antes): `server/__tests__/charcuteria.test.ts`
+monta el mismo Express `app` real contra una base SQLite propia
+(`server/__tests__/test.db`, migrada desde cero en cada corrida por
+`server/__tests__/setup.ts` — separada de `dev.db`). 8 casos: costeo
+(insumos + mano de obra + envase se suman correctamente; costo por unidad
+de SKU a partir de costo por kg elaborado), merma (esperada copiada de la
+receta, real calculada de los pesos), FEFO (vende del lote que vence
+antes; nunca reparte una línea; nunca vende de un lote anulado) y
+trazabilidad (lote→transferencia de origen, materia prima→lotes/ventas,
+consolidado por unidad de negocio). `server/tsconfig.json` excluye
+`__tests__` del build de producción (`dist-server`) — los tests no viajan
+dentro del instalador.
