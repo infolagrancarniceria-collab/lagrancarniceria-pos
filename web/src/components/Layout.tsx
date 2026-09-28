@@ -138,6 +138,7 @@ export default function Layout() {
               <Item to="/clientes" emoji="🧑‍🤝‍🧑" etiqueta="Clientes" />
               <Item to="/pedidos-web" emoji="🛵" etiqueta="Pedidos web" badge={avisos?.pedidosWebPendientes.cantidad} />
               <Item to="/camara" emoji="❄️" etiqueta="Cámara" />
+              <Item to="/charcuteria" emoji="🥓" etiqueta="Charcutería" />
               <Item to="/asistente" emoji="🤖" etiqueta="Asistente" />
               <Item to="/balanza" emoji="⚖️" etiqueta="Balanza" />
               <Item to="/configuracion" emoji="⚙️" etiqueta="Configuración" />

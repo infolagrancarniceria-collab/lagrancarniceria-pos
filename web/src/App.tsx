@@ -49,6 +49,15 @@ import CamaraImportar from "./pages/CamaraImportar";
 import CamaraEntradas from "./pages/CamaraEntradas";
 import CamaraExistencias from "./pages/CamaraExistencias";
 import CamaraReporteSalidas from "./pages/CamaraReporteSalidas";
+import Charcuteria from "./pages/Charcuteria";
+import CharcuteriaCatalogo from "./pages/CharcuteriaCatalogo";
+import CharcuteriaRecetas from "./pages/CharcuteriaRecetas";
+import CharcuteriaTransferencias from "./pages/CharcuteriaTransferencias";
+import CharcuteriaLotes from "./pages/CharcuteriaLotes";
+import CharcuteriaLoteDetalle from "./pages/CharcuteriaLoteDetalle";
+import CharcuteriaReporteCostoMargen from "./pages/CharcuteriaReporteCostoMargen";
+import CharcuteriaMiClave from "./pages/CharcuteriaMiClave";
+import CharcuteriaRoles from "./pages/CharcuteriaRoles";
 
 export default function App() {
   // En "modo caja exclusiva" (ver web/src/lib/modoCaja.ts), este PC arranca
@@ -107,6 +116,15 @@ export default function App() {
             <Route path="/camara/reporte-salidas" element={<CamaraReporteSalidas />} />
             <Route path="/configuracion" element={<Configuracion />} />
             <Route path="/avisos" element={<Avisos />} />
+            <Route path="/charcuteria" element={<Charcuteria />} />
+            <Route path="/charcuteria/catalogo" element={<CharcuteriaCatalogo />} />
+            <Route path="/charcuteria/recetas" element={<CharcuteriaRecetas />} />
+            <Route path="/charcuteria/transferencias" element={<CharcuteriaTransferencias />} />
+            <Route path="/charcuteria/lotes" element={<CharcuteriaLotes />} />
+            <Route path="/charcuteria/lotes/:id" element={<CharcuteriaLoteDetalle />} />
+            <Route path="/charcuteria/reportes/costo-margen" element={<CharcuteriaReporteCostoMargen />} />
+            <Route path="/charcuteria/mi-clave" element={<CharcuteriaMiClave />} />
+            <Route path="/charcuteria/roles" element={<CharcuteriaRoles />} />
           </Route>
         </Route>
         <Route path="/" element={<Navigate to={inicio} replace />} />
