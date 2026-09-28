@@ -20,8 +20,33 @@ model Usuario {
   activo   Boolean  @default(true)
   creadoEn DateTime @default(now())
 
+  // --- Módulo Charcutería ---
+  // Rol fijo para autorizar acciones del módulo de charcutería (admin ve
+  // costos/márgenes y edita vida útil/vencimiento; producción crea lotes y
+  // envasa; caja vende) — no afecta nada fuera de este módulo: el resto del
+  // sistema sigue sin roles, usando "cualquier usuario activo" + la clave de
+  // supervisor compartida (ClaveSupervisor) como hasta ahora.
+  rol String @default("caja") // "admin" | "produccion" | "caja"
+
+  // PIN/clave propia del usuario, solo para las acciones de charcutería que
+  // piden confirmar identidad (ej. editar vencimiento) — null hasta que el
+  // usuario la configure. A diferencia de ClaveSupervisor (una sola clave
+  // compartida para todo el sistema), esta es personal e intransferible.
+  // Mismo hash que ClaveSupervisor (ver server/lib/clave.ts), nunca en
+  // texto plano.
+  hashClavePersonal String?
+
   cambiosPrecio         HistorialPrecio[]
   movimientosInventario MovimientoInventario[]
+
+  itemsCharcuteriaCreados          ItemCharcuteria[]
+  preciosTransferenciaCreados      PrecioTransferencia[]
+  transferenciasInternasResponsable TransferenciaInterna[]
+  movimientosCharcuteria           MovimientoCharcuteria[]
+  recetasCreadas                   Receta[]
+  lotesProduccionResponsable       LoteProduccion[]        @relation("LotesProduccionResponsable")
+  cambiosVencimientoLote           LoteVencimientoCambio[]
+  envasadosResponsable             Envasado[]
 
   sesionesAbiertas           SesionCaja[] @relation("SesionesAbiertasPorUsuario")
   sesionesCerradas           SesionCaja[] @relation("SesionesCerradasPorUsuario")
@@ -87,6 +112,16 @@ model Producto {
 
   categoriaId Int
   categoria   Categoria @relation(fields: [categoriaId], references: [id])
+
+  // Unidad de negocio dueña de este producto — por defecto "carniceria"
+  // (id 1, ver seed de BusinessUnit), así que todo producto que ya existía
+  // antes de este campo queda asignado ahí sin tocarlo a mano. Un producto
+  // de charcutería solo aparece acá como fila "espejo" de un SKU vendible
+  // (ItemCharcuteria.productoEspejoId) — el resto del catálogo de
+  // charcutería (materia prima, insumos, producto elaborado) vive aparte,
+  // en ItemCharcuteria, nunca en esta tabla.
+  businessUnitId Int          @default(1)
+  businessUnit   BusinessUnit @relation(fields: [businessUnitId], references: [id])
 
   // Precio por kg si flagBalanza es PESABLE/IMPORTE, precio por unidad si es NORMAL.
   precio Float
@@ -232,6 +267,15 @@ model Producto {
 
   componentesDelCombo ComboComponente[] @relation("ComponentesDelCombo")
   usadoEnCombos       ComboComponente[] @relation("ProductoUsadoEnCombos")
+
+  // --- Módulo Charcutería ---
+  // Si este producto ES el espejo vendible de un SKU de charcutería, apunta
+  // de vuelta al ItemCharcuteria que lo generó (null para el resto del
+  // catálogo, que es carnicería normal).
+  espejoDeItemCharcuteria ItemCharcuteria?
+  // Materia prima de carnicería transferida hacia charcutería (este
+  // producto como origen de la transferencia).
+  transferenciasComoOrigen TransferenciaInterna[]
 }
 
 // Una línea de la "receta" de un combo — qué producto real (y cuánto) lleva
@@ -306,6 +350,11 @@ model MovimientoInventario {
   proveedorId   Int?
   proveedor     Proveedor? @relation(fields: [proveedorId], references: [id])
   numeroFactura String?
+
+  // Por defecto "carniceria" (id 1) — todo movimiento previo a este campo
+  // queda asignado ahí. Ver comentario de Producto.businessUnitId.
+  businessUnitId Int          @default(1)
+  businessUnit   BusinessUnit @relation(fields: [businessUnitId], references: [id])
 
   fecha DateTime @default(now())
 }
@@ -503,6 +552,18 @@ model Venta {
   estado String   @default("abierta") // "abierta" | "pagada" | "anulada"
   total  Float    @default(0)
 
+  // Por defecto "carniceria" (id 1) — toda venta previa a este campo queda
+  // asignada ahí. Una venta con ítems de charcutería queda con la unidad de
+  // negocio de esos ítems (ver server, se define al vender); hoy con un solo
+  // carrito por venta no debería mezclar ambas unidades en la práctica.
+  businessUnitId Int          @default(1)
+  businessUnit   BusinessUnit @relation(fields: [businessUnitId], references: [id])
+
+  // Canal por el que se originó la venta — solo informativo para reportes,
+  // no cambia ningún cálculo. "local" = mesón, valor por defecto para toda
+  // venta hecha directo en caja (incluidas todas las previas a este campo).
+  canal String @default("local") // "local" | "online" | "whatsapp" | "corporativo"
+
   // "Caja auxiliar": normalmente solo hay UNA venta "abierta" a la vez por
   // sesión (ver POST /ventas) — este flag marca las que el cajero abrió
   // aparte, a propósito, para seguir cobrando a otros clientes mientras una
@@ -563,6 +624,13 @@ model ItemVenta {
   // en server/routes/precios.ts); una vez la venta queda "pagada"/"anulada" ya no se toca, para que quede
   // el registro real de lo que se cobró
   subtotal       Float // ya con el descuento de este ítem aplicado, si tiene uno
+
+  // Solo se llena cuando "producto" es la fila espejo de un SKU de
+  // charcutería (ver ItemCharcuteria.productoEspejoId) — de qué lote salió
+  // físicamente lo vendido, para trazabilidad y (en una fase futura) FEFO.
+  // Null para cualquier venta de carnicería normal.
+  loteId Int?
+  lote   LoteProduccion? @relation(fields: [loteId], references: [id])
 
   // Descuento por producto (opcional) — alternativo al descuento de toda la
   // venta (Venta.descuentoTipo): solo puede haber uno de los dos activos a
@@ -1030,4 +1098,367 @@ model SalidaMayorista {
   usuarioAnulacion   Usuario?  @relation("SalidasMayoristasAnuladasPorUsuario", fields: [usuarioAnulacionId], references: [id])
   motivoAnulacion    String?
   fechaAnulacion     DateTime?
+}
+
+// --- Módulo Charcutería ---
+// Submarca de charcutería y ahumados artesanales, bajo la misma razón
+// social que la carnicería pero con gestión propia (costos, márgenes,
+// stock, trazabilidad separados). Ver informe de Fase 0 / CLAUDE.md para el
+// contexto completo de negocio y las decisiones de diseño.
+
+// Unidad de negocio (centro de costo). Se siembra con exactamente 2 filas
+// de id fijo (1 = carniceria, 2 = charcuteria, ver migración de datos) —
+// todo registro que ya existía antes de este modelo queda en "carniceria"
+// por el default de cada businessUnitId nuevo, sin tocar ninguna fila a
+// mano.
+model BusinessUnit {
+  id     Int     @id @default(autoincrement())
+  codigo String  @unique // "carniceria" | "charcuteria"
+  nombre String
+  activo Boolean @default(true)
+
+  creadoEn DateTime @default(now())
+
+  productos             Producto[]
+  movimientosInventario MovimientoInventario[]
+  ventas                Venta[]
+  itemsCharcuteria      ItemCharcuteria[]
+}
+
+// Catálogo propio de charcutería, PARALELO a Producto (decisión explícita:
+// separación de gestión real, no solo un filtro sobre el mismo catálogo).
+// Cubre desde materia prima interna hasta el SKU final — "tipoItem"
+// distingue cada uno, mismo criterio de string-en-vez-de-enum que el resto
+// del repo usa para SQLite (ej. Producto.flagBalanza).
+//
+// Solo "producto_terminado" (el SKU que de verdad se vende) tiene además
+// una fila espejo en Producto (productoEspejoId): así se vende por el flujo
+// de Caja existente sin tocarlo. Los demás tipos nunca se venden directo y
+// no tienen espejo.
+model ItemCharcuteria {
+  id     Int    @id @default(autoincrement())
+  codigo String @unique
+  nombre String
+
+  tipoItem String // "materia_prima" | "insumo" | "envase_etiqueta" | "producto_elaborado" | "producto_terminado"
+
+  businessUnitId Int          @default(2)
+  businessUnit   BusinessUnit @relation(fields: [businessUnitId], references: [id])
+
+  // Gramos si se mide por peso, unidades si no (envases, etiquetas, o un
+  // producto_terminado vendido en formato fijo) — un solo campo, igual
+  // criterio que ItemVenta.cantidad (kg vs. unidades según el producto).
+  unidadMedida String @default("gramos") // "gramos" | "unidad"
+
+  // Saldo agregado — NO aplica a producto_terminado (ese stock se trackea
+  // por lote, ver StockLoteSku, porque necesita vencimiento y FEFO a nivel
+  // de lote individual, no un solo número agregado). Queda en 0 sin usar
+  // para esos casos.
+  stockActual Float @default(0)
+
+  // --- Solo aplica a producto_terminado ---
+  // Gramos netos del formato envasado — null si este SKU se vende a granel
+  // (por peso), igual que Producto con flagBalanza=PESABLE en su espejo.
+  formatoGramos Int?
+
+  productoElaboradoId Int?
+  productoElaborado   ItemCharcuteria?  @relation("ProductoElaboradoDeSku", fields: [productoElaboradoId], references: [id])
+  skusDelElaborado    ItemCharcuteria[] @relation("ProductoElaboradoDeSku")
+
+  productoEspejoId Int?      @unique
+  productoEspejo   Producto? @relation(fields: [productoEspejoId], references: [id])
+
+  linea String? // "tabla" | "fiestas"
+
+  // Costo de referencia (última compra/transferencia) — igual criterio que
+  // Producto.costoReferencia: informativo, nunca reemplaza el costeo real
+  // de un lote (ver LoteProduccion.costoTotal).
+  costoReferencia Float?
+
+  // --- Rotulado (solo producto_elaborado) ---
+  ingredientes            String?
+  alergenos               String?
+  condicionesConservacion String?
+  vidaUtilDias            Int?
+  sellosAltoEnTexto       String? // texto libre, sin cálculo automático (fuera de alcance)
+
+  activo        Boolean  @default(true)
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+  creadoPorId   Int
+  creadoPor     Usuario  @relation(fields: [creadoPorId], references: [id])
+
+  recetas               Receta[]
+  recetaIngredientes    RecetaIngrediente[]
+  preciosTransferencia  PrecioTransferencia[]
+  transferenciasRecibidas TransferenciaInterna[]
+  movimientos           MovimientoCharcuteria[]
+  loteInsumosConsumidos LoteInsumoConsumido[]
+  envasadosComoSku      Envasado[]             @relation("SkuEnvasado")
+  envasadosComoEnvase   Envasado[]             @relation("EnvaseUsadoEnEnvasado")
+  envasadosComoEtiqueta Envasado[]             @relation("EtiquetaUsadaEnEnvasado")
+  stockPorLote          StockLoteSku[]         @relation("SkuStock")
+}
+
+// Ledger de movimientos de materia_prima/insumo/envase_etiqueta — mismo
+// patrón que MovimientoInventario (cantidad siempre positiva, el signo lo
+// da "tipo"). No aplica a producto_terminado (ver Envasado/StockLoteSku).
+model MovimientoCharcuteria {
+  id Int @id @default(autoincrement())
+
+  itemId Int
+  item   ItemCharcuteria @relation(fields: [itemId], references: [id])
+
+  tipo   String // "entrada" | "salida"
+  motivo String // entrada: "transferencia" | "compra" | "ajuste" — salida: "consumo_lote" | "merma" | "ajuste"
+
+  cantidad Float // mismas unidades que ItemCharcuteria.unidadMedida
+
+  // Referencia opcional a qué originó el movimiento (ej. "transferencia" +
+  // id de TransferenciaInterna, o "lote" + id de LoteProduccion).
+  referenciaTipo String?
+  referenciaId   Int?
+
+  usuarioId Int
+  usuario   Usuario @relation(fields: [usuarioId], references: [id])
+
+  fecha DateTime @default(now())
+}
+
+// Ficha técnica versionada de un producto_elaborado. Solo una versión
+// "activa" por producto elaborado a la vez (se aplica en el server, dentro
+// de una transacción — SQLite/Prisma no tiene índice único parcial para
+// forzarlo a nivel de base de datos). Las versiones anteriores quedan de
+// solo lectura; cada lote guarda qué versión usó (LoteProduccion.recetaVersion).
+model Receta {
+  id Int @id @default(autoincrement())
+
+  productoElaboradoId Int
+  productoElaborado   ItemCharcuteria @relation(fields: [productoElaboradoId], references: [id])
+
+  version Int
+  activa  Boolean @default(true)
+
+  rendimientoEsperadoPct  Float // % de kg de salida esperados sobre kg de entrada
+  dosisSalesCurantesPorKg Float?
+
+  // JSON/texto libre a propósito: temperatura y tiempo de ahumado/cocción,
+  // curado, reposo — cada receta puede necesitar parámetros distintos, no
+  // conviene forzar columnas fijas para esto.
+  parametrosProceso String?
+  notas             String?
+
+  creadoPorId Int
+  creadoPor   Usuario  @relation(fields: [creadoPorId], references: [id])
+  creadoEn    DateTime @default(now())
+
+  ingredientes RecetaIngrediente[]
+  lotes        LoteProduccion[]
+
+  @@unique([productoElaboradoId, version])
+}
+
+model RecetaIngrediente {
+  id Int @id @default(autoincrement())
+
+  recetaId Int
+  receta   Receta @relation(fields: [recetaId], references: [id])
+
+  itemId Int
+  item   ItemCharcuteria @relation(fields: [itemId], references: [id])
+
+  cantidadPorLoteBase Float
+  unidad              String // "gramos" | "unidad" — mismo criterio que ItemCharcuteria.unidadMedida
+}
+
+// Historial de precio de transferencia por ítem — nunca se edita una fila,
+// se agrega una nueva y la última vigente (mayor "vigenteDesde") manda,
+// mismo patrón que HistorialPrecio. Nunca puede ser 0 (se valida en el
+// server, ver informe de Fase 0 pregunta 7: si no hay precio de venta del
+// que partir, se usa el costo de referencia/compra del ítem, y si tampoco
+// hay ninguno, se exige ingresarlo a mano).
+model PrecioTransferencia {
+  id Int @id @default(autoincrement())
+
+  itemId Int
+  item   ItemCharcuteria @relation(fields: [itemId], references: [id])
+
+  precioPorKgOUnidad Float
+  vigenteDesde       DateTime @default(now())
+
+  creadoPorId Int
+  creadoPor   Usuario @relation(fields: [creadoPorId], references: [id])
+
+  transferencias TransferenciaInterna[]
+}
+
+// Materia prima de carnicería (Producto) que pasa a charcutería
+// (ItemCharcuteria) — descuenta MovimientoInventario en carnicería y suma
+// MovimientoCharcuteria en charcutería (ver server). El precio se copia al
+// momento (precioPorKg) aunque el histórico de PrecioTransferencia cambie
+// después, para que el registro de lo transferido no se altere solo.
+model TransferenciaInterna {
+  id Int @id @default(autoincrement())
+
+  productoOrigenId Int
+  productoOrigen   Producto @relation(fields: [productoOrigenId], references: [id])
+
+  itemDestinoId Int
+  itemDestino   ItemCharcuteria @relation(fields: [itemDestinoId], references: [id])
+
+  cantidad Float // kg
+
+  precioTransferenciaId Int
+  precioTransferencia   PrecioTransferencia @relation(fields: [precioTransferenciaId], references: [id])
+  precioPorKg           Float
+
+  fecha         DateTime @default(now())
+  responsableId Int
+  responsable   Usuario  @relation(fields: [responsableId], references: [id])
+}
+
+// Lote de producción — mismo patrón que LoteCamara/CajaCamara (cabecera +
+// movimientos/registro asociado), adaptado a un proceso de elaboración en
+// vez de solo almacenamiento en frío.
+model LoteProduccion {
+  id     Int    @id @default(autoincrement())
+  codigo String @unique // "CH-AAMMDD-NN", NN reinicia cada día (ver server)
+
+  recetaId      Int
+  receta        Receta @relation(fields: [recetaId], references: [id])
+  recetaVersion Int // copiado de receta.version al crear el lote — no cambia si la receta cambia de versión activa después
+
+  estado String @default("en_proceso") // "en_proceso" | "terminado" | "envasado" | "cerrado" | "anulado"
+
+  fechaElaboracion DateTime @default(now())
+  responsableId    Int
+  responsable      Usuario  @relation("LotesProduccionResponsable", fields: [responsableId], references: [id])
+
+  pesoEntradaKg Float?
+  pesoSalidaKg  Float?
+  // Calculados en el server a partir de los pesos reales — nunca editables
+  // a mano directo.
+  mermaEsperadaPct Float? // copiado de receta.rendimientoEsperadoPct al crear el lote
+  mermaRealPct     Float?
+
+  horasManoObra     Float?
+  costoHoraManoObra Float?
+
+  // JSON/texto libre, mismo criterio que Receta.parametrosProceso —
+  // parámetros REALES del proceso (vs. los esperados de la receta).
+  parametrosRealesProceso String?
+
+  // = fechaElaboracion + receta.vidaUtilDias al crear el lote. Editable
+  // después solo por admin — el valor actual vive acá; cada cambio queda
+  // en LoteVencimientoCambio (nunca se sobrescribe en silencio).
+  fechaVencimiento DateTime?
+
+  otrosCostosManuales Float? // otros costos del lote no cubiertos por materia prima/insumos/mano de obra/envase
+  // Costo total calculado (materia prima a precio de transferencia +
+  // insumos + mano de obra imputada + envases/etiquetas + otrosCostosManuales)
+  // — se recalcula en el server, nunca editable a mano directo.
+  costoTotal Float?
+
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  insumosConsumidos  LoteInsumoConsumido[]
+  envasados          Envasado[]
+  stockPorSku        StockLoteSku[]
+  itemsVenta         ItemVenta[]
+  cambiosVencimiento LoteVencimientoCambio[]
+}
+
+// Cada cambio a la fecha de vencimiento de un lote queda como registro
+// nuevo (nunca se pisa el anterior) — mismo principio que
+// CorreccionLoteCamara para lotes de cámara.
+model LoteVencimientoCambio {
+  id Int @id @default(autoincrement())
+
+  loteId Int
+  lote   LoteProduccion @relation(fields: [loteId], references: [id])
+
+  vencimientoAnterior DateTime?
+  vencimientoNuevo    DateTime
+  motivo              String
+
+  usuarioId Int
+  usuario   Usuario @relation(fields: [usuarioId], references: [id])
+
+  creadoEn DateTime @default(now())
+}
+
+// Insumo/materia prima efectivamente consumido por un lote, con su costo
+// real al momento (nunca cambia después, aunque el costo de referencia del
+// ítem cambie) — es lo que arma el costeo real del lote.
+model LoteInsumoConsumido {
+  id Int @id @default(autoincrement())
+
+  loteId Int
+  lote   LoteProduccion @relation(fields: [loteId], references: [id])
+
+  itemId Int
+  item   ItemCharcuteria @relation(fields: [itemId], references: [id])
+
+  cantidad Float // mismas unidades que ItemCharcuteria.unidadMedida
+
+  origenTipo String // "transferencia" | "compra"
+  origenId   Int? // id de TransferenciaInterna o MovimientoCharcuteria, según origenTipo
+
+  costoUnitarioAlMomento Float
+}
+
+// Fracciona el stock a granel de un lote en N unidades de un SKU —
+// descuenta granel (LoteProduccion.pesoSalidaKg efectivo, vía el registro
+// del propio Envasado) y envases/etiquetas (MovimientoCharcuteria), y suma
+// stock de producto_terminado del lote (StockLoteSku).
+model Envasado {
+  id Int @id @default(autoincrement())
+
+  loteId Int
+  lote   LoteProduccion @relation(fields: [loteId], references: [id])
+
+  skuId Int
+  sku   ItemCharcuteria @relation("SkuEnvasado", fields: [skuId], references: [id])
+
+  cantidadUnidadesGeneradas Int
+  pesoNetoPorUnidadG        Int
+  pesoRealTotalUsadoG       Int
+  // = pesoRealTotalUsadoG - (cantidadUnidadesGeneradas * pesoNetoPorUnidadG) — calculado en el server.
+  diferenciaPesoG Int
+
+  envaseItemId      Int?
+  envaseItem        ItemCharcuteria? @relation("EnvaseUsadoEnEnvasado", fields: [envaseItemId], references: [id])
+  envasesConsumidos Int?
+
+  etiquetaItemId      Int?
+  etiquetaItem        ItemCharcuteria? @relation("EtiquetaUsadaEnEnvasado", fields: [etiquetaItemId], references: [id])
+  etiquetasConsumidas Int?
+
+  fecha         DateTime @default(now())
+  responsableId Int
+  responsable   Usuario  @relation(fields: [responsableId], references: [id])
+}
+
+// Saldo de producto_terminado POR LOTE — necesario para vencimiento y (en
+// una fase futura) FEFO. A diferencia de ItemCharcuteria.stockActual (que
+// no aplica a producto_terminado), este es el stock real vendible: cada
+// combinación lote+SKU tiene su propio saldo y hereda el vencimiento del
+// lote al crearse (no se vuelve a copiar acá, para no desincronizar si el
+// lote se corrige — se consulta vía lote.fechaVencimiento).
+model StockLoteSku {
+  id Int @id @default(autoincrement())
+
+  loteId Int
+  lote   LoteProduccion @relation(fields: [loteId], references: [id])
+
+  skuId Int
+  sku   ItemCharcuteria @relation("SkuStock", fields: [skuId], references: [id])
+
+  saldoUnidades Int @default(0)
+
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  @@unique([loteId, skuId])
 }
