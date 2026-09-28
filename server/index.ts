@@ -31,6 +31,12 @@ import { whatsappRouter } from "./routes/whatsapp";
 import { pedidosWebRouter } from "./routes/pedidosWeb";
 import { diagnosticoRouter } from "./routes/diagnostico";
 import { clientesRouter } from "./routes/clientes";
+import { charcuteriaRouter } from "./routes/charcuteria";
+import { charcuteriaRecetasRouter } from "./routes/charcuteriaRecetas";
+import { charcuteriaTransferenciasRouter } from "./routes/charcuteriaTransferencias";
+import { charcuteriaLotesRouter } from "./routes/charcuteriaLotes";
+import { charcuteriaEnvasadoRouter } from "./routes/charcuteriaEnvasado";
+import { charcuteriaReportesRouter } from "./routes/charcuteriaReportes";
 import {
   aplicarMigracionesPendientes,
   reconstruirLotesCamaraFaltantes,
@@ -109,6 +115,12 @@ app.use("/api/whatsapp", whatsappRouter);
 app.use("/api/cortes", cortesRouter);
 app.use("/api/pedidos-web", pedidosWebRouter);
 app.use("/api/diagnostico", diagnosticoRouter);
+app.use("/api/charcuteria", charcuteriaRouter);
+app.use("/api/charcuteria/recetas", charcuteriaRecetasRouter);
+app.use("/api/charcuteria/transferencias", charcuteriaTransferenciasRouter);
+app.use("/api/charcuteria/lotes", charcuteriaLotesRouter);
+app.use("/api/charcuteria", charcuteriaEnvasadoRouter);
+app.use("/api/charcuteria/reportes", charcuteriaReportesRouter);
 
 // En producción, el mismo servidor sirve la interfaz web ya compilada
 // (así la tablet/celular en la red del local también puede entrar por navegador).

@@ -38,8 +38,12 @@ balanzaRouter.post("/configuracion", async (req, res) => {
 balanzaRouter.post("/actualizar", async (_req, res) => {
   const config = await obtenerOConfigDefault();
 
+  // businessUnitId: 1 excluye a propósito los productos "espejo" de
+  // charcutería (ver ItemCharcuteria.productoEspejoId) — esta balanza es la
+  // del mesón de carnicería, y el módulo de charcutería no toca este envío
+  // para no cambiar nada del funcionamiento actual.
   const productos = await prisma.producto.findMany({
-    where: { activo: true, flagBalanza: { in: ["PESABLE", "IMPORTE"] } },
+    where: { activo: true, flagBalanza: { in: ["PESABLE", "IMPORTE"] }, businessUnitId: 1 },
   });
 
   const productosParaBalanza = productos.map((p) => ({

@@ -9,7 +9,12 @@ usuariosRouter.get("/", async (_req, res) => {
     where: { activo: true },
     orderBy: { nombre: "asc" },
   });
-  res.json(usuarios);
+  // El hash de la clave personal (módulo charcutería) nunca debe llegar al
+  // cliente, ni siquiera hasheado — mismo criterio que ya se aplica en todo
+  // el resto del sistema con ClaveSupervisor (nunca se expone). Esta
+  // versión de Prisma no tiene el helper "omit" del cliente disponible, así
+  // que se saca el campo a mano antes de responder.
+  res.json(usuarios.map(({ hashClavePersonal: _hashClavePersonal, ...resto }) => resto));
 });
 
 const crearUsuarioSchema = z.object({

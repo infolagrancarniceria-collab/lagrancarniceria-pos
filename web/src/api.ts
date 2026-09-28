@@ -2,6 +2,10 @@ export interface Usuario {
   id: number;
   nombre: string;
   activo: boolean;
+  // Rol del módulo de charcutería únicamente — el resto del sistema sigue
+  // sin roles. "caja" es el default para todo usuario que no se haya
+  // configurado explícitamente como admin/producción.
+  rol?: "admin" | "produccion" | "caja";
 }
 
 export interface Categoria {
@@ -906,6 +910,164 @@ async function del<T>(url: string): Promise<T> {
   return manejarRespuesta<T>(res);
 }
 
+// --- Módulo Charcutería ---
+
+export interface BusinessUnit {
+  id: number;
+  codigo: "carniceria" | "charcuteria";
+  nombre: string;
+  activo: boolean;
+}
+
+export type TipoItemCharcuteria = "materia_prima" | "insumo" | "envase_etiqueta" | "producto_elaborado" | "producto_terminado";
+
+export interface ItemCharcuteria {
+  id: number;
+  codigo: string;
+  nombre: string;
+  tipoItem: TipoItemCharcuteria;
+  unidadMedida: "gramos" | "unidad";
+  stockActual: number;
+  formatoGramos: number | null;
+  productoElaboradoId: number | null;
+  productoElaborado: { id: number; nombre: string } | null;
+  productoEspejoId: number | null;
+  productoEspejo: { id: number; precio: number } | null;
+  linea: "tabla" | "fiestas" | null;
+  costoReferencia: number | null;
+  ingredientes: string | null;
+  alergenos: string | null;
+  condicionesConservacion: string | null;
+  vidaUtilDias: number | null;
+  sellosAltoEnTexto: string | null;
+  activo: boolean;
+}
+
+export interface RecetaIngrediente {
+  id: number;
+  itemId: number;
+  item: ItemCharcuteria;
+  cantidadPorLoteBase: number;
+  unidad: "gramos" | "unidad";
+}
+
+export interface Receta {
+  id: number;
+  productoElaboradoId: number;
+  productoElaborado: ItemCharcuteria;
+  version: number;
+  activa: boolean;
+  rendimientoEsperadoPct: number;
+  dosisSalesCurantesPorKg: number | null;
+  parametrosProceso: string | null;
+  notas: string | null;
+  creadoEn: string;
+  ingredientes: RecetaIngrediente[];
+}
+
+export interface TransferenciaInterna {
+  id: number;
+  productoOrigenId: number;
+  productoOrigen: { id: number; descripcion: string; plu: string };
+  itemDestinoId: number;
+  itemDestino: ItemCharcuteria;
+  cantidad: number;
+  precioPorKg: number;
+  fecha: string;
+  responsable: { id: number; nombre: string };
+}
+
+export interface LoteInsumoConsumido {
+  id: number;
+  itemId: number;
+  item: ItemCharcuteria;
+  cantidad: number;
+  origenTipo: "transferencia" | "compra";
+  costoUnitarioAlMomento: number;
+}
+
+export interface Envasado {
+  id: number;
+  skuId: number;
+  sku: ItemCharcuteria;
+  cantidadUnidadesGeneradas: number;
+  pesoNetoPorUnidadG: number;
+  pesoRealTotalUsadoG: number;
+  diferenciaPesoG: number;
+  fecha: string;
+}
+
+export interface StockLoteSku {
+  loteId: number;
+  skuId: number;
+  sku: ItemCharcuteria;
+  saldoUnidades: number;
+}
+
+export interface LoteVencimientoCambio {
+  id: number;
+  vencimientoAnterior: string | null;
+  vencimientoNuevo: string;
+  motivo: string;
+  usuario: { id: number; nombre: string };
+  creadoEn: string;
+}
+
+export type EstadoLoteProduccion = "en_proceso" | "terminado" | "envasado" | "cerrado" | "anulado";
+
+export interface LoteProduccion {
+  id: number;
+  codigo: string;
+  recetaId: number;
+  recetaVersion: number;
+  receta: Receta;
+  estado: EstadoLoteProduccion;
+  fechaElaboracion: string;
+  responsable: { id: number; nombre: string };
+  pesoEntradaKg: number | null;
+  pesoSalidaKg: number | null;
+  mermaEsperadaPct: number | null;
+  mermaRealPct: number | null;
+  horasManoObra: number | null;
+  costoHoraManoObra: number | null;
+  parametrosRealesProceso: string | null;
+  fechaVencimiento: string | null;
+  otrosCostosManuales: number | null;
+  costoTotal: number | null;
+  insumosConsumidos: LoteInsumoConsumido[];
+  envasados: Envasado[];
+  stockPorSku: StockLoteSku[];
+  cambiosVencimiento: LoteVencimientoCambio[];
+}
+
+export interface ReporteCostoMargenSku {
+  skuId: number;
+  codigo: string;
+  nombre: string;
+  formatoGramos: number;
+  costoPorUnidad: number | null;
+  precioVenta: number | null;
+  margenPct: number | null;
+  margenRealPct: number | null;
+  saldoUnidades: number;
+}
+
+export interface ReporteCostoMargenLote {
+  loteId: number;
+  codigo: string;
+  estado: EstadoLoteProduccion;
+  productoElaborado: string;
+  fechaElaboracion: string;
+  fechaVencimiento: string | null;
+  pesoEntradaKg: number | null;
+  pesoSalidaKg: number | null;
+  mermaEsperadaPct: number | null;
+  mermaRealPct: number | null;
+  costoTotal: number | null;
+  costoPorKgElaborado: number | null;
+  skus: ReporteCostoMargenSku[];
+}
+
 export const api = {
   usuarios: {
     listar: () => get<Usuario[]>("/api/usuarios"),
@@ -1523,6 +1685,128 @@ export const api = {
       post<PrevisualizacionImportacionCamara>("/api/camara/importar-prototipo/previsualizar", { json }),
     confirmarImportacion: (data: { json: string; usuarioId: number; mapeo: { clave: string; productoId: number | null }[] }) =>
       post<ResultadoImportacionCamara>("/api/camara/importar-prototipo/confirmar", data),
+  },
+  charcuteria: {
+    businessUnits: () => get<BusinessUnit[]>("/api/charcuteria/business-units"),
+    cambiarRol: (usuarioId: number, clave: string, rol: "admin" | "produccion" | "caja") =>
+      put<Usuario>(`/api/charcuteria/usuarios/${usuarioId}/rol`, { clave, rol }),
+    establecerClavePersonal: (usuarioId: number, claveNueva: string) =>
+      put<void>(`/api/charcuteria/usuarios/${usuarioId}/clave-personal`, { claveNueva }),
+
+    items: {
+      listar: (params: { tipoItem?: TipoItemCharcuteria; buscar?: string; incluirInactivos?: boolean } = {}) => {
+        const qs = new URLSearchParams();
+        if (params.tipoItem) qs.set("tipoItem", params.tipoItem);
+        if (params.buscar) qs.set("buscar", params.buscar);
+        if (params.incluirInactivos) qs.set("incluirInactivos", "true");
+        const query = qs.toString();
+        return get<ItemCharcuteria[]>(`/api/charcuteria/items${query ? `?${query}` : ""}`);
+      },
+      obtener: (id: number) => get<ItemCharcuteria>(`/api/charcuteria/items/${id}`),
+      crear: (data: {
+        usuarioId: number;
+        codigo: string;
+        nombre: string;
+        tipoItem: TipoItemCharcuteria;
+        unidadMedida?: "gramos" | "unidad";
+        costoReferencia?: number | null;
+        ingredientes?: string | null;
+        alergenos?: string | null;
+        condicionesConservacion?: string | null;
+        vidaUtilDias?: number | null;
+        sellosAltoEnTexto?: string | null;
+        formatoGramos?: number | null;
+        productoElaboradoId?: number | null;
+        linea?: "tabla" | "fiestas" | null;
+        precioVenta?: number;
+      }) => post<ItemCharcuteria>("/api/charcuteria/items", data),
+      editar: (id: number, data: Record<string, unknown> & { usuarioId: number }) =>
+        put<ItemCharcuteria>(`/api/charcuteria/items/${id}`, data),
+      eliminar: (id: number) => del<void>(`/api/charcuteria/items/${id}`),
+    },
+
+    recetas: {
+      listar: (params: { productoElaboradoId?: number; soloActivas?: boolean } = {}) => {
+        const qs = new URLSearchParams();
+        if (params.productoElaboradoId) qs.set("productoElaboradoId", String(params.productoElaboradoId));
+        if (params.soloActivas) qs.set("soloActivas", "true");
+        const query = qs.toString();
+        return get<Receta[]>(`/api/charcuteria/recetas${query ? `?${query}` : ""}`);
+      },
+      obtener: (id: number) => get<Receta>(`/api/charcuteria/recetas/${id}`),
+      crear: (data: {
+        usuarioId: number;
+        productoElaboradoId: number;
+        rendimientoEsperadoPct: number;
+        dosisSalesCurantesPorKg?: number | null;
+        parametrosProceso?: string | null;
+        notas?: string | null;
+        ingredientes: { itemId: number; cantidadPorLoteBase: number; unidad: "gramos" | "unidad" }[];
+      }) => post<Receta>("/api/charcuteria/recetas", data),
+    },
+
+    transferencias: {
+      listar: (itemDestinoId?: number) =>
+        get<TransferenciaInterna[]>(`/api/charcuteria/transferencias${itemDestinoId ? `?itemDestinoId=${itemDestinoId}` : ""}`),
+      precioSugerido: (productoOrigenId: number, itemDestinoId: number) =>
+        get<{ sugerido: number | null; configurado: boolean }>(
+          `/api/charcuteria/transferencias/precio-sugerido?productoOrigenId=${productoOrigenId}&itemDestinoId=${itemDestinoId}`
+        ),
+      crear: (data: {
+        usuarioId: number;
+        productoOrigenId: number;
+        itemDestinoId: number;
+        cantidad: number;
+        precioPorKg?: number;
+      }) => post<TransferenciaInterna>("/api/charcuteria/transferencias", data),
+    },
+
+    lotes: {
+      listar: (estado?: EstadoLoteProduccion) => get<LoteProduccion[]>(`/api/charcuteria/lotes${estado ? `?estado=${estado}` : ""}`),
+      obtener: (id: number) => get<LoteProduccion>(`/api/charcuteria/lotes/${id}`),
+      crear: (usuarioId: number, recetaId: number) => post<LoteProduccion>("/api/charcuteria/lotes", { usuarioId, recetaId }),
+      agregarInsumo: (
+        loteId: number,
+        data: { usuarioId: number; itemId: number; cantidad: number; origenTipo?: "transferencia" | "compra" }
+      ) => post<LoteProduccion>(`/api/charcuteria/lotes/${loteId}/insumos`, data),
+      cerrar: (
+        loteId: number,
+        data: {
+          usuarioId: number;
+          pesoSalidaKg: number;
+          pesoEntradaKg?: number;
+          horasManoObra?: number;
+          costoHoraManoObra?: number;
+          otrosCostosManuales?: number;
+          parametrosRealesProceso?: string | null;
+        }
+      ) => put<LoteProduccion>(`/api/charcuteria/lotes/${loteId}/cerrar`, data),
+      editarVencimiento: (
+        loteId: number,
+        data: { usuarioId: number; clave: string; vencimientoNuevo: string; motivo: string }
+      ) => put<LoteProduccion>(`/api/charcuteria/lotes/${loteId}/vencimiento`, data),
+      anular: (loteId: number, data: { usuarioId: number; clave: string }) =>
+        put<LoteProduccion>(`/api/charcuteria/lotes/${loteId}/anular`, data),
+      envasar: (
+        loteId: number,
+        data: {
+          usuarioId: number;
+          skuId: number;
+          cantidadUnidadesGeneradas: number;
+          pesoRealTotalUsadoG: number;
+          envaseItemId?: number;
+          envasesConsumidos?: number;
+          etiquetaItemId?: number;
+          etiquetasConsumidas?: number;
+        }
+      ) => post<Envasado>(`/api/charcuteria/lotes/${loteId}/envasar`, data),
+      cerrarDefinitivo: (loteId: number, usuarioId: number) =>
+        put<LoteProduccion>(`/api/charcuteria/lotes/${loteId}/cerrar-definitivo`, { usuarioId }),
+    },
+
+    reportes: {
+      costoMargen: () => get<ReporteCostoMargenLote[]>("/api/charcuteria/reportes/costo-margen"),
+    },
   },
 };
 
