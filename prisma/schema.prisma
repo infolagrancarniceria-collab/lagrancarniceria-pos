@@ -1462,3 +1462,10 @@ model StockLoteSku {
 
   @@unique([loteId, skuId])
 }
+
+// Umbral de "por vencer" para las alertas de charcutería (Avisos) — siempre
+// hay como máximo una fila, mismo patrón que ConfiguracionBalanza.
+model ConfiguracionCharcuteria {
+  id                    Int @id @default(autoincrement())
+  umbralVencimientoDias Int @default(7)
+}

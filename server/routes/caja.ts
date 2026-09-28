@@ -1,11 +1,13 @@
 import { Router } from "express";
 import { z } from "zod";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "../db";
 import { hashClave, verificarClaveConLimite } from "../lib/clave";
 import { decodificarCodigoBalanza } from "../lib/codigoBarras";
 import { calcularProximoPlu } from "../lib/proximoPlu";
 import { sincronizarCatalogoConWeb } from "../lib/syncWeb";
 import { rangoFechasDesdeTexto } from "./reportes";
+import { skuCharcuteriaDeProducto, elegirLoteFefo } from "../lib/charcuteriaFefo";
 
 export const cajaRouter = Router();
 
@@ -1065,22 +1067,60 @@ cajaRouter.post("/ventas/:id/confirmar", async (req, res) => {
     cantidadPorProducto.set(item.productoId, (cantidadPorProducto.get(item.productoId) ?? 0) + item.cantidad);
   }
   // No se bloquea por falta de stock (ver agregarItemAVenta) — el stock
-  // puede quedar negativo y se corrige después con un ajuste manual.
-  for (const productoId of cantidadPorProducto.keys()) {
+  // puede quedar negativo y se corrige después con un ajuste manual. Esto
+  // sigue siendo así para carnicería; los SKU de charcutería con formato
+  // fijo (que sí trazan por lote) son la excepción: ahí SÍ se bloquea si no
+  // hay stock vigente (sin vencer, sin anular) en ningún lote, porque el
+  // negocio pidió explícitamente no poder vender lotes vencidos/anulados.
+  //
+  // FEFO: para cada producto que resulta ser el espejo de un SKU de
+  // charcutería, se elige de antemano (fuera de la transacción, son solo
+  // lecturas) el lote con vencimiento más próximo que alcance a cubrir toda
+  // la cantidad vendida de ese producto en esta venta — nunca se reparte
+  // una misma línea entre varios lotes (ver informe de cierre de fase).
+  // SKU a granel (sin formatoGramos, no pasan por Envasado/StockLoteSku)
+  // quedan fuera de este chequeo, igual que cualquier producto normal de
+  // carnicería.
+  const loteFefoPorProducto = new Map<number, { loteId: number; stockLoteSkuId: number }>();
+  for (const [productoId, cantidad] of cantidadPorProducto) {
     const producto = await prisma.producto.findUnique({ where: { id: productoId } });
     if (!producto) {
       return res.status(400).json({ error: "Uno de los productos de la venta ya no existe" });
+    }
+    const skuId = await skuCharcuteriaDeProducto(productoId);
+    if (skuId != null) {
+      const seleccion = await elegirLoteFefo(skuId, cantidad);
+      if ("error" in seleccion) {
+        return res.status(400).json({ error: `${producto.descripcion}: ${seleccion.error}` });
+      }
+      loteFefoPorProducto.set(productoId, seleccion);
     }
   }
 
   await prisma.$transaction([
     prisma.venta.update({ where: { id: ventaId }, data: { estado: "pagada" } }),
-    ...Array.from(cantidadPorProducto.entries()).flatMap(([productoId, cantidad]) => [
-      prisma.producto.update({ where: { id: productoId }, data: { stockActual: { decrement: cantidad } } }),
-      prisma.movimientoInventario.create({
-        data: { productoId, usuarioId, tipo: "salida", motivo: "venta", cantidad },
-      }),
-    ]),
+    ...Array.from(cantidadPorProducto.entries()).flatMap(([productoId, cantidad]) => {
+      const fefo = loteFefoPorProducto.get(productoId);
+      const operaciones: Prisma.PrismaPromise<unknown>[] = [
+        prisma.producto.update({ where: { id: productoId }, data: { stockActual: { decrement: cantidad } } }),
+        prisma.movimientoInventario.create({
+          data: { productoId, usuarioId, tipo: "salida", motivo: "venta", cantidad },
+        }),
+      ];
+      if (fefo) {
+        operaciones.push(
+          prisma.stockLoteSku.update({
+            where: { id: fefo.stockLoteSkuId },
+            data: { saldoUnidades: { decrement: cantidad } },
+          }),
+          prisma.itemVenta.updateMany({
+            where: { ventaId, productoId, anulado: false },
+            data: { loteId: fefo.loteId },
+          })
+        );
+      }
+      return operaciones;
+    }),
   ]);
 
   const ventaFinal = await prisma.venta.findUnique({
@@ -1145,9 +1185,22 @@ cajaRouter.post("/ventas/:id/cancelar", async (req, res) => {
   if (venta.estado === "pagada") {
     const itemsActivos = venta.items.filter((i) => !i.anulado);
     const cantidadPorProducto = new Map<number, number>();
+    // Mismo loteId para todos los ítems de un mismo producto en esta venta
+    // (FEFO lo fija así al confirmar, ver POST /ventas/:id/confirmar) — se
+    // usa para devolver el stock al lote de origen, no solo al agregado
+    // genérico de Producto.
+    const loteIdPorProducto = new Map<number, number>();
     for (const item of itemsActivos) {
       cantidadPorProducto.set(item.productoId, (cantidadPorProducto.get(item.productoId) ?? 0) + item.cantidad);
+      if (item.loteId != null) loteIdPorProducto.set(item.productoId, item.loteId);
     }
+
+    const devolucionesLote: { productoId: number; loteId: number; skuId: number; cantidad: number }[] = [];
+    for (const [productoId, loteId] of loteIdPorProducto) {
+      const skuId = await skuCharcuteriaDeProducto(productoId);
+      if (skuId != null) devolucionesLote.push({ productoId, loteId, skuId, cantidad: cantidadPorProducto.get(productoId)! });
+    }
+
     await prisma.$transaction([
       prisma.venta.update({ where: { id: ventaId }, data: datosAnulacion }),
       ...Array.from(cantidadPorProducto.entries()).flatMap(([productoId, cantidad]) => [
@@ -1156,6 +1209,12 @@ cajaRouter.post("/ventas/:id/cancelar", async (req, res) => {
           data: { productoId, usuarioId, tipo: "entrada", motivo: "venta_anulada", cantidad },
         }),
       ]),
+      ...devolucionesLote.map((d) =>
+        prisma.stockLoteSku.update({
+          where: { loteId_skuId: { loteId: d.loteId, skuId: d.skuId } },
+          data: { saldoUnidades: { increment: d.cantidad } },
+        })
+      ),
     ]);
   } else {
     await prisma.venta.update({ where: { id: ventaId }, data: datosAnulacion });

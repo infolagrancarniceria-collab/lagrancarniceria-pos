@@ -56,6 +56,8 @@ import CharcuteriaTransferencias from "./pages/CharcuteriaTransferencias";
 import CharcuteriaLotes from "./pages/CharcuteriaLotes";
 import CharcuteriaLoteDetalle from "./pages/CharcuteriaLoteDetalle";
 import CharcuteriaReporteCostoMargen from "./pages/CharcuteriaReporteCostoMargen";
+import CharcuteriaTrazabilidad from "./pages/CharcuteriaTrazabilidad";
+import CharcuteriaConsolidado from "./pages/CharcuteriaConsolidado";
 import CharcuteriaMiClave from "./pages/CharcuteriaMiClave";
 import CharcuteriaRoles from "./pages/CharcuteriaRoles";
 
@@ -123,6 +125,8 @@ export default function App() {
             <Route path="/charcuteria/lotes" element={<CharcuteriaLotes />} />
             <Route path="/charcuteria/lotes/:id" element={<CharcuteriaLoteDetalle />} />
             <Route path="/charcuteria/reportes/costo-margen" element={<CharcuteriaReporteCostoMargen />} />
+            <Route path="/charcuteria/reportes/trazabilidad" element={<CharcuteriaTrazabilidad />} />
+            <Route path="/charcuteria/reportes/consolidado" element={<CharcuteriaConsolidado />} />
             <Route path="/charcuteria/mi-clave" element={<CharcuteriaMiClave />} />
             <Route path="/charcuteria/roles" element={<CharcuteriaRoles />} />
           </Route>

@@ -801,6 +801,7 @@ export interface AvisosCriticos {
   cajasEstancadas: { cantidad: number };
   ajustesPendientesCamara: { cantidad: number };
   pedidosWebPendientes: { cantidad: number };
+  lotesCharcuteriaPorVencer: { cantidad: number };
 }
 
 export interface ResultadoEnvioBalanza {
@@ -1066,6 +1067,38 @@ export interface ReporteCostoMargenLote {
   costoTotal: number | null;
   costoPorKgElaborado: number | null;
   skus: ReporteCostoMargenSku[];
+}
+
+export interface TrazabilidadLote {
+  lote: { id: number; codigo: string; estado: EstadoLoteProduccion; fechaElaboracion: string; productoElaborado: string };
+  insumos: {
+    item: string;
+    cantidad: number;
+    unidad: "gramos" | "unidad";
+    costoUnitarioAlMomento: number;
+    origenTipo: "transferencia" | "compra";
+    transferencia: { fecha: string; productoOrigen: string; pluOrigen: string } | null;
+  }[];
+  skusGenerados: { sku: string; unidades: number }[];
+}
+
+export interface TrazabilidadItem {
+  item: { id: number; nombre: string; codigo: string };
+  transferencias: { fecha: string; productoOrigen: string; cantidad: number; precioPorKg: number }[];
+  lotesQueLoUsaron: {
+    loteId: number;
+    codigo: string;
+    productoElaborado: string;
+    cantidadUsada: number;
+    ventas: { ventaId: number; fecha: string; producto: string; cantidad: number }[];
+  }[];
+}
+
+export interface ReporteConsolidado {
+  desde: string;
+  hasta: string;
+  porUnidad: { codigo: string; nombre: string; cantidadVentas: number; total: number }[];
+  consolidado: { cantidadVentas: number; total: number };
 }
 
 export const api = {
@@ -1688,6 +1721,9 @@ export const api = {
   },
   charcuteria: {
     businessUnits: () => get<BusinessUnit[]>("/api/charcuteria/business-units"),
+    obtenerConfiguracion: () => get<{ id: number; umbralVencimientoDias: number }>("/api/charcuteria/configuracion"),
+    guardarConfiguracion: (umbralVencimientoDias: number) =>
+      put<{ id: number; umbralVencimientoDias: number }>("/api/charcuteria/configuracion", { umbralVencimientoDias }),
     cambiarRol: (usuarioId: number, clave: string, rol: "admin" | "produccion" | "caja") =>
       put<Usuario>(`/api/charcuteria/usuarios/${usuarioId}/rol`, { clave, rol }),
     establecerClavePersonal: (usuarioId: number, claveNueva: string) =>
@@ -1806,6 +1842,18 @@ export const api = {
 
     reportes: {
       costoMargen: () => get<ReporteCostoMargenLote[]>("/api/charcuteria/reportes/costo-margen"),
+      trazabilidadLote: (loteId: number) =>
+        get<TrazabilidadLote>(`/api/charcuteria/reportes/trazabilidad/lote/${loteId}`),
+      trazabilidadItem: (itemId: number) =>
+        get<TrazabilidadItem>(`/api/charcuteria/reportes/trazabilidad/item/${itemId}`),
+      trazabilidadItemCsvUrl: (itemId: number) => `/api/charcuteria/reportes/trazabilidad/item/${itemId}/csv`,
+      consolidado: (desde?: string, hasta?: string) => {
+        const qs = new URLSearchParams();
+        if (desde) qs.set("desde", desde);
+        if (hasta) qs.set("hasta", hasta);
+        const query = qs.toString();
+        return get<ReporteConsolidado>(`/api/charcuteria/reportes/consolidado${query ? `?${query}` : ""}`);
+      },
     },
   },
 };

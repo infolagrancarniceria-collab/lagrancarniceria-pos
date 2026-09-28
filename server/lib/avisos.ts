@@ -15,6 +15,7 @@ export interface AvisosCriticos {
   cajasEstancadas: { cantidad: number };
   ajustesPendientesCamara: { cantidad: number };
   pedidosWebPendientes: { cantidad: number };
+  lotesCharcuteriaPorVencer: { cantidad: number };
 }
 
 // Avisos proactivos — a pedido del usuario, para no depender de entrar a
@@ -22,19 +23,21 @@ export interface AvisosCriticos {
 // en cada pedido (nada se guarda "ya avisado" acá; eso lo maneja el
 // frontend, para decidir cuándo repetir una notificación nativa).
 export async function calcularAvisosCriticos(): Promise<AvisosCriticos> {
-  const [sesionAbierta, productosConUmbral, cajasEnCamara, ajustesPendientesCamara, pedidosWebPendientes] = await Promise.all([
-    prisma.sesionCaja.findFirst({ where: { estado: "abierta" }, include: { usuarioApertura: true } }),
-    prisma.producto.findMany({
-      where: { activo: true, umbralStockBajo: { not: null } },
-      select: { stockActual: true, umbralStockBajo: true },
-    }),
-    prisma.cajaCamara.findMany({
-      where: { estado: "en_camara" },
-      select: { fechaIngreso: true, pesoInicialKg: true, saldoKg: true },
-    }),
-    prisma.cajaCamara.count({ where: { estado: "ajuste_pendiente" } }),
-    prisma.pedidoWeb.count({ where: { estado: "pendiente" } }),
-  ]);
+  const [sesionAbierta, productosConUmbral, cajasEnCamara, ajustesPendientesCamara, pedidosWebPendientes, configCharcuteria] =
+    await Promise.all([
+      prisma.sesionCaja.findFirst({ where: { estado: "abierta" }, include: { usuarioApertura: true } }),
+      prisma.producto.findMany({
+        where: { activo: true, umbralStockBajo: { not: null } },
+        select: { stockActual: true, umbralStockBajo: true },
+      }),
+      prisma.cajaCamara.findMany({
+        where: { estado: "en_camara" },
+        select: { fechaIngreso: true, pesoInicialKg: true, saldoKg: true },
+      }),
+      prisma.cajaCamara.count({ where: { estado: "ajuste_pendiente" } }),
+      prisma.pedidoWeb.count({ where: { estado: "pendiente" } }),
+      prisma.configuracionCharcuteria.findFirst(),
+    ]);
 
   // Una caja abierta es normal mientras sea la de hoy — recién es un aviso
   // si quedó de un día anterior sin cerrar (el cierre X/Z de ese día nunca
@@ -57,11 +60,28 @@ export async function calcularAvisosCriticos(): Promise<AvisosCriticos> {
     (c) => Math.abs(c.saldoKg - c.pesoInicialKg) <= EPSILON_KG && c.fechaIngreso <= limiteEstancada
   ).length;
 
+  // "Por vencer" = vence dentro del umbral configurado (7 días por
+  // defecto) y todavía tiene stock vendible en algún SKU — un lote ya
+  // vencido no es "por vencer", es un problema distinto (queda bloqueado
+  // para la venta por FEFO, ver server/lib/charcuteriaFefo.ts) que no hace
+  // falta seguir avisando acá una vez pasado.
+  const umbralDias = configCharcuteria?.umbralVencimientoDias ?? 7;
+  const hoy = new Date();
+  const limiteVencimiento = new Date(hoy.getTime() + umbralDias * 24 * 60 * 60 * 1000);
+  const lotesCharcuteriaPorVencer = await prisma.loteProduccion.count({
+    where: {
+      estado: { in: ["terminado", "envasado"] },
+      fechaVencimiento: { gte: hoy, lte: limiteVencimiento },
+      stockPorSku: { some: { saldoUnidades: { gt: 0 } } },
+    },
+  });
+
   return {
     cajaSinCerrar,
     stockBajo: { cantidad: stockBajoCantidad },
     cajasEstancadas: { cantidad: cajasEstancadasCantidad },
     ajustesPendientesCamara: { cantidad: ajustesPendientesCamara },
     pedidosWebPendientes: { cantidad: pedidosWebPendientes },
+    lotesCharcuteriaPorVencer: { cantidad: lotesCharcuteriaPorVencer },
   };
 }

@@ -14,6 +14,31 @@ charcuteriaRouter.get("/business-units", async (_req, res) => {
   res.json(unidades);
 });
 
+// --- Configuración (umbral de "por vencer") ---
+
+async function obtenerConfigCharcuteria() {
+  const existente = await prisma.configuracionCharcuteria.findFirst();
+  if (existente) return existente;
+  return prisma.configuracionCharcuteria.create({ data: {} });
+}
+
+charcuteriaRouter.get("/configuracion", async (_req, res) => {
+  res.json(await obtenerConfigCharcuteria());
+});
+
+const configSchema = z.object({ umbralVencimientoDias: z.number().int().positive() });
+
+charcuteriaRouter.put("/configuracion", async (req, res) => {
+  const parsed = configSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0].message });
+  const existente = await obtenerConfigCharcuteria();
+  const actualizada = await prisma.configuracionCharcuteria.update({
+    where: { id: existente.id },
+    data: parsed.data,
+  });
+  res.json(actualizada);
+});
+
 // --- Roles y clave personal ---
 // Sin RLS (SQLite no la soporta) — la autorización vive en cada ruta del
 // servidor, ver server/lib/rolesCharcuteria.ts.

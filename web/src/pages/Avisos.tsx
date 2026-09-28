@@ -23,7 +23,8 @@ export default function Avisos() {
     (avisos.cajaSinCerrar ||
       avisos.stockBajo.cantidad > 0 ||
       avisos.cajasEstancadas.cantidad > 0 ||
-      avisos.ajustesPendientesCamara.cantidad > 0);
+      avisos.ajustesPendientesCamara.cantidad > 0 ||
+      avisos.lotesCharcuteriaPorVencer.cantidad > 0);
 
   return (
     <div>
@@ -83,6 +84,20 @@ export default function Avisos() {
           </p>
           <Link to="/camara/ajustes-pendientes" className="boton boton-primario">
             Ir a Ajustes pendientes
+          </Link>
+        </section>
+      )}
+
+      {avisos && avisos.lotesCharcuteriaPorVencer.cantidad > 0 && (
+        <section className="tarjeta aviso-estancadas">
+          <h2>🥓 Lotes de charcutería por vencer</h2>
+          <p>
+            <strong>{avisos.lotesCharcuteriaPorVencer.cantidad}</strong> lote
+            {avisos.lotesCharcuteriaPorVencer.cantidad === 1 ? "" : "s"} con stock todavía vendible vence
+            {avisos.lotesCharcuteriaPorVencer.cantidad === 1 ? "" : "n"} dentro del umbral configurado.
+          </p>
+          <Link to="/charcuteria/lotes" className="boton boton-primario">
+            Ver lotes
           </Link>
         </section>
       )}
