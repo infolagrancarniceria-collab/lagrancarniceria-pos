@@ -55,9 +55,11 @@ export default function CharcuteriaMiClave() {
           Confirmar clave
           <input type="password" value={confirmacion} onChange={(e) => setConfirmacion(e.target.value)} required />
         </label>
-        <button type="submit" className="boton boton-primario" disabled={guardando}>
-          {guardando ? "Guardando..." : "Guardar"}
-        </button>
+        <div className="acciones-formulario">
+          <button type="submit" className="boton boton-primario" disabled={guardando}>
+            {guardando ? "Guardando..." : "Guardar"}
+          </button>
+        </div>
       </form>
     </div>
   );

@@ -152,9 +152,11 @@ export default function CharcuteriaTransferencias() {
           <p className="error">No hay ningún precio de referencia para este ítem — debes ingresarlo a mano.</p>
         )}
 
-        <button type="submit" className="boton boton-primario" disabled={guardando}>
-          {guardando ? "Guardando..." : "Registrar transferencia"}
-        </button>
+        <div className="acciones-formulario">
+          <button type="submit" className="boton boton-primario" disabled={guardando}>
+            {guardando ? "Guardando..." : "Registrar transferencia"}
+          </button>
+        </div>
       </form>
 
       <table className="tabla">

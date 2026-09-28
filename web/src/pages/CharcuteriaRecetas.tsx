@@ -173,9 +173,11 @@ export default function CharcuteriaRecetas() {
               </button>
             </div>
           ))}
-          <button type="button" onClick={() => setFilas((actual) => [...actual, filaVacia()])}>
-            + Agregar ingrediente
-          </button>
+          <div className="acciones-formulario">
+            <button type="button" onClick={() => setFilas((actual) => [...actual, filaVacia()])}>
+              + Agregar ingrediente
+            </button>
+          </div>
 
           <div className="acciones-formulario">
             <button type="submit" className="boton boton-primario" disabled={guardando}>

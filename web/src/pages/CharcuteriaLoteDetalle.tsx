@@ -260,9 +260,11 @@ export default function CharcuteriaLoteDetalle() {
               <input type="password" value={claveVencimiento} onChange={(e) => setClaveVencimiento(e.target.value)} required />
             </label>
           </div>
-          <button type="submit" className="boton boton-primario" disabled={guardandoVencimiento}>
-            {guardandoVencimiento ? "Guardando..." : "Guardar"}
-          </button>
+          <div className="acciones-formulario">
+            <button type="submit" className="boton boton-primario" disabled={guardandoVencimiento}>
+              {guardandoVencimiento ? "Guardando..." : "Guardar"}
+            </button>
+          </div>
         </form>
       )}
 
@@ -369,9 +371,11 @@ export default function CharcuteriaLoteDetalle() {
               Parámetros reales del proceso
               <textarea value={parametrosReales} onChange={(e) => setParametrosReales(e.target.value)} rows={2} />
             </label>
-            <button type="submit" className="boton boton-primario" disabled={cerrando}>
-              {cerrando ? "Cerrando..." : "Cerrar lote"}
-            </button>
+            <div className="acciones-formulario">
+              <button type="submit" className="boton boton-primario" disabled={cerrando}>
+                {cerrando ? "Cerrando..." : "Cerrar lote"}
+              </button>
+            </div>
           </form>
         </div>
       )}
@@ -435,9 +439,11 @@ export default function CharcuteriaLoteDetalle() {
                 <input type="number" min="1" value={etiquetasConsumidas} onChange={(e) => setEtiquetasConsumidas(e.target.value)} />
               </label>
             </div>
-            <button type="submit" className="boton boton-primario" disabled={envasando}>
-              {envasando ? "Guardando..." : "Registrar envasado"}
-            </button>
+            <div className="acciones-formulario">
+              <button type="submit" className="boton boton-primario" disabled={envasando}>
+                {envasando ? "Guardando..." : "Registrar envasado"}
+              </button>
+            </div>
           </form>
         </div>
       )}

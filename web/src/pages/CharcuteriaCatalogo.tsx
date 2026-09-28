@@ -218,9 +218,11 @@ export default function CharcuteriaCatalogo() {
             </div>
           )}
 
-          <button type="submit" className="boton boton-primario" disabled={guardando}>
-            {guardando ? "Guardando..." : "Crear ítem"}
-          </button>
+          <div className="acciones-formulario">
+            <button type="submit" className="boton boton-primario" disabled={guardando}>
+              {guardando ? "Guardando..." : "Crear ítem"}
+            </button>
+          </div>
         </form>
       )}
 

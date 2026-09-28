@@ -187,11 +187,14 @@ charcuteriaLotesRouter.post("/:id/insumos", async (req, res) => {
 
     // pesoEntradaKg se acumula solo con lo que sea materia_prima medida en
     // gramos — insumos (sal, especias, tripas) no cuentan como "entrada de
-    // carne" para el cálculo de merma.
+    // carne" para el cálculo de merma. Se arma el valor a mano (en vez de
+    // usar { increment } de Prisma) porque el campo empieza en null, y en
+    // SQL "null + lo que sea" sigue dando null — { increment } nunca
+    // lograba dejar el primer valor puesto.
     if (item.tipoItem === "materia_prima" && item.unidadMedida === "gramos") {
       await tx.loteProduccion.update({
         where: { id: loteId },
-        data: { pesoEntradaKg: { increment: data.cantidad / 1000 } },
+        data: { pesoEntradaKg: (lote.pesoEntradaKg ?? 0) + data.cantidad / 1000 },
       });
     }
 
