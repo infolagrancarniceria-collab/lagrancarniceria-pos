@@ -1728,6 +1728,9 @@ export const api = {
       put<Usuario>(`/api/charcuteria/usuarios/${usuarioId}/rol`, { clave, rol }),
     establecerClavePersonal: (usuarioId: number, claveNueva: string) =>
       put<void>(`/api/charcuteria/usuarios/${usuarioId}/clave-personal`, { claveNueva }),
+    // Gate de entrada a las secciones sensibles (Configuración, Roles,
+    // Costo y margen) — ver SeccionProtegidaCharcuteria.
+    verificarClaveSensible: (clave: string) => post<void>("/api/charcuteria/verificar-clave-sensible", { clave }),
 
     items: {
       listar: (params: { tipoItem?: TipoItemCharcuteria; buscar?: string; incluirInactivos?: boolean } = {}) => {

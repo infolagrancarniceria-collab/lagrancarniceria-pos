@@ -95,6 +95,29 @@ charcuteriaRouter.put("/usuarios/:id/clave-personal", async (req, res) => {
   res.status(204).send();
 });
 
+// --- Acceso a las secciones sensibles del módulo ---
+// Configuración, Roles y el reporte de Costo/margen piden la clave de
+// supervisor antes de mostrarse (no una acción puntual dentro de la
+// pantalla, sino para entrar a la pantalla misma) — misma clave que ya se
+// usa en el resto del sistema, para no sumar una más que recordar. Este
+// endpoint solo verifica; no guarda ni ata la verificación a ningún
+// usuario, así que el front la vuelve a pedir cada vez que se entra.
+const verificarClaveSensibleSchema = z.object({ clave: z.string().min(1, "Falta la clave de supervisor") });
+
+charcuteriaRouter.post("/verificar-clave-sensible", async (req, res) => {
+  const parsed = verificarClaveSensibleSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0].message });
+
+  const claveSupervisor = await prisma.claveSupervisor.findFirst();
+  if (!claveSupervisor) return res.status(403).json({ error: "Clave de supervisor incorrecta" });
+  const resultado = verificarClaveConLimite(req.ip ?? "desconocido", parsed.data.clave, claveSupervisor.hashClave);
+  if (resultado.bloqueado) {
+    return res.status(429).json({ error: `Demasiados intentos fallidos — espera ${resultado.segundosRestantes} segundos e intenta de nuevo` });
+  }
+  if (!resultado.valida) return res.status(403).json({ error: "Clave de supervisor incorrecta" });
+  res.status(204).send();
+});
+
 // --- Catálogo (ItemCharcuteria) ---
 
 export const TIPOS_ITEM = ["materia_prima", "insumo", "envase_etiqueta", "producto_elaborado", "producto_terminado"] as const;

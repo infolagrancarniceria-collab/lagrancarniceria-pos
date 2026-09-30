@@ -60,6 +60,7 @@ import CharcuteriaTrazabilidad from "./pages/CharcuteriaTrazabilidad";
 import CharcuteriaConsolidado from "./pages/CharcuteriaConsolidado";
 import CharcuteriaMiClave from "./pages/CharcuteriaMiClave";
 import CharcuteriaRoles from "./pages/CharcuteriaRoles";
+import CharcuteriaConfiguracion from "./pages/CharcuteriaConfiguracion";
 
 export default function App() {
   // En "modo caja exclusiva" (ver web/src/lib/modoCaja.ts), este PC arranca
@@ -129,6 +130,7 @@ export default function App() {
             <Route path="/charcuteria/reportes/consolidado" element={<CharcuteriaConsolidado />} />
             <Route path="/charcuteria/mi-clave" element={<CharcuteriaMiClave />} />
             <Route path="/charcuteria/roles" element={<CharcuteriaRoles />} />
+            <Route path="/charcuteria/configuracion" element={<CharcuteriaConfiguracion />} />
           </Route>
         </Route>
         <Route path="/" element={<Navigate to={inicio} replace />} />

@@ -137,6 +137,18 @@ describe("Charcutería — costeo, merma y trazabilidad de un lote", () => {
   });
 });
 
+describe("Charcutería — clave de supervisor para entrar a secciones sensibles", () => {
+  it("acepta la clave de supervisor vigente y rechaza una incorrecta", async () => {
+    await crearFixturesBasicas(); // deja la ClaveSupervisor en "1234"
+
+    const ok = await api.post("/api/charcuteria/verificar-clave-sensible").send({ clave: "1234" });
+    expect(ok.status).toBe(204);
+
+    const mal = await api.post("/api/charcuteria/verificar-clave-sensible").send({ clave: "no-es-esta" });
+    expect(mal.status).toBe(403);
+  });
+});
+
 describe("Charcutería — vincular un producto existente en vez de duplicarlo", () => {
   it("vincula un producto de carnicería como espejo, conservando su PLU y stock, sin crear uno nuevo", async () => {
     const { usuario, productoCarniceria } = await crearFixturesBasicas();

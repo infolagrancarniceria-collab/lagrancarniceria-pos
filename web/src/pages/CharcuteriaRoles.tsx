@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api, type Usuario } from "../api";
 import { mostrarToast } from "../lib/toast";
 import ModalAlerta from "../components/ModalAlerta";
+import SeccionProtegidaCharcuteria from "../components/SeccionProtegidaCharcuteria";
 
 const ETIQUETAS_ROL: Record<string, string> = {
   admin: "Admin (ve costos/márgenes, edita vencimientos)",
@@ -9,7 +10,7 @@ const ETIQUETAS_ROL: Record<string, string> = {
   caja: "Caja (solo vende — es el default)",
 };
 
-export default function CharcuteriaRoles() {
+function CharcuteriaRolesContenido() {
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [clave, setClave] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -86,5 +87,13 @@ export default function CharcuteriaRoles() {
         </tbody>
       </table>
     </div>
+  );
+}
+
+export default function CharcuteriaRoles() {
+  return (
+    <SeccionProtegidaCharcuteria>
+      <CharcuteriaRolesContenido />
+    </SeccionProtegidaCharcuteria>
   );
 }

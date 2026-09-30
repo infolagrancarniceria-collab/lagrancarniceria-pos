@@ -1,7 +1,4 @@
-import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api } from "../api";
-import { mostrarToast } from "../lib/toast";
 
 function Opcion({ to, emoji, titulo, descripcion }: { to: string; emoji: string; titulo: string; descripcion: string }) {
   return (
@@ -15,26 +12,6 @@ function Opcion({ to, emoji, titulo, descripcion }: { to: string; emoji: string;
 }
 
 export default function Charcuteria() {
-  const [umbral, setUmbral] = useState("");
-  const [guardando, setGuardando] = useState(false);
-
-  useEffect(() => {
-    api.charcuteria.obtenerConfiguracion().then((c) => setUmbral(String(c.umbralVencimientoDias)));
-  }, []);
-
-  async function guardarUmbral(e: React.FormEvent) {
-    e.preventDefault();
-    const dias = Number(umbral);
-    if (!dias || dias <= 0) return;
-    setGuardando(true);
-    try {
-      await api.charcuteria.guardarConfiguracion(dias);
-      mostrarToast("Umbral guardado");
-    } finally {
-      setGuardando(false);
-    }
-  }
-
   return (
     <div>
       <h1>🥓 Charcutería</h1>
@@ -90,27 +67,18 @@ export default function Charcuteria() {
       <h2>Configuración</h2>
       <div className="grilla-camara">
         <Opcion to="/charcuteria/mi-clave" emoji="🔑" titulo="Mi clave personal" descripcion="Configura tu PIN para acciones que lo pidan." />
-        <Opcion to="/charcuteria/roles" emoji="🧑‍🍳" titulo="Roles" descripcion="Asignar admin/producción/caja a cada usuario (requiere clave de supervisor)." />
-      </div>
-
-      <div className="tarjeta">
-        <h2>Umbral de alerta de vencimiento</h2>
-        <form onSubmit={guardarUmbral} className="fila-inline">
-          <label>
-            Avisar cuando falten
-            <input
-              type="number"
-              min="1"
-              className="input-chico"
-              value={umbral}
-              onChange={(e) => setUmbral(e.target.value)}
-            />
-          </label>
-          días o menos para el vencimiento
-          <button type="submit" className="boton boton-primario" disabled={guardando}>
-            {guardando ? "Guardando..." : "Guardar"}
-          </button>
-        </form>
+        <Opcion
+          to="/charcuteria/roles"
+          emoji="🧑‍🍳"
+          titulo="Roles"
+          descripcion="Asignar admin/producción/caja a cada usuario (requiere clave de supervisor)."
+        />
+        <Opcion
+          to="/charcuteria/configuracion"
+          emoji="⚙️"
+          titulo="Configuración"
+          descripcion="Umbral de alerta de vencimiento (requiere clave de supervisor)."
+        />
       </div>
     </div>
   );
