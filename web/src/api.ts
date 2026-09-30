@@ -933,7 +933,7 @@ export interface ItemCharcuteria {
   productoElaboradoId: number | null;
   productoElaborado: { id: number; nombre: string } | null;
   productoEspejoId: number | null;
-  productoEspejo: { id: number; precio: number } | null;
+  productoEspejo: { id: number; plu: string; precio: number; stockActual: number } | null;
   linea: "tabla" | "fiestas" | null;
   costoReferencia: number | null;
   ingredientes: string | null;
@@ -1755,11 +1755,17 @@ export const api = {
         productoElaboradoId?: number | null;
         linea?: "tabla" | "fiestas" | null;
         precioVenta?: number;
+        productoExistenteId?: number | null;
       }) => post<ItemCharcuteria>("/api/charcuteria/items", data),
       editar: (id: number, data: Record<string, unknown> & { usuarioId: number }) =>
         put<ItemCharcuteria>(`/api/charcuteria/items/${id}`, data),
       eliminar: (id: number) => del<void>(`/api/charcuteria/items/${id}`),
     },
+    // Productos de carnicería que se pueden vincular como espejo de un SKU
+    // nuevo (ej. el Pastrami que ya existía antes de este módulo) — para
+    // no duplicarlos, ver POST /items con productoExistenteId.
+    productosVinculables: (buscar: string) =>
+      get<Producto[]>(`/api/charcuteria/productos-vinculables?buscar=${encodeURIComponent(buscar)}`),
 
     recetas: {
       listar: (params: { productoElaboradoId?: number; soloActivas?: boolean } = {}) => {
