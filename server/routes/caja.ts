@@ -1281,6 +1281,9 @@ cajaRouter.post("/creditos/:pagoId/cobrar", async (req, res) => {
       usuarioCobroId: usuarioId,
       fechaCobro: new Date(),
     },
+    // Con lo necesario para armar el comprobante imprimible (ver
+    // ComprobantePagoCredito) sin pedir datos aparte.
+    include: { venta: true, usuarioCobro: true },
   });
   res.json(pagoActualizado);
 });

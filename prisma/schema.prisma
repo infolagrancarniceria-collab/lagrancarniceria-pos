@@ -704,6 +704,13 @@ model Cliente {
   notas    String?
   creadoEn DateTime @default(now())
 
+  // Soft-delete (mismo criterio que Comuna/Producto): "eliminar" un cliente
+  // desde la pantalla Clientes solo lo oculta de la lista — nunca se borra
+  // la fila de verdad, porque su historial de PagoVenta (quién pagó qué)
+  // tiene que seguir existiendo. Bloqueado en el servidor si el cliente
+  // todavía tiene deuda pendiente sin cobrar (ver DELETE /clientes/:id).
+  activo Boolean @default(true)
+
   pagos PagoVenta[]
 }
 

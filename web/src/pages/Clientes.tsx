@@ -13,6 +13,11 @@ export default function Clientes() {
   const [estadoCuenta, setEstadoCuenta] = useState<EstadoCuentaCliente | null>(null);
   const [cargandoEstado, setCargandoEstado] = useState(false);
 
+  const [editandoId, setEditandoId] = useState<number | null>(null);
+  const [editNombre, setEditNombre] = useState("");
+  const [editTelefono, setEditTelefono] = useState("");
+  const [editRut, setEditRut] = useState("");
+
   function cargar() {
     setCargando(true);
     api.clientes
@@ -25,6 +30,45 @@ export default function Clientes() {
   useEffect(() => {
     cargar();
   }, []);
+
+  function comenzarEdicion(c: Cliente) {
+    setEditandoId(c.id);
+    setEditNombre(c.nombre);
+    setEditTelefono(c.telefono ?? "");
+    setEditRut(c.rut ?? "");
+  }
+
+  async function guardarEdicion(id: number) {
+    setError(null);
+    if (!editNombre.trim()) {
+      setError("El nombre no puede estar vacío");
+      return;
+    }
+    try {
+      await api.clientes.actualizar(id, {
+        nombre: editNombre.trim(),
+        telefono: editTelefono.trim() || null,
+        rut: editRut.trim() || null,
+      });
+      setEditandoId(null);
+      cargar();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function eliminar(c: Cliente) {
+    const confirmado = window.confirm(
+      `¿Eliminar a ${c.nombre} de la lista de clientes? Su historial de créditos/transferencias se conserva, solo deja de listarse acá.`
+    );
+    if (!confirmado) return;
+    try {
+      await api.clientes.eliminar(c.id);
+      cargar();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
 
   function abrirEstadoCuenta(id: number) {
     setClienteAbiertoId(id);
@@ -144,20 +188,50 @@ export default function Clientes() {
           </tr>
         </thead>
         <tbody>
-          {filtrados.map((c) => (
-            <tr key={c.id}>
-              <td>{codigoCliente(c.id)}</td>
-              <td>{c.nombre}</td>
-              <td>{c.telefono ?? "—"}</td>
-              <td>{c.rut ?? "—"}</td>
-              <td className={c.deudaPendiente ? "error" : ""}>{formatoCLP(c.deudaPendiente ?? 0)}</td>
-              <td>
-                <button type="button" onClick={() => abrirEstadoCuenta(c.id)}>
-                  Ver estado de cuenta
-                </button>
-              </td>
-            </tr>
-          ))}
+          {filtrados.map((c) =>
+            editandoId === c.id ? (
+              <tr key={c.id}>
+                <td>{codigoCliente(c.id)}</td>
+                <td>
+                  <input value={editNombre} onChange={(e) => setEditNombre(e.target.value)} autoFocus />
+                </td>
+                <td>
+                  <input value={editTelefono} onChange={(e) => setEditTelefono(e.target.value)} />
+                </td>
+                <td>
+                  <input value={editRut} onChange={(e) => setEditRut(e.target.value)} />
+                </td>
+                <td className={c.deudaPendiente ? "error" : ""}>{formatoCLP(c.deudaPendiente ?? 0)}</td>
+                <td className="fila-inline">
+                  <button type="button" onClick={() => guardarEdicion(c.id)}>
+                    Guardar
+                  </button>
+                  <button type="button" onClick={() => setEditandoId(null)}>
+                    Cancelar
+                  </button>
+                </td>
+              </tr>
+            ) : (
+              <tr key={c.id}>
+                <td>{codigoCliente(c.id)}</td>
+                <td>{c.nombre}</td>
+                <td>{c.telefono ?? "—"}</td>
+                <td>{c.rut ?? "—"}</td>
+                <td className={c.deudaPendiente ? "error" : ""}>{formatoCLP(c.deudaPendiente ?? 0)}</td>
+                <td className="fila-inline">
+                  <button type="button" onClick={() => abrirEstadoCuenta(c.id)}>
+                    Ver estado de cuenta
+                  </button>
+                  <button type="button" onClick={() => comenzarEdicion(c)}>
+                    Editar
+                  </button>
+                  <button type="button" className="boton-quitar-item" title="Eliminar" onClick={() => eliminar(c)}>
+                    ✕
+                  </button>
+                </td>
+              </tr>
+            )
+          )}
           {!cargando && filtrados.length === 0 && (
             <tr>
               <td colSpan={6}>No hay clientes registrados todavía.</td>

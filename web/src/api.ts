@@ -658,6 +658,10 @@ export interface PagoVenta {
   medioCobro: MedioCobro | null;
   sesionCajaCobroId: number | null;
   usuarioCobroId: number | null;
+  // Solo viene en la respuesta de cobrarCredito() (ver
+  // ComprobantePagoCredito) — en el resto de los endpoints basta con
+  // usuarioCobroId.
+  usuarioCobro?: { id: number; nombre: string } | null;
   fechaCobro: string | null;
 }
 
@@ -1526,6 +1530,7 @@ export const api = {
       id: number,
       data: { nombre: string; telefono?: string | null; rut?: string | null; notas?: string | null }
     ) => put<Cliente>(`/api/clientes/${id}`, data),
+    eliminar: (id: number) => del<void>(`/api/clientes/${id}`),
     estadoCuenta: (id: number) => get<EstadoCuentaCliente>(`/api/clientes/${id}/estado-cuenta`),
   },
   avisos: {

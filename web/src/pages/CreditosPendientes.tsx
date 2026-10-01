@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, codigoCliente, formatoCLP, type MedioCobro, type PagoVenta } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
+import { imprimirSilencioso as imprimirVale } from "../lib/imprimir";
 import ModalAlerta from "../components/ModalAlerta";
+import ComprobantePagoCredito from "../components/ComprobantePagoCredito";
 
 // Crédito y transferencia funcionan igual (quedan pendientes hasta que se
 // marcan como cobrados/confirmados) — se llevan en la misma pantalla, con
@@ -32,6 +34,10 @@ export default function CreditosPendientes() {
   // fila marcada.
   const [seleccionados, setSeleccionados] = useState<Set<number>>(new Set());
   const [cobrandoLote, setCobrandoLote] = useState(false);
+  // Comprobante del último cobro individual, para poder imprimirlo como
+  // respaldo de que quedó pagado — a pedido del usuario, no se imprime
+  // solo, se ofrece el botón y la persona decide.
+  const [comprobante, setComprobante] = useState<PagoVenta | null>(null);
 
   function cargar() {
     setCargando(true);
@@ -62,8 +68,9 @@ export default function CreditosPendientes() {
     );
     if (!confirmado) return;
     try {
-      await api.caja.cobrarCredito(pago.id, { medioCobro, usuarioId: usuario.id });
+      const pagoActualizado = await api.caja.cobrarCredito(pago.id, { medioCobro, usuarioId: usuario.id });
       setMensaje(`Cobro registrado: ${pago.clienteNombre} — ${formatoCLP(pago.monto)}`);
+      setComprobante(pagoActualizado);
       cargar();
     } catch (e) {
       setError((e as Error).message);
@@ -126,121 +133,133 @@ export default function CreditosPendientes() {
   }
 
   return (
-    <div>
-      <h1>Créditos y transferencias pendientes</h1>
-      <p className="ayuda">
-        Ventas que quedaron a crédito (fiadas) o esperando que se confirme una transferencia, y todavía no se han
-        cobrado. Al cobrarlas, esa plata se suma al efectivo o tarjeta del día en que se cobra — no del día en que se
-        hizo la venta original. Para ver la deuda total de un cliente (sumando crédito y transferencia), revisa{" "}
-        <Link to="/clientes">Clientes</Link>.
-      </p>
-      {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
-      {mensaje && <p className="exito">{mensaje}</p>}
+    <>
+      <div className="no-imprimir">
+        <h1>Créditos y transferencias pendientes</h1>
+        <p className="ayuda">
+          Ventas que quedaron a crédito (fiadas) o esperando que se confirme una transferencia, y todavía no se han
+          cobrado. Al cobrarlas, esa plata se suma al efectivo o tarjeta del día en que se cobra — no del día en que
+          se hizo la venta original. Para ver la deuda total de un cliente (sumando crédito y transferencia),
+          revisa <Link to="/clientes">Clientes</Link>.
+        </p>
+        {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
+        {mensaje && <p className="exito">{mensaje}</p>}
 
-      <div className="filtros no-imprimir">
-        {(Object.keys(ETIQUETAS_FILTRO) as Filtro[]).map((f) => (
-          <button
-            key={f}
-            type="button"
-            className={`boton ${filtro === f ? "boton-primario" : ""}`}
-            onClick={() => setFiltro(f)}
-          >
-            {ETIQUETAS_FILTRO[f]}
-          </button>
-        ))}
+        <div className="filtros">
+          {(Object.keys(ETIQUETAS_FILTRO) as Filtro[]).map((f) => (
+            <button
+              key={f}
+              type="button"
+              className={`boton ${filtro === f ? "boton-primario" : ""}`}
+              onClick={() => setFiltro(f)}
+            >
+              {ETIQUETAS_FILTRO[f]}
+            </button>
+          ))}
+        </div>
+
+        {cargando && <p>Cargando...</p>}
+
+        {!cargando && creditos.length > 0 && (
+          <div className="tarjeta">
+            <h2>Total pendiente por cliente</h2>
+            <table className="tabla">
+              <thead>
+                <tr>
+                  <th>Cliente</th>
+                  <th>Debe</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Array.from(subtotalesPorCliente.entries()).map(([nombre, monto]) => (
+                  <tr key={nombre}>
+                    <td>{nombre}</td>
+                    <td>{formatoCLP(monto)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p>
+              <strong>Total pendiente:</strong> {formatoCLP(totalPendiente)}
+            </p>
+          </div>
+        )}
+
+        {seleccionados.size > 0 && (
+          <div className="tarjeta fila-inline">
+            <strong>
+              {seleccionados.size} seleccionado(s) — {formatoCLP(totalSeleccionado)}
+            </strong>
+            <button type="button" disabled={cobrandoLote} onClick={() => cobrarSeleccionados("efectivo")}>
+              {cobrandoLote ? "Cobrando..." : "Cobrar seleccionados en efectivo"}
+            </button>
+            <button type="button" disabled={cobrandoLote} onClick={() => cobrarSeleccionados("tarjeta")}>
+              {cobrandoLote ? "Cobrando..." : "Cobrar seleccionados con tarjeta"}
+            </button>
+            <button type="button" disabled={cobrandoLote} onClick={() => setSeleccionados(new Set())}>
+              Quitar selección
+            </button>
+          </div>
+        )}
+
+        <table className="tabla">
+          <thead>
+            <tr>
+              <th>
+                <input
+                  type="checkbox"
+                  checked={creditos.length > 0 && seleccionados.size === creditos.length}
+                  onChange={alternarSeleccionTodos}
+                  disabled={creditos.length === 0}
+                />
+              </th>
+              <th>Medio</th>
+              <th>Cliente</th>
+              <th>Monto</th>
+              <th>Venta</th>
+              <th>Fecha de la venta</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {creditos.map((c) => (
+              <tr key={c.id}>
+                <td>
+                  <input
+                    type="checkbox"
+                    checked={seleccionados.has(c.id)}
+                    onChange={() => alternarSeleccion(c.id)}
+                  />
+                </td>
+                <td>{c.medio === "transferencia" ? "Transferencia" : "Crédito"}</td>
+                <td>{c.clienteId != null ? `${codigoCliente(c.clienteId)} — ${c.clienteNombre}` : c.clienteNombre}</td>
+                <td>{formatoCLP(c.monto)}</td>
+                <td>
+                  #{c.ventaId} — {c.venta ? formatoCLP(c.venta.total) : ""}
+                </td>
+                <td>{c.venta ? new Date(c.venta.fecha).toLocaleString("es-CL") : ""}</td>
+                <td className="fila-inline">
+                  <button type="button" onClick={() => cobrar(c, "efectivo")}>
+                    Cobrar en efectivo
+                  </button>
+                  <button type="button" onClick={() => cobrar(c, "tarjeta")}>
+                    Cobrar con tarjeta
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {!cargando && creditos.length === 0 && (
+              <tr>
+                <td colSpan={7}>No hay créditos ni transferencias pendientes.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </div>
 
-      {cargando && <p>Cargando...</p>}
-
-      {!cargando && creditos.length > 0 && (
-        <div className="tarjeta">
-          <h2>Total pendiente por cliente</h2>
-          <table className="tabla">
-            <thead>
-              <tr>
-                <th>Cliente</th>
-                <th>Debe</th>
-              </tr>
-            </thead>
-            <tbody>
-              {Array.from(subtotalesPorCliente.entries()).map(([nombre, monto]) => (
-                <tr key={nombre}>
-                  <td>{nombre}</td>
-                  <td>{formatoCLP(monto)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <p>
-            <strong>Total pendiente:</strong> {formatoCLP(totalPendiente)}
-          </p>
-        </div>
+      {comprobante && (
+        <ComprobantePagoCredito pago={comprobante} onImprimir={imprimirVale} onCerrar={() => setComprobante(null)} />
       )}
-
-      {seleccionados.size > 0 && (
-        <div className="tarjeta fila-inline">
-          <strong>
-            {seleccionados.size} seleccionado(s) — {formatoCLP(totalSeleccionado)}
-          </strong>
-          <button type="button" disabled={cobrandoLote} onClick={() => cobrarSeleccionados("efectivo")}>
-            {cobrandoLote ? "Cobrando..." : "Cobrar seleccionados en efectivo"}
-          </button>
-          <button type="button" disabled={cobrandoLote} onClick={() => cobrarSeleccionados("tarjeta")}>
-            {cobrandoLote ? "Cobrando..." : "Cobrar seleccionados con tarjeta"}
-          </button>
-          <button type="button" disabled={cobrandoLote} onClick={() => setSeleccionados(new Set())}>
-            Quitar selección
-          </button>
-        </div>
-      )}
-
-      <table className="tabla">
-        <thead>
-          <tr>
-            <th>
-              <input
-                type="checkbox"
-                checked={creditos.length > 0 && seleccionados.size === creditos.length}
-                onChange={alternarSeleccionTodos}
-                disabled={creditos.length === 0}
-              />
-            </th>
-            <th>Medio</th>
-            <th>Cliente</th>
-            <th>Monto</th>
-            <th>Venta</th>
-            <th>Fecha de la venta</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {creditos.map((c) => (
-            <tr key={c.id}>
-              <td>
-                <input type="checkbox" checked={seleccionados.has(c.id)} onChange={() => alternarSeleccion(c.id)} />
-              </td>
-              <td>{c.medio === "transferencia" ? "Transferencia" : "Crédito"}</td>
-              <td>{c.clienteId != null ? `${codigoCliente(c.clienteId)} — ${c.clienteNombre}` : c.clienteNombre}</td>
-              <td>{formatoCLP(c.monto)}</td>
-              <td>#{c.ventaId} — {c.venta ? formatoCLP(c.venta.total) : ""}</td>
-              <td>{c.venta ? new Date(c.venta.fecha).toLocaleString("es-CL") : ""}</td>
-              <td className="fila-inline">
-                <button type="button" onClick={() => cobrar(c, "efectivo")}>
-                  Cobrar en efectivo
-                </button>
-                <button type="button" onClick={() => cobrar(c, "tarjeta")}>
-                  Cobrar con tarjeta
-                </button>
-              </td>
-            </tr>
-          ))}
-          {!cargando && creditos.length === 0 && (
-            <tr>
-              <td colSpan={7}>No hay créditos ni transferencias pendientes.</td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-    </div>
+    </>
   );
 }
