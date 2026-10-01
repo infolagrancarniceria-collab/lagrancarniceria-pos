@@ -939,6 +939,7 @@ export interface ItemCharcuteria {
   productoEspejoId: number | null;
   productoEspejo: { id: number; plu: string; precio: number; stockActual: number } | null;
   linea: "tabla" | "fiestas" | null;
+  categoria: string | null;
   costoReferencia: number | null;
   ingredientes: string | null;
   alergenos: string | null;
@@ -962,12 +963,25 @@ export interface Receta {
   productoElaborado: ItemCharcuteria;
   version: number;
   activa: boolean;
-  rendimientoEsperadoPct: number;
+  // null = importada desde el programa anterior, todavía sin confirmar —
+  // no se puede usar para crear un lote (ver POST /charcuteria/lotes).
+  rendimientoEsperadoPct: number | null;
   dosisSalesCurantesPorKg: number | null;
   parametrosProceso: string | null;
   notas: string | null;
   creadoEn: string;
   ingredientes: RecetaIngrediente[];
+}
+
+export interface ResultadoImportarRecetas {
+  creadas: {
+    nombre: string;
+    recetaId: number;
+    ingredientesCreados: number;
+    ingredientesReusados: number;
+    ingredientesOmitidos: string[];
+  }[];
+  omitidas: { nombre: string; motivo: string }[];
 }
 
 export interface TransferenciaInterna {
@@ -1762,6 +1776,7 @@ export const api = {
         formatoGramos?: number | null;
         productoElaboradoId?: number | null;
         linea?: "tabla" | "fiestas" | null;
+        categoria?: string | null;
         precioVenta?: number;
         productoExistenteId?: number | null;
       }) => post<ItemCharcuteria>("/api/charcuteria/items", data),
@@ -1793,6 +1808,11 @@ export const api = {
         notas?: string | null;
         ingredientes: { itemId: number; cantidadPorLoteBase: number; unidad: "gramos" | "unidad" }[];
       }) => post<Receta>("/api/charcuteria/recetas", data),
+      // Importa el archivo JSON exportado por el programa anterior — ver
+      // comentario en server/routes/charcuteriaRecetas.ts para el detalle
+      // de qué trae y qué se deja afuera (las "pruebas" no se importan).
+      importarJson: (usuarioId: number, datos: unknown) =>
+        post<ResultadoImportarRecetas>("/api/charcuteria/recetas/importar-json", { usuarioId, datos }),
     },
 
     transferencias: {

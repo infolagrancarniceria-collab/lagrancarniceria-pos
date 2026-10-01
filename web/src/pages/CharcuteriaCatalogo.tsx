@@ -22,6 +22,7 @@ function formularioVacio() {
     formatoGramos: "",
     productoElaboradoId: "",
     linea: "" as "" | "tabla" | "fiestas",
+    categoria: "",
     precioVenta: "",
     vidaUtilDias: "",
     ingredientes: "",
@@ -112,6 +113,7 @@ export default function CharcuteriaCatalogo() {
         formatoGramos,
         productoElaboradoId: form.productoElaboradoId ? Number(form.productoElaboradoId) : null,
         linea: form.linea || null,
+        categoria: form.categoria.trim() || null,
         precioVenta: form.precioVenta ? Number(form.precioVenta) : undefined,
         vidaUtilDias: form.vidaUtilDias ? Number(form.vidaUtilDias) : null,
         ingredientes: form.ingredientes.trim() || null,
@@ -195,6 +197,14 @@ export default function CharcuteriaCatalogo() {
                 <option value="gramos">Peso (gramos)</option>
                 <option value="unidad">Unidades</option>
               </select>
+            </label>
+            <label>
+              Categoría (opcional)
+              <input
+                value={form.categoria}
+                onChange={(e) => setForm({ ...form, categoria: e.target.value })}
+                placeholder="ej. Longanizas, Embutidos, Ahumados"
+              />
             </label>
           </div>
 
@@ -343,6 +353,7 @@ export default function CharcuteriaCatalogo() {
             <th>Código</th>
             <th>Nombre</th>
             <th>Tipo</th>
+            <th>Categoría</th>
             <th>Stock</th>
             <th>Precio venta</th>
             <th>Costo ref.</th>
@@ -354,6 +365,7 @@ export default function CharcuteriaCatalogo() {
               <td>{i.codigo}</td>
               <td>{i.nombre}</td>
               <td>{ETIQUETAS_TIPO[i.tipoItem]}</td>
+              <td>{i.categoria ?? "—"}</td>
               <td>
                 {i.stockActual} {i.unidadMedida === "gramos" ? "g" : "un."}
               </td>
@@ -363,7 +375,7 @@ export default function CharcuteriaCatalogo() {
           ))}
           {items.length === 0 && (
             <tr>
-              <td colSpan={6}>Sin ítems en el catálogo todavía.</td>
+              <td colSpan={7}>Sin ítems en el catálogo todavía.</td>
             </tr>
           )}
         </tbody>

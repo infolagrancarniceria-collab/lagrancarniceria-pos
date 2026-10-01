@@ -176,6 +176,9 @@ const crearItemSchema = z
     formatoGramos: z.number().int().positive().optional().nullable(),
     productoElaboradoId: z.number().int().positive().optional().nullable(),
     linea: z.enum(["tabla", "fiestas"]).optional().nullable(),
+    // Agrupación libre (ej. "Longanizas", "Embutidos", "Ahumados") — solo
+    // para organizar el catálogo, no cambia ningún comportamiento.
+    categoria: z.string().trim().optional().nullable(),
     // Precio de venta con IVA para el SKU — se copia a la fila espejo en
     // Producto (ver más abajo); no se guarda en ItemCharcuteria porque el
     // precio real de venta siempre vive en Producto.precio, para no tener
@@ -328,6 +331,7 @@ charcuteriaRouter.post("/items", async (req, res) => {
         formatoGramos: data.formatoGramos ?? null,
         productoElaboradoId: data.productoElaboradoId ?? null,
         linea: data.linea ?? null,
+        categoria: data.categoria ?? null,
         productoEspejoId,
         creadoPorId: data.usuarioId,
       },
