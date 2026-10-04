@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { prisma } from "../db";
 import { hashClave, verificarClaveConLimite } from "../lib/clave";
 import { decodificarCodigoBalanza } from "../lib/codigoBarras";
@@ -593,23 +593,40 @@ cajaRouter.post("/ventas/desde-pedido-web/:pedidoId", async (req, res) => {
     comunaId = comuna.id;
   }
 
-  const venta = await prisma.venta.create({
-    data: {
-      sesionCajaId: sesion.id,
-      usuarioId,
-      esAuxiliar: true,
-      canal: "online",
-      origenPedidoWebId: pedido.id,
-      comentario: pedido.comentario,
-      esDespacho: pedido.tipoEntrega === "despacho",
-      comunaId,
-      costoEnvio: pedido.tipoEntrega === "despacho" ? pedido.costoEnvio : null,
-      descuentoTipo: pedido.descuentoTipo === "monto" ? "monto_fijo" : pedido.descuentoTipo,
-      descuentoValor: pedido.descuentoValor,
-    },
-    include: { items: { include: { producto: true, usuarioAnulacion: true } }, pagos: true, comuna: true },
-  });
-  res.status(201).json(venta);
+  try {
+    const venta = await prisma.venta.create({
+      data: {
+        sesionCajaId: sesion.id,
+        usuarioId,
+        esAuxiliar: true,
+        canal: "online",
+        origenPedidoWebId: pedido.id,
+        comentario: pedido.comentario,
+        esDespacho: pedido.tipoEntrega === "despacho",
+        comunaId,
+        costoEnvio: pedido.tipoEntrega === "despacho" ? pedido.costoEnvio : null,
+        descuentoTipo: pedido.descuentoTipo === "monto" ? "monto_fijo" : pedido.descuentoTipo,
+        descuentoValor: pedido.descuentoValor,
+      },
+      include: { items: { include: { producto: true, usuarioAnulacion: true } }, pagos: true, comuna: true },
+    });
+    res.status(201).json(venta);
+  } catch (e) {
+    // Dos clics (casi) simultáneos pueden pasar ambos el chequeo de arriba
+    // antes de que cualquiera termine de crear la venta — origenPedidoWebId
+    // es @unique en el schema, así que el segundo create choca con esa
+    // restricción en vez de duplicar. En ese caso, no es un error real: se
+    // devuelve la venta que el otro clic ya creó, mismo resultado que el
+    // chequeo de "yaEnCurso" de arriba.
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+      const venta = await prisma.venta.findUnique({
+        where: { origenPedidoWebId: pedido.id },
+        include: { items: { include: { producto: true, usuarioAnulacion: true } }, pagos: true, comuna: true },
+      });
+      if (venta) return res.json(venta);
+    }
+    throw e;
+  }
 });
 
 const comentarioSchema = z.object({

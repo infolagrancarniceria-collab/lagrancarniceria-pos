@@ -596,7 +596,7 @@ export interface HistorialEntrada {
   fecha: string;
 }
 
-export type MedioPago = "efectivo" | "tarjeta" | "credito" | "transferencia";
+export type MedioPago = "efectivo" | "tarjeta" | "credito" | "transferencia" | "pedido_web";
 export type MedioCobro = "efectivo" | "tarjeta";
 
 // Cliente registrado para ventas a crédito/transferencia — reemplaza el
@@ -805,6 +805,7 @@ export interface AvisosCriticos {
   cajasEstancadas: { cantidad: number };
   ajustesPendientesCamara: { cantidad: number };
   pedidosWebPendientes: { cantidad: number };
+  pedidosOnlinePendientesPago: { cantidad: number };
   lotesCharcuteriaPorVencer: { cantidad: number };
 }
 
@@ -1316,6 +1317,7 @@ export const api = {
   pedidosWeb: {
     listar: (estado?: "pendiente" | "atendido" | "anulado") =>
       get<PedidoWeb[]>(`/api/pedidos-web${estado ? `?estado=${estado}` : ""}`),
+    obtener: (id: number) => get<PedidoWeb>(`/api/pedidos-web/${id}`),
     anular: (id: number, usuarioId: number, clave: string, motivo: string) =>
       put<PedidoWeb>(`/api/pedidos-web/${id}/anular`, { usuarioId, clave, motivo }),
     aplicarDescuento: (
@@ -1353,8 +1355,6 @@ export const api = {
       cantidad: number,
       instrucciones?: string | null
     ) => post<PedidoWeb>(`/api/pedidos-web/${id}/items`, { usuarioId, productoId, cantidad, instrucciones }),
-    enviarACaja: (id: number, usuarioId: number, medio: "efectivo" | "tarjeta" | "transferencia") =>
-      post<{ pedido: PedidoWeb; ventaId: number }>(`/api/pedidos-web/${id}/enviar-a-caja`, { usuarioId, medio }),
     sincronizar: () => post<{ nuevos: number }>("/api/pedidos-web/sincronizar", {}),
   },
   inventario: {
@@ -1475,6 +1475,8 @@ export const api = {
     },
     crearVenta: (usuarioId: number, auxiliar?: boolean) =>
       post<Venta>("/api/caja/ventas", { usuarioId, auxiliar }),
+    crearVentaDesdePedidoWeb: (pedidoId: number, usuarioId: number) =>
+      post<Venta>(`/api/caja/ventas/desde-pedido-web/${pedidoId}`, { usuarioId }),
     agregarItem: (ventaId: number, data: { productoId: number; cantidad: number }) =>
       post<Venta>(`/api/caja/ventas/${ventaId}/items`, data),
     escanearCodigo: (ventaId: number, codigo: string) =>
@@ -1498,7 +1500,7 @@ export const api = {
       post<Venta>(`/api/caja/ventas/${ventaId}/confirmar`, { usuarioId }),
     cancelarVenta: (ventaId: number, data: { clave: string; usuarioId: number; motivo?: string }) =>
       post<Venta>(`/api/caja/ventas/${ventaId}/cancelar`, data),
-    creditosPendientes: (medio?: "credito" | "transferencia") =>
+    creditosPendientes: (medio?: "credito" | "transferencia" | "pedido_web") =>
       get<PagoVenta[]>(`/api/caja/creditos-pendientes${medio ? `?medio=${medio}` : ""}`),
     cobrarCredito: (pagoId: number, data: { medioCobro: MedioCobro; usuarioId: number }) =>
       post<PagoVenta>(`/api/caja/creditos/${pagoId}/cobrar`, data),

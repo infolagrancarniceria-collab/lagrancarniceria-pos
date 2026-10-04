@@ -34,6 +34,8 @@ import Revisiones from "./pages/Revisiones";
 import Gastos from "./pages/Gastos";
 import Comunas from "./pages/Comunas";
 import PedidosWeb from "./pages/PedidosWeb";
+import CajaOnline from "./pages/CajaOnline";
+import PedidosOnlinePendientes from "./pages/PedidosOnlinePendientes";
 import Configuracion from "./pages/Configuracion";
 import Avisos from "./pages/Avisos";
 import ControlPrecios from "./pages/ControlPrecios";
@@ -105,6 +107,8 @@ export default function App() {
             <Route path="/gastos" element={<Gastos />} />
             <Route path="/comunas" element={<Comunas />} />
             <Route path="/pedidos-web" element={<PedidosWeb />} />
+            <Route path="/caja-online/:pedidoId" element={<CajaOnline />} />
+            <Route path="/caja/pedidos-online-pendientes" element={<PedidosOnlinePendientes />} />
             <Route path="/asistente" element={<Asistente />} />
             <Route path="/balanza" element={<Balanza />} />
             <Route path="/camara" element={<Camara />} />

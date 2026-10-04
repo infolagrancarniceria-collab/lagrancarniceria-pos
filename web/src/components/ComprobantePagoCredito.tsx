@@ -1,6 +1,6 @@
 import { formatoCLP, type PagoVenta } from "../api";
 
-const etiquetaOrigen: Record<string, string> = { credito: "Crédito", transferencia: "Transferencia" };
+const etiquetaOrigen: Record<string, string> = { credito: "Crédito", transferencia: "Transferencia", pedido_web: "Pedido online" };
 const etiquetaMedioCobro: Record<string, string> = { efectivo: "Efectivo", tarjeta: "Tarjeta" };
 
 interface Props {

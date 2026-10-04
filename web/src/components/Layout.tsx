@@ -117,6 +117,12 @@ export default function Layout() {
             <>
               <Item to="/caja" emoji="🧮" etiqueta="Caja" />
               <Item to="/caja/creditos" emoji="🤝" etiqueta="Créditos" />
+              <Item
+                to="/caja/pedidos-online-pendientes"
+                emoji="🛒"
+                etiqueta="Pedidos online pendientes"
+                badge={avisos?.pedidosOnlinePendientesPago.cantidad}
+              />
               <Item to="/clientes" emoji="🧑‍🤝‍🧑" etiqueta="Clientes" />
               <Item to="/pedidos-web" emoji="🛵" etiqueta="Pedidos web" badge={avisos?.pedidosWebPendientes.cantidad} />
               <Item to="/configuracion" emoji="⚙️" etiqueta="Configuración" />
@@ -135,6 +141,12 @@ export default function Layout() {
               <Item to="/gastos" emoji="🧾" etiqueta="Gastos" />
               <Item to="/caja" emoji="🧮" etiqueta="Caja" />
               <Item to="/caja/creditos" emoji="🤝" etiqueta="Créditos" />
+              <Item
+                to="/caja/pedidos-online-pendientes"
+                emoji="🛒"
+                etiqueta="Pedidos online pendientes"
+                badge={avisos?.pedidosOnlinePendientesPago.cantidad}
+              />
               <Item to="/clientes" emoji="🧑‍🤝‍🧑" etiqueta="Clientes" />
               <Item to="/pedidos-web" emoji="🛵" etiqueta="Pedidos web" badge={avisos?.pedidosWebPendientes.cantidad} />
               <Item to="/camara" emoji="❄️" etiqueta="Cámara" />

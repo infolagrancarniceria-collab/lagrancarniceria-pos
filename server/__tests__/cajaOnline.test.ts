@@ -35,6 +35,22 @@ describe("Caja Online — crear venta desde un pedido web", () => {
     expect(todas).toHaveLength(1);
   });
 
+  it("es idempotente incluso si dos clics llegan casi a la vez (choque contra el índice único, no duplica)", async () => {
+    const { usuario } = await crearFixturesBasicas();
+    const pedido = await crearPedidoWeb();
+
+    const [primera, segunda] = await Promise.all([
+      api.post(`/api/caja/ventas/desde-pedido-web/${pedido.id}`).send({ usuarioId: usuario.id }),
+      api.post(`/api/caja/ventas/desde-pedido-web/${pedido.id}`).send({ usuarioId: usuario.id }),
+    ]);
+
+    expect([primera.status, segunda.status].sort()).toEqual([200, 201]);
+    expect(primera.body.id).toBe(segunda.body.id);
+
+    const todas = await prisma.venta.findMany({ where: { origenPedidoWebId: pedido.id } });
+    expect(todas).toHaveLength(1);
+  });
+
   it("no deja crear una venta desde un pedido anulado", async () => {
     const { usuario } = await crearFixturesBasicas();
     const pedido = await crearPedidoWeb({ estado: "anulado" });
