@@ -5,8 +5,6 @@ import { prisma } from "../db";
 import { verificarClaveConLimite } from "../lib/clave";
 import { traerPedidosWebPendientes } from "../lib/syncWeb";
 
-type ProductoConCombo = Prisma.ProductoGetPayload<{ include: { componentesDelCombo: true } }>;
-
 export const pedidosWebRouter = Router();
 
 const ESTADOS = ["pendiente", "atendido", "anulado"] as const;
@@ -47,6 +45,16 @@ pedidosWebRouter.get("/", async (req, res) => {
     include: CON_RELACIONES,
   });
   res.json(pedidos.map(serializar));
+});
+
+// Un pedido suelto por id — para la pantalla de Caja Online, que entra
+// directo a un pedido puntual (desde el link de "Ir a pistolear" en
+// Pedidos web) sin tener que traer/filtrar la lista completa.
+pedidosWebRouter.get("/:id", async (req, res) => {
+  const id = Number(req.params.id);
+  const pedido = await prisma.pedidoWeb.findUnique({ where: { id }, include: CON_RELACIONES });
+  if (!pedido) return res.status(404).json({ error: "Pedido no encontrado" });
+  res.json(serializar(pedido));
 });
 
 // Fuerza un ciclo de sincronización con la web ahora mismo, en vez de
@@ -414,182 +422,7 @@ pedidosWebRouter.delete("/:id/regalos/:regaloId", async (req, res) => {
   res.json(serializar(pedidoActualizado!));
 });
 
-// --- Marcar atendido + generar la venta ya pagada ---
-//
-// El pago se coordina con el cliente al momento de retirar o recibir el
-// pedido — recién ahí quien atiende sabe con qué medio pagó realmente
-// (efectivo, tarjeta o transferencia), así que se pide elegirlo acá (no se
-// puede adivinar del campo "medio de pago" del pedido, que es texto libre
-// sin garantía de estar bien escrito). Antes esto dejaba la venta a
-// crédito sin cobrar (pendiente en Créditos pendientes) — a pedido del
-// usuario, ahora queda pagada de una vez con el medio elegido, para que
-// "marcar atendido" y "generar la venta" sean la misma acción y las ventas
-// online salgan reflejadas de inmediato en Reportes → Ventas online. Los
-// regalos NO se agregan como ítems acá — ya descontaron su stock al
-// agregarse (ver POST .../regalos), volver a incluirlos duplicaría la
-// merma.
-interface ItemPedidoWebCrudo {
-  plu: string;
-  cantidad: number;
-  unidad: string;
-}
-
-const enviarACajaSchema = z.object({
-  usuarioId: z.number().int().positive(),
-  medio: z.enum(["efectivo", "tarjeta", "transferencia"]),
-});
-
-pedidosWebRouter.post("/:id/enviar-a-caja", async (req, res) => {
-  const id = Number(req.params.id);
-  const parsed = enviarACajaSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({ error: parsed.error.issues[0].message });
-  }
-  const { usuarioId, medio } = parsed.data;
-
-  const usuario = await validarUsuario(usuarioId);
-  if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
-
-  const pedido = await prisma.pedidoWeb.findUnique({ where: { id }, include: { ventaGenerada: true } });
-  if (!pedido) return res.status(404).json({ error: "Pedido no encontrado" });
-  if (pedido.estado === "anulado") return res.status(400).json({ error: "Este pedido está anulado" });
-  if (pedido.ventaGenerada) {
-    return res.status(400).json({ error: `Este pedido ya se envió a Caja (venta #${pedido.ventaGenerada.id})` });
-  }
-
-  const sesion = await prisma.sesionCaja.findFirst({ where: { estado: "abierta" } });
-  if (!sesion) return res.status(400).json({ error: "No hay una caja abierta — ábrela primero" });
-
-  let itemsCrudos: ItemPedidoWebCrudo[];
-  try {
-    itemsCrudos = JSON.parse(pedido.itemsJson);
-  } catch {
-    return res.status(500).json({ error: "El detalle del pedido está dañado" });
-  }
-  if (itemsCrudos.length === 0) return res.status(400).json({ error: "El pedido no tiene productos" });
-
-  // Se matchea por PLU al catálogo real — el precio se toma actual (Punto
-  // de Venta nunca usa un precio congelado), no el que el cliente vio al
-  // cotizar, que puede haber cambiado desde entonces.
-  const plusFaltantes: string[] = [];
-  const itemsConProducto: { producto: ProductoConCombo; cantidad: number }[] = [];
-  for (const item of itemsCrudos) {
-    const producto = await prisma.producto.findUnique({
-      where: { plu: item.plu },
-      include: { componentesDelCombo: true },
-    });
-    if (!producto) {
-      plusFaltantes.push(item.plu);
-      continue;
-    }
-    const cantidadVenta = item.unidad === "kg" ? item.cantidad / 1000 : item.cantidad;
-    itemsConProducto.push({ producto, cantidad: cantidadVenta });
-  }
-  if (plusFaltantes.length > 0) {
-    return res.status(400).json({
-      error: `No se encontró en el catálogo el producto con PLU ${plusFaltantes.join(", ")} — revisa que siga existiendo antes de enviar a Caja`,
-    });
-  }
-
-  // Un combo no tiene stock propio — al venderse, se descuenta el de sus
-  // componentes (cantidad de la receta × cuántos combos se vendieron), no
-  // el del combo mismo. Se suma todo en un solo mapa (combos y productos
-  // normales juntos) para que, si un mismo producto aparece tanto suelto
-  // como dentro de un combo en el mismo pedido, quede un solo movimiento de
-  // inventario con el total — mismo criterio que ya usa confirmarVenta en
-  // caja.ts para no duplicar movimientos del mismo producto.
-  const decrementosPorProducto = new Map<number, number>();
-  for (const { producto, cantidad } of itemsConProducto) {
-    if (producto.esCombo) {
-      for (const componente of producto.componentesDelCombo) {
-        const actual = decrementosPorProducto.get(componente.componenteProductoId) ?? 0;
-        decrementosPorProducto.set(componente.componenteProductoId, actual + componente.cantidad * cantidad);
-      }
-    } else {
-      const actual = decrementosPorProducto.get(producto.id) ?? 0;
-      decrementosPorProducto.set(producto.id, actual + cantidad);
-    }
-  }
-
-  let comunaId: number | null = null;
-  if (pedido.tipoEntrega === "despacho" && pedido.comunaNombre) {
-    const comuna = await prisma.comuna.findUnique({ where: { nombre: pedido.comunaNombre } });
-    if (!comuna) return res.status(400).json({ error: `No se encontró la comuna "${pedido.comunaNombre}" en el catálogo` });
-    comunaId = comuna.id;
-  }
-
-  // El pedido web ya trae nombre + teléfono del cliente (ver PedidoWeb) —
-  // se busca un Cliente existente con ese mismo teléfono para no duplicar
-  // al mismo comprador cada vez que vuelve a pedir por la web, y si no
-  // existe se crea uno nuevo con esos datos.
-  let cliente = await prisma.cliente.findFirst({ where: { telefono: pedido.clienteTelefono } });
-  if (!cliente) {
-    cliente = await prisma.cliente.create({
-      data: { nombre: pedido.clienteNombre, telefono: pedido.clienteTelefono },
-    });
-  }
-
-  const subtotalItems = itemsConProducto.reduce((suma, i) => suma + Math.round(i.producto.precio * i.cantidad), 0);
-  let descuentoMonto = 0;
-  if (pedido.descuentoTipo === "porcentaje" && pedido.descuentoValor) {
-    descuentoMonto = Math.round(subtotalItems * (pedido.descuentoValor / 100));
-  } else if (pedido.descuentoTipo === "monto" && pedido.descuentoValor) {
-    descuentoMonto = pedido.descuentoValor;
-  }
-  descuentoMonto = Math.min(descuentoMonto, subtotalItems);
-  const costoEnvio = pedido.tipoEntrega === "despacho" ? (pedido.costoEnvio ?? 0) : 0;
-  const total = subtotalItems - descuentoMonto + costoEnvio;
-
-  // Efectivo/tarjeta quedan cobrados en el momento, como cualquier venta
-  // normal. Transferencia también queda como pagada de una vez (a
-  // diferencia del tile de Punto de Venta, acá quien atiende recién elige
-  // "transferencia" cuando ya confirmó que la plata llegó, no antes) — se
-  // marca cobrado=true al tiro para que no aparezca en Créditos y
-  // transferencias pendientes.
-  const datosPago =
-    medio === "transferencia"
-      ? { medio, monto: total, clienteId: cliente.id, clienteNombre: cliente.nombre, cobrado: true, fechaCobro: new Date() }
-      : { medio, monto: total, clienteId: cliente.id, clienteNombre: cliente.nombre };
-
-  const [venta] = await prisma.$transaction([
-    prisma.venta.create({
-      data: {
-        sesionCajaId: sesion.id,
-        usuarioId,
-        estado: "pagada",
-        total,
-        comentario: pedido.comentario,
-        esDespacho: pedido.tipoEntrega === "despacho",
-        comunaId,
-        costoEnvio: pedido.tipoEntrega === "despacho" ? pedido.costoEnvio : null,
-        descuentoTipo: pedido.descuentoTipo === "monto" ? "monto_fijo" : pedido.descuentoTipo,
-        descuentoValor: pedido.descuentoValor,
-        origenPedidoWebId: pedido.id,
-        items: {
-          create: itemsConProducto.map((i) => ({
-            productoId: i.producto.id,
-            cantidad: i.cantidad,
-            precioUnitario: i.producto.precio,
-            subtotal: Math.round(i.producto.precio * i.cantidad),
-          })),
-        },
-        pagos: {
-          create: datosPago,
-        },
-      },
-    }),
-    ...Array.from(decrementosPorProducto.entries()).flatMap(([productoId, cantidad]) => [
-      prisma.producto.update({ where: { id: productoId }, data: { stockActual: { decrement: cantidad } } }),
-      prisma.movimientoInventario.create({
-        data: { productoId, usuarioId, tipo: "salida", motivo: "venta", cantidad },
-      }),
-    ]),
-    prisma.pedidoWeb.update({
-      where: { id },
-      data: { estado: "atendido", atendidoPorId: usuarioId, atendidoEn: new Date() },
-    }),
-  ]);
-
-  const pedidoActualizado = await prisma.pedidoWeb.findUnique({ where: { id }, include: CON_RELACIONES });
-  res.status(201).json({ pedido: serializar(pedidoActualizado!), ventaId: venta.id });
-});
+// La venta real de un pedido web ahora se arma pistoleando en Caja Online
+// (ver POST /api/caja/ventas/desde-pedido-web/:pedidoId) — este archivo ya
+// no genera ninguna venta directamente. "atendido" se marca recién al
+// confirmar esa venta (ver POST /api/caja/ventas/:id/confirmar).

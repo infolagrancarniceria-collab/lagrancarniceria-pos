@@ -535,6 +535,83 @@ cajaRouter.post("/ventas", async (req, res) => {
   res.status(201).json(venta);
 });
 
+// --- Caja Online: pistolear un pedido web ---
+//
+// Reemplaza al viejo "Enviar a Caja" (armaba la venta de un tirón desde el
+// texto del pedido y la dejaba pagada al toque) — causaba que el mismo
+// pedido quedara cobrado DOS veces: una vez de verdad en el mesón
+// (pistoleando, como cualquier venta) y otra vez acá, armada sola desde el
+// pedido. Ahora el pedido lleva a esta pantalla, donde se pistolea de
+// verdad (misma venta — ver abajo, con esAuxiliar:true para no bloquear la
+// caja del mesón) y recién al final se decide si queda pendiente de pago
+// (lo normal, ver POST /ventas/:id/pagos con medio "pedido_web") o si ya
+// se cobró.
+const crearVentaDesdePedidoWebSchema = z.object({ usuarioId: z.number().int().positive() });
+
+cajaRouter.post("/ventas/desde-pedido-web/:pedidoId", async (req, res) => {
+  const pedidoId = Number(req.params.pedidoId);
+  const parsed = crearVentaDesdePedidoWebSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0].message });
+  }
+  const { usuarioId } = parsed.data;
+
+  const usuario = await validarUsuario(usuarioId);
+  if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
+
+  const pedido = await prisma.pedidoWeb.findUnique({ where: { id: pedidoId }, include: { ventaGenerada: true } });
+  if (!pedido) return res.status(404).json({ error: "Pedido no encontrado" });
+  if (pedido.estado === "anulado") return res.status(400).json({ error: "Este pedido está anulado" });
+
+  // Idempotente a propósito: si alguien ya empezó a pistolear este pedido
+  // (ej. se recargó la pantalla, o dos personas le hicieron clic casi al
+  // mismo tiempo), se reusa esa misma venta en vez de crear una segunda —
+  // es la protección real contra el duplicado que motivó este cambio. Esto
+  // tiene que revisarse ANTES de "ya se cobró" de abajo: la relación
+  // pedido.ventaGenerada apunta a cualquier Venta ligada a este pedido sin
+  // importar su estado, así que una venta todavía "abierta" (a medio
+  // pistolear, sin pagar) también aparece ahí — si no se revisa esto
+  // primero, nunca se podría retomar una venta en curso.
+  if (pedido.ventaGenerada?.estado === "abierta") {
+    const yaEnCurso = await prisma.venta.findUnique({
+      where: { id: pedido.ventaGenerada.id },
+      include: { items: { include: { producto: true, usuarioAnulacion: true } }, pagos: true, comuna: true },
+    });
+    return res.json(yaEnCurso);
+  }
+  if (pedido.ventaGenerada) {
+    return res.status(400).json({ error: `Este pedido ya se cobró — venta #${pedido.ventaGenerada.id}` });
+  }
+
+  const sesion = await prisma.sesionCaja.findFirst({ where: { estado: "abierta" } });
+  if (!sesion) return res.status(400).json({ error: "No hay una caja abierta — ábrela primero" });
+
+  let comunaId: number | null = null;
+  if (pedido.tipoEntrega === "despacho" && pedido.comunaNombre) {
+    const comuna = await prisma.comuna.findUnique({ where: { nombre: pedido.comunaNombre } });
+    if (!comuna) return res.status(400).json({ error: `No se encontró la comuna "${pedido.comunaNombre}" en el catálogo` });
+    comunaId = comuna.id;
+  }
+
+  const venta = await prisma.venta.create({
+    data: {
+      sesionCajaId: sesion.id,
+      usuarioId,
+      esAuxiliar: true,
+      canal: "online",
+      origenPedidoWebId: pedido.id,
+      comentario: pedido.comentario,
+      esDespacho: pedido.tipoEntrega === "despacho",
+      comunaId,
+      costoEnvio: pedido.tipoEntrega === "despacho" ? pedido.costoEnvio : null,
+      descuentoTipo: pedido.descuentoTipo === "monto" ? "monto_fijo" : pedido.descuentoTipo,
+      descuentoValor: pedido.descuentoValor,
+    },
+    include: { items: { include: { producto: true, usuarioAnulacion: true } }, pagos: true, comuna: true },
+  });
+  res.status(201).json(venta);
+});
+
 const comentarioSchema = z.object({
   comentario: z.string().trim().max(500, "El comentario es muy largo").optional().nullable(),
 });
@@ -725,6 +802,33 @@ const agregarItemSchema = z.object({
 interface ErrorAgregarItem {
   status: number;
   error: string;
+}
+
+// Un combo no tiene stock propio (ver comentario de Producto.esCombo) — al
+// confirmar o anular una venta, su línea se reemplaza por la de sus
+// componentes (cantidad de la receta × cuántos combos), sumando con
+// cualquier otra línea que mueva el mismo producto (ej. el mismo
+// componente también vendido suelto en la misma venta). Se usa tanto al
+// confirmar (descontar stock) como al anular (devolverlo), para que ambos
+// muevan exactamente lo mismo.
+async function expandirCombos(cantidadPorProducto: Map<number, number>): Promise<Map<number, number>> {
+  const resultado = new Map<number, number>();
+  for (const [productoId, cantidad] of cantidadPorProducto) {
+    const producto = await prisma.producto.findUnique({
+      where: { id: productoId },
+      include: { componentesDelCombo: true },
+    });
+    if (producto?.esCombo) {
+      for (const componente of producto.componentesDelCombo) {
+        const actual = resultado.get(componente.componenteProductoId) ?? 0;
+        resultado.set(componente.componenteProductoId, actual + componente.cantidad * cantidad);
+      }
+    } else {
+      const actual = resultado.get(productoId) ?? 0;
+      resultado.set(productoId, actual + cantidad);
+    }
+  }
+  return resultado;
 }
 
 async function agregarItemAVenta(
@@ -945,11 +1049,13 @@ cajaRouter.delete("/ventas/:id/items/:itemId", async (req, res) => {
 
 const agregarPagoSchema = z
   .object({
-    medio: z.enum(["efectivo", "tarjeta", "credito", "transferencia"]),
+    medio: z.enum(["efectivo", "tarjeta", "credito", "transferencia", "pedido_web"]),
     monto: z.number().positive("El monto debe ser mayor a 0"),
     // Crédito y transferencia necesitan un Cliente ya registrado (ver
     // selector de cliente en Punto de Venta) — reemplaza el nombre libre
     // que se escribía antes, para no duplicar al mismo cliente por typos.
+    // "pedido_web" no lo necesita acá: se resuelve solo desde el pedido
+    // ligado a la venta (ver más abajo), salvo que se mande explícito.
     clienteId: z.number().int().positive().optional().nullable(),
     // Solo tiene sentido en efectivo: lo que el cliente entregó en la mano,
     // antes del tope/redondeo aplicado a "monto" — para poder mostrar en el
@@ -977,6 +1083,24 @@ cajaRouter.post("/ventas/:id/pagos", async (req, res) => {
   if (medio === "credito" || medio === "transferencia") {
     cliente = await prisma.cliente.findUnique({ where: { id: clienteId! } });
     if (!cliente) return res.status(400).json({ error: "El cliente seleccionado no existe" });
+  } else if (medio === "pedido_web") {
+    // Pendiente de pago de un pedido online (ver Caja Online) — el cliente
+    // se resuelve solo desde el pedido ligado a esta venta (mismo teléfono
+    // de siempre = mismo Cliente, igual que hacía el viejo "Enviar a
+    // Caja"), para no tener que elegirlo a mano cada vez. Si se manda
+    // clienteId explícito (caso raro), ese manda.
+    if (clienteId) {
+      cliente = await prisma.cliente.findUnique({ where: { id: clienteId } });
+      if (!cliente) return res.status(400).json({ error: "El cliente seleccionado no existe" });
+    } else if (venta.origenPedidoWebId) {
+      const pedido = await prisma.pedidoWeb.findUnique({ where: { id: venta.origenPedidoWebId } });
+      if (pedido) {
+        cliente = await prisma.cliente.findFirst({ where: { telefono: pedido.clienteTelefono } });
+        if (!cliente) {
+          cliente = await prisma.cliente.create({ data: { nombre: pedido.clienteNombre, telefono: pedido.clienteTelefono } });
+        }
+      }
+    }
   }
 
   await prisma.pagoVenta.create({
@@ -1104,33 +1228,45 @@ cajaRouter.post("/ventas/:id/confirmar", async (req, res) => {
     }
   }
 
+  const cantidadStockPorProducto = await expandirCombos(cantidadPorProducto);
+
   await prisma.$transaction([
     prisma.venta.update({
       where: { id: ventaId },
       data: { estado: "pagada", ...(esVentaCharcuteria ? { businessUnitId: 2 } : {}) },
     }),
-    ...Array.from(cantidadPorProducto.entries()).flatMap(([productoId, cantidad]) => {
-      const fefo = loteFefoPorProducto.get(productoId);
-      const operaciones: Prisma.PrismaPromise<unknown>[] = [
-        prisma.producto.update({ where: { id: productoId }, data: { stockActual: { decrement: cantidad } } }),
-        prisma.movimientoInventario.create({
-          data: { productoId, usuarioId, tipo: "salida", motivo: "venta", cantidad },
-        }),
-      ];
-      if (fefo) {
-        operaciones.push(
-          prisma.stockLoteSku.update({
-            where: { id: fefo.stockLoteSkuId },
-            data: { saldoUnidades: { decrement: cantidad } },
+    ...Array.from(cantidadStockPorProducto.entries()).flatMap(([productoId, cantidad]) => [
+      prisma.producto.update({ where: { id: productoId }, data: { stockActual: { decrement: cantidad } } }),
+      prisma.movimientoInventario.create({
+        data: { productoId, usuarioId, tipo: "salida", motivo: "venta", cantidad },
+      }),
+    ]),
+    // FEFO sigue por producto SIN expandir combos — un combo armado con un
+    // SKU de charcutería con lote como componente queda fuera de este
+    // chequeo (igual que ya quedaba antes de este cambio): no hay una fila
+    // ItemVenta propia para el componente contra la cual anotar el loteId.
+    ...Array.from(loteFefoPorProducto.entries()).flatMap(([productoId, fefo]) => [
+      prisma.stockLoteSku.update({
+        where: { id: fefo.stockLoteSkuId },
+        data: { saldoUnidades: { decrement: cantidadPorProducto.get(productoId)! } },
+      }),
+      prisma.itemVenta.updateMany({
+        where: { ventaId, productoId, anulado: false },
+        data: { loteId: fefo.loteId },
+      }),
+    ]),
+    // Si esta venta viene de un pedido web (ver Caja Online), queda
+    // "atendido" recién ahora que de verdad se cobró/quedó pendiente de
+    // cobrar — antes esto lo hacía el viejo "Enviar a Caja" en el mismo
+    // paso que armaba la venta; ahora son pasos separados.
+    ...(venta.origenPedidoWebId != null
+      ? [
+          prisma.pedidoWeb.update({
+            where: { id: venta.origenPedidoWebId },
+            data: { estado: "atendido", atendidoPorId: usuarioId, atendidoEn: new Date() },
           }),
-          prisma.itemVenta.updateMany({
-            where: { ventaId, productoId, anulado: false },
-            data: { loteId: fefo.loteId },
-          })
-        );
-      }
-      return operaciones;
-    }),
+        ]
+      : []),
   ]);
 
   const ventaFinal = await prisma.venta.findUnique({
@@ -1211,9 +1347,11 @@ cajaRouter.post("/ventas/:id/cancelar", async (req, res) => {
       if (skuId != null) devolucionesLote.push({ productoId, loteId, skuId, cantidad: cantidadPorProducto.get(productoId)! });
     }
 
+    const cantidadStockPorProducto = await expandirCombos(cantidadPorProducto);
+
     await prisma.$transaction([
       prisma.venta.update({ where: { id: ventaId }, data: datosAnulacion }),
-      ...Array.from(cantidadPorProducto.entries()).flatMap(([productoId, cantidad]) => [
+      ...Array.from(cantidadStockPorProducto.entries()).flatMap(([productoId, cantidad]) => [
         prisma.producto.update({ where: { id: productoId }, data: { stockActual: { increment: cantidad } } }),
         prisma.movimientoInventario.create({
           data: { productoId, usuarioId, tipo: "entrada", motivo: "venta_anulada", cantidad },
@@ -1238,7 +1376,14 @@ cajaRouter.post("/ventas/:id/cancelar", async (req, res) => {
 // confirme una transferencia, a cobrar/confirmar después) ---
 
 cajaRouter.get("/creditos-pendientes", async (req, res) => {
-  const medio = req.query.medio === "credito" || req.query.medio === "transferencia" ? req.query.medio : undefined;
+  const medio =
+    req.query.medio === "credito" || req.query.medio === "transferencia" || req.query.medio === "pedido_web"
+      ? req.query.medio
+      : undefined;
+  // Sin filtro, "pedido_web" queda afuera a propósito — esta misma lista
+  // también alimenta Créditos pendientes, que no debería mezclarse con
+  // pedidos online (ver Pedidos Online pendientes de pago, que sí pide
+  // medio=pedido_web explícito).
   const creditos = await prisma.pagoVenta.findMany({
     where: { medio: medio ?? { in: ["credito", "transferencia"] }, cobrado: false },
     include: { venta: true, cliente: true },
@@ -1264,8 +1409,8 @@ cajaRouter.post("/creditos/:pagoId/cobrar", async (req, res) => {
   if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
 
   const pago = await prisma.pagoVenta.findUnique({ where: { id: pagoId } });
-  if (!pago || (pago.medio !== "credito" && pago.medio !== "transferencia")) {
-    return res.status(404).json({ error: "Crédito o transferencia no encontrado" });
+  if (!pago || (pago.medio !== "credito" && pago.medio !== "transferencia" && pago.medio !== "pedido_web")) {
+    return res.status(404).json({ error: "Crédito, transferencia o pedido online no encontrado" });
   }
   if (pago.cobrado) return res.status(400).json({ error: "Esto ya estaba marcado como cobrado" });
 

@@ -22,3 +22,22 @@ export async function crearFixturesBasicas() {
 
   return { usuario, productoCarniceria, sesionCaja };
 }
+
+// Un PedidoWeb nunca se crea por una ruta propia — solo llega por el sync
+// con la web (ver pedidosWebRouter POST /sincronizar) — así que los tests
+// de Caja Online lo insertan directo con Prisma, como si ya hubiera
+// sincronizado. itemsJson es solo texto para mostrar (ver comentario del
+// modelo); no hace falta que combine con ningún Producto real.
+export async function crearPedidoWeb(datos: Partial<Parameters<typeof prisma.pedidoWeb.create>[0]["data"]> = {}) {
+  return prisma.pedidoWeb.create({
+    data: {
+      idWeb: `WEB-${Date.now()}-${Math.random()}`,
+      fecha: new Date(),
+      clienteNombre: "Cliente Web",
+      clienteTelefono: "+56911112222",
+      tipoEntrega: "retiro",
+      itemsJson: JSON.stringify([{ plu: "PLU-1", nombre: "Lomo Vetado", cantidad: 1, unidad: "kg", precioUnitario: 8990 }]),
+      ...datos,
+    },
+  });
+}
