@@ -181,7 +181,7 @@ async function calcularResumenSesion(sesionId: number) {
     include: { pagos: true },
   });
 
-  const totalPorMedio: Record<string, number> = { efectivo: 0, tarjeta: 0, credito: 0, transferencia: 0 };
+  const totalPorMedio: Record<string, number> = { efectivo: 0, tarjeta: 0, credito: 0, transferencia: 0, pedido_web: 0 };
   let totalVentas = 0;
   for (const venta of ventas) {
     totalVentas += venta.total;
@@ -190,23 +190,26 @@ async function calcularResumenSesion(sesionId: number) {
     }
   }
 
-  // Créditos/transferencias de ventas de OTRAS sesiones que se cobraron o
+  // Créditos/transferencias/pedidos web de OTRAS sesiones que se cobraron o
   // confirmaron durante esta — esa plata entra a la caja hoy, aunque la
   // venta original haya sido de otro día. Se suma al medio real con el que
   // se cobró (efectivo/tarjeta), no queda como "credito"/"transferencia"
   // (eso ya se descontó cuando se dio el crédito/transferencia
   // originalmente). Se llevan separados (totalCobrosCredito vs
-  // totalCobrosTransferencia) a pedido del dueño, que quiere ese registro
-  // aparte aunque el mecanismo sea el mismo.
+  // totalCobrosTransferencia vs totalCobrosPedidoWeb) a pedido del dueño,
+  // que quiere ese registro aparte aunque el mecanismo sea el mismo.
   const cobrosHoy = await prisma.pagoVenta.findMany({
     where: { sesionCajaCobroId: sesionId, cobrado: true },
   });
   let totalCobrosCredito = 0;
   let totalCobrosTransferencia = 0;
+  let totalCobrosPedidoWeb = 0;
   for (const cobro of cobrosHoy) {
     totalPorMedio[cobro.medioCobro!] = (totalPorMedio[cobro.medioCobro!] ?? 0) + cobro.monto;
     if (cobro.medio === "transferencia") {
       totalCobrosTransferencia += cobro.monto;
+    } else if (cobro.medio === "pedido_web") {
+      totalCobrosPedidoWeb += cobro.monto;
     } else {
       totalCobrosCredito += cobro.monto;
     }
@@ -228,6 +231,7 @@ async function calcularResumenSesion(sesionId: number) {
     totalPorMedio,
     totalCobrosCredito,
     totalCobrosTransferencia,
+    totalCobrosPedidoWeb,
     retiros,
     totalRetiros,
     ingresos,
@@ -292,6 +296,7 @@ cajaRouter.get("/cuadratura", async (req, res) => {
         tarjeta: acc.totalPorMedio.tarjeta + dia.totalPorMedio.tarjeta,
         credito: acc.totalPorMedio.credito + dia.totalPorMedio.credito,
         transferencia: acc.totalPorMedio.transferencia + dia.totalPorMedio.transferencia,
+        pedido_web: acc.totalPorMedio.pedido_web + (dia.totalPorMedio.pedido_web ?? 0),
       },
       totalRetiros: acc.totalRetiros + dia.totalRetiros,
       totalIngresos: acc.totalIngresos + dia.totalIngresos,
@@ -301,7 +306,7 @@ cajaRouter.get("/cuadratura", async (req, res) => {
     {
       fondoFijoInicial: 0,
       totalVentas: 0,
-      totalPorMedio: { efectivo: 0, tarjeta: 0, credito: 0, transferencia: 0 },
+      totalPorMedio: { efectivo: 0, tarjeta: 0, credito: 0, transferencia: 0, pedido_web: 0 },
       totalRetiros: 0,
       totalIngresos: 0,
       efectivoEsperado: 0,

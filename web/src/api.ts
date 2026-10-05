@@ -739,6 +739,7 @@ export interface ResumenSesion {
   totalPorMedio: Record<string, number>;
   totalCobrosCredito: number;
   totalCobrosTransferencia: number;
+  totalCobrosPedidoWeb: number;
   retiros: RetiroCaja[];
   totalRetiros: number;
   ingresos: RetiroCaja[];

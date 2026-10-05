@@ -108,6 +108,10 @@ export default function CuadraturaCaja() {
                     <td>{formatoCLP(dia.totalPorMedio.transferencia ?? 0)}</td>
                   </tr>
                   <tr>
+                    <td>Pedido web (pendiente de pago)</td>
+                    <td>{formatoCLP(dia.totalPorMedio.pedido_web ?? 0)}</td>
+                  </tr>
+                  <tr>
                     <td>
                       <strong>Total ventas</strong>
                     </td>
@@ -178,6 +182,10 @@ export default function CuadraturaCaja() {
                   <tr>
                     <td>Venta por transferencia</td>
                     <td>{formatoCLP(datos.totalGeneral.totalPorMedio.transferencia ?? 0)}</td>
+                  </tr>
+                  <tr>
+                    <td>Pedido web (pendiente de pago)</td>
+                    <td>{formatoCLP(datos.totalGeneral.totalPorMedio.pedido_web ?? 0)}</td>
                   </tr>
                   <tr>
                     <td>
