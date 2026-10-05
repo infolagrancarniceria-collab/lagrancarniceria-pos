@@ -422,7 +422,26 @@ export default function ProductoForm() {
             <div>
               <p className="ayuda">
                 Costo: {formatoCLP(productoActual.costoEfectivo)}
-                {productoActual.costoEsEstimado && " (estimado — sin ninguna compra real registrada todavía)"}
+                {productoActual.costoEsEstimado ? (
+                  " (estimado — sin ninguna compra real registrada todavía)"
+                ) : (
+                  <>
+                    {" "}
+                    (de una compra real
+                    {productoActual.ultimoCostoFecha
+                      ? ` del ${new Date(productoActual.ultimoCostoFecha).toLocaleDateString("es-CL")}`
+                      : ""}{" "}
+                    — esto manda por sobre el "Costo de referencia" de más abajo; si está mal,{" "}
+                    <Link
+                      to={`/inventario/movimientos?productoId=${productoActual.id}&productoDescripcion=${encodeURIComponent(
+                        `${productoActual.plu} — ${productoActual.descripcion}`
+                      )}`}
+                    >
+                      revisa el historial de compras de este producto
+                    </Link>
+                    )
+                  </>
+                )}
               </p>
               <div className="fila-inline">
                 <div>
