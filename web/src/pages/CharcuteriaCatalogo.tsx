@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { api, formatoCLP, type ItemCharcuteria, type Producto, type TipoItemCharcuteria } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
@@ -42,6 +42,16 @@ export default function CharcuteriaCatalogo() {
   const [form, setForm] = useState(formularioVacio());
   const [guardando, setGuardando] = useState(false);
 
+  // Ajuste manual de stock (entrada/salida) para insumos, materia prima y
+  // envases — el único catálogo que hasta ahora no tenía ninguna forma de
+  // corregir el stock desde la pantalla (solo entraba por transferencia o
+  // salía consumido por un lote). No aplica a producto_terminado, que se
+  // trackea por lote.
+  const [ajustandoId, setAjustandoId] = useState<number | null>(null);
+  const [ajusteTipo, setAjusteTipo] = useState<"entrada" | "salida">("entrada");
+  const [ajusteCantidad, setAjusteCantidad] = useState("");
+  const [ajustando, setAjustando] = useState(false);
+
   // Al crear un SKU (producto_terminado) se puede vincular un producto que
   // ya existía en el catálogo de carnicería (ej. el Pastrami, cargado antes
   // de este módulo) en vez de crear uno nuevo desde cero — evita
@@ -76,6 +86,38 @@ export default function CharcuteriaCatalogo() {
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filtroTipo, buscar]);
+
+  function abrirAjuste(id: number) {
+    setAjustandoId(id);
+    setAjusteTipo("entrada");
+    setAjusteCantidad("");
+  }
+
+  function cerrarAjuste() {
+    setAjustandoId(null);
+    setAjusteCantidad("");
+  }
+
+  async function confirmarAjuste(e: React.FormEvent) {
+    e.preventDefault();
+    if (!usuario || ajustandoId == null) return;
+    const cantidad = Number(ajusteCantidad);
+    if (!cantidad || cantidad <= 0) {
+      setError("Ingresa una cantidad válida");
+      return;
+    }
+    setAjustando(true);
+    try {
+      await api.charcuteria.items.ajustarStock(ajustandoId, { tipo: ajusteTipo, cantidad, usuarioId: usuario.id });
+      mostrarToast("Stock ajustado", ajusteTipo === "entrada" ? `Se sumaron ${cantidad}.` : `Se restaron ${cantidad}.`);
+      cerrarAjuste();
+      cargar();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setAjustando(false);
+    }
+  }
 
   function limpiarVinculo() {
     setOrigenSku("nuevo");
@@ -357,25 +399,68 @@ export default function CharcuteriaCatalogo() {
             <th>Stock</th>
             <th>Precio venta</th>
             <th>Costo ref.</th>
+            <th>Acciones</th>
           </tr>
         </thead>
         <tbody>
           {items.map((i) => (
-            <tr key={i.id}>
-              <td>{i.codigo}</td>
-              <td>{i.nombre}</td>
-              <td>{ETIQUETAS_TIPO[i.tipoItem]}</td>
-              <td>{i.categoria ?? "—"}</td>
-              <td>
-                {i.stockActual} {i.unidadMedida === "gramos" ? "g" : "un."}
-              </td>
-              <td>{i.productoEspejo ? formatoCLP(i.productoEspejo.precio) : "—"}</td>
-              <td>{i.costoReferencia != null ? formatoCLP(i.costoReferencia) : "—"}</td>
-            </tr>
+            <Fragment key={i.id}>
+              <tr>
+                <td>{i.codigo}</td>
+                <td>{i.nombre}</td>
+                <td>{ETIQUETAS_TIPO[i.tipoItem]}</td>
+                <td>{i.categoria ?? "—"}</td>
+                <td>
+                  {i.stockActual} {i.unidadMedida === "gramos" ? "g" : "un."}
+                </td>
+                <td>{i.productoEspejo ? formatoCLP(i.productoEspejo.precio) : "—"}</td>
+                <td>{i.costoReferencia != null ? formatoCLP(i.costoReferencia) : "—"}</td>
+                <td>
+                  {i.tipoItem !== "producto_terminado" && (
+                    <button type="button" className="boton-chico" onClick={() => abrirAjuste(i.id)}>
+                      Ajustar stock
+                    </button>
+                  )}
+                </td>
+              </tr>
+              {ajustandoId === i.id && (
+                <tr>
+                  <td colSpan={8}>
+                    <form onSubmit={confirmarAjuste} className="fila-inline">
+                      <label>
+                        Tipo
+                        <select value={ajusteTipo} onChange={(e) => setAjusteTipo(e.target.value as "entrada" | "salida")}>
+                          <option value="entrada">Entrada (sumar)</option>
+                          <option value="salida">Salida (restar)</option>
+                        </select>
+                      </label>
+                      <label>
+                        Cantidad ({i.unidadMedida === "gramos" ? "g" : "un."})
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={ajusteCantidad}
+                          onChange={(e) => setAjusteCantidad(e.target.value)}
+                          autoFocus
+                          required
+                        />
+                      </label>
+                      <button type="submit" className="boton boton-primario" disabled={ajustando}>
+                        {ajustando ? "Guardando..." : "Confirmar"}
+                      </button>
+                      <button type="button" onClick={cerrarAjuste}>
+                        Cancelar
+                      </button>
+                    </form>
+                  </td>
+                </tr>
+              )}
+            </Fragment>
           ))}
           {items.length === 0 && (
             <tr>
-              <td colSpan={7}>Sin ítems en el catálogo todavía.</td>
+              <td colSpan={8}>Sin ítems en el catálogo todavía.</td>
             </tr>
           )}
         </tbody>
