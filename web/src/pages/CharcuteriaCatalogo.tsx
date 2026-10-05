@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, formatoCLP, type ItemCharcuteria, type TipoItemCharcuteria } from "../api";
+import { api, formatoCLP, type ItemCharcuteria, type Producto, type TipoItemCharcuteria } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 import { mostrarToast } from "../lib/toast";
@@ -22,6 +22,7 @@ function formularioVacio() {
     formatoGramos: "",
     productoElaboradoId: "",
     linea: "" as "" | "tabla" | "fiestas",
+    categoria: "",
     precioVenta: "",
     vidaUtilDias: "",
     ingredientes: "",
@@ -41,7 +42,27 @@ export default function CharcuteriaCatalogo() {
   const [form, setForm] = useState(formularioVacio());
   const [guardando, setGuardando] = useState(false);
 
+  // Al crear un SKU (producto_terminado) se puede vincular un producto que
+  // ya existía en el catálogo de carnicería (ej. el Pastrami, cargado antes
+  // de este módulo) en vez de crear uno nuevo desde cero — evita
+  // duplicarlo, conservando su mismo PLU, stock e historial de ventas.
+  const [origenSku, setOrigenSku] = useState<"nuevo" | "existente">("nuevo");
+  const [buscarProductoExistente, setBuscarProductoExistente] = useState("");
+  const [productosEncontrados, setProductosEncontrados] = useState<Producto[]>([]);
+  const [productoVinculado, setProductoVinculado] = useState<Producto | null>(null);
+
   const productosElaborados = items.filter((i) => i.tipoItem === "producto_elaborado" && i.activo);
+
+  useEffect(() => {
+    if (origenSku !== "existente" || !buscarProductoExistente.trim()) {
+      setProductosEncontrados([]);
+      return;
+    }
+    const t = setTimeout(() => {
+      api.charcuteria.productosVinculables(buscarProductoExistente.trim()).then(setProductosEncontrados).catch((e) => setError(e.message));
+    }, 250);
+    return () => clearTimeout(t);
+  }, [origenSku, buscarProductoExistente]);
 
   function cargar() {
     api.charcuteria.items
@@ -56,6 +77,13 @@ export default function CharcuteriaCatalogo() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filtroTipo, buscar]);
 
+  function limpiarVinculo() {
+    setOrigenSku("nuevo");
+    setBuscarProductoExistente("");
+    setProductosEncontrados([]);
+    setProductoVinculado(null);
+  }
+
   async function crear(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -64,30 +92,48 @@ export default function CharcuteriaCatalogo() {
       setError("Falta el código o el nombre");
       return;
     }
-    if (form.tipoItem === "producto_terminado" && !Number(form.precioVenta)) {
+    const vinculandoExistente = form.tipoItem === "producto_terminado" && origenSku === "existente";
+    if (vinculandoExistente && !productoVinculado) {
+      setError("Elige el producto que quieres vincular");
+      return;
+    }
+    if (form.tipoItem === "producto_terminado" && !vinculandoExistente && !Number(form.precioVenta)) {
       setError("Falta el precio de venta");
       return;
     }
     setGuardando(true);
     try {
-      await api.charcuteria.items.crear({
+      const formatoGramos = form.formatoGramos ? Number(form.formatoGramos) : null;
+      const creado = await api.charcuteria.items.crear({
         usuarioId: usuario.id,
         codigo: form.codigo.trim(),
         nombre: form.nombre.trim(),
         tipoItem: form.tipoItem,
         unidadMedida: form.unidadMedida,
-        formatoGramos: form.formatoGramos ? Number(form.formatoGramos) : null,
+        formatoGramos,
         productoElaboradoId: form.productoElaboradoId ? Number(form.productoElaboradoId) : null,
         linea: form.linea || null,
+        categoria: form.categoria.trim() || null,
         precioVenta: form.precioVenta ? Number(form.precioVenta) : undefined,
         vidaUtilDias: form.vidaUtilDias ? Number(form.vidaUtilDias) : null,
         ingredientes: form.ingredientes.trim() || null,
         alergenos: form.alergenos.trim() || null,
         condicionesConservacion: form.condicionesConservacion.trim() || null,
         sellosAltoEnTexto: form.sellosAltoEnTexto.trim() || null,
+        productoExistenteId: vinculandoExistente ? productoVinculado!.id : null,
       });
       mostrarToast("Ítem creado", `${form.nombre} se agregó al catálogo.`);
+      // Si el SKU quedó con formato fijo y el producto vinculado ya traía
+      // stock, ese stock no está asociado a ningún lote todavía — avisar
+      // para que no se lleven la sorpresa cuando Caja bloquee la venta.
+      if (vinculandoExistente && formatoGramos != null && (creado.productoEspejo?.stockActual ?? 0) > 0) {
+        mostrarToast(
+          "Atención con el stock heredado",
+          `"${form.nombre}" tiene ${creado.productoEspejo!.stockActual} unidades de stock que no están asociadas a ningún lote. No se van a poder vender hasta que registres un lote de producción para este SKU.`
+        );
+      }
       setForm(formularioVacio());
+      limpiarVinculo();
       setMostrarForm(false);
       cargar();
     } catch (e) {
@@ -112,7 +158,14 @@ export default function CharcuteriaCatalogo() {
             </option>
           ))}
         </select>
-        <button type="button" onClick={() => setMostrarForm((v) => !v)}>
+        <button
+          type="button"
+          onClick={() => {
+            setMostrarForm((v) => !v);
+            setForm(formularioVacio());
+            limpiarVinculo();
+          }}
+        >
           {mostrarForm ? "Cancelar" : "+ Nuevo ítem"}
         </button>
       </div>
@@ -145,6 +198,14 @@ export default function CharcuteriaCatalogo() {
                 <option value="unidad">Unidades</option>
               </select>
             </label>
+            <label>
+              Categoría (opcional)
+              <input
+                value={form.categoria}
+                onChange={(e) => setForm({ ...form, categoria: e.target.value })}
+                placeholder="ej. Longanizas, Embutidos, Ahumados"
+              />
+            </label>
           </div>
 
           {form.tipoItem === "producto_elaborado" && (
@@ -176,46 +237,106 @@ export default function CharcuteriaCatalogo() {
           )}
 
           {form.tipoItem === "producto_terminado" && (
-            <div className="fila-inline">
-              <label>
-                Producto elaborado de origen
-                <select value={form.productoElaboradoId} onChange={(e) => setForm({ ...form, productoElaboradoId: e.target.value })}>
-                  <option value="">— elegir —</option>
-                  {productosElaborados.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.nombre}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Formato (g) — vacío = a granel
-                <input
-                  type="number"
-                  min="1"
-                  value={form.formatoGramos}
-                  onChange={(e) => setForm({ ...form, formatoGramos: e.target.value })}
-                />
-              </label>
-              <label>
-                Línea
-                <select value={form.linea} onChange={(e) => setForm({ ...form, linea: e.target.value as "" | "tabla" | "fiestas" })}>
-                  <option value="">—</option>
-                  <option value="tabla">Tabla</option>
-                  <option value="fiestas">Fiestas</option>
-                </select>
-              </label>
-              <label>
-                Precio de venta (con IVA)
-                <input
-                  type="number"
-                  min="1"
-                  value={form.precioVenta}
-                  onChange={(e) => setForm({ ...form, precioVenta: e.target.value })}
-                  required
-                />
-              </label>
-            </div>
+            <>
+              <div className="fila-inline">
+                <label>
+                  Este SKU es
+                  <select
+                    value={origenSku}
+                    onChange={(e) => {
+                      setOrigenSku(e.target.value as "nuevo" | "existente");
+                      setProductoVinculado(null);
+                      setBuscarProductoExistente("");
+                    }}
+                  >
+                    <option value="nuevo">Un producto nuevo</option>
+                    <option value="existente">Un producto que ya vendíamos (vincular, no duplicar)</option>
+                  </select>
+                </label>
+                {origenSku === "existente" && (
+                  <label>
+                    Producto a vincular
+                    <div className="buscador-producto">
+                      <input
+                        type="text"
+                        placeholder="Buscar por PLU o nombre..."
+                        value={productoVinculado ? productoVinculado.descripcion : buscarProductoExistente}
+                        onChange={(e) => {
+                          setBuscarProductoExistente(e.target.value);
+                          setProductoVinculado(null);
+                        }}
+                      />
+                      {!productoVinculado && buscarProductoExistente.trim() && (
+                        <div className="resultados-busqueda">
+                          {productosEncontrados.length === 0 && <div className="resultado-item ayuda">Sin resultados</div>}
+                          {productosEncontrados.map((p) => (
+                            <button
+                              key={p.id}
+                              type="button"
+                              className="resultado-item"
+                              onClick={() => {
+                                setProductoVinculado(p);
+                                setBuscarProductoExistente("");
+                                setProductosEncontrados([]);
+                              }}
+                            >
+                              {p.plu} — {p.descripcion}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    {productoVinculado && (
+                      <p className="exito">
+                        Se vinculará: {productoVinculado.plu} — {productoVinculado.descripcion} (stock actual:{" "}
+                        {productoVinculado.stockActual})
+                      </p>
+                    )}
+                  </label>
+                )}
+              </div>
+
+              <div className="fila-inline">
+                <label>
+                  Producto elaborado de origen
+                  <select value={form.productoElaboradoId} onChange={(e) => setForm({ ...form, productoElaboradoId: e.target.value })}>
+                    <option value="">— elegir —</option>
+                    {productosElaborados.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.nombre}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Formato (g) — vacío = a granel
+                  <input
+                    type="number"
+                    min="1"
+                    value={form.formatoGramos}
+                    onChange={(e) => setForm({ ...form, formatoGramos: e.target.value })}
+                  />
+                </label>
+                <label>
+                  Línea
+                  <select value={form.linea} onChange={(e) => setForm({ ...form, linea: e.target.value as "" | "tabla" | "fiestas" })}>
+                    <option value="">—</option>
+                    <option value="tabla">Tabla</option>
+                    <option value="fiestas">Fiestas</option>
+                  </select>
+                </label>
+                <label>
+                  Precio de venta (con IVA){origenSku === "existente" ? " — vacío = mantener el precio actual" : ""}
+                  <input
+                    type="number"
+                    min="1"
+                    value={form.precioVenta}
+                    onChange={(e) => setForm({ ...form, precioVenta: e.target.value })}
+                    required={origenSku !== "existente"}
+                  />
+                </label>
+              </div>
+            </>
           )}
 
           <div className="acciones-formulario">
@@ -232,6 +353,7 @@ export default function CharcuteriaCatalogo() {
             <th>Código</th>
             <th>Nombre</th>
             <th>Tipo</th>
+            <th>Categoría</th>
             <th>Stock</th>
             <th>Precio venta</th>
             <th>Costo ref.</th>
@@ -243,6 +365,7 @@ export default function CharcuteriaCatalogo() {
               <td>{i.codigo}</td>
               <td>{i.nombre}</td>
               <td>{ETIQUETAS_TIPO[i.tipoItem]}</td>
+              <td>{i.categoria ?? "—"}</td>
               <td>
                 {i.stockActual} {i.unidadMedida === "gramos" ? "g" : "un."}
               </td>
@@ -252,7 +375,7 @@ export default function CharcuteriaCatalogo() {
           ))}
           {items.length === 0 && (
             <tr>
-              <td colSpan={6}>Sin ítems en el catálogo todavía.</td>
+              <td colSpan={7}>Sin ítems en el catálogo todavía.</td>
             </tr>
           )}
         </tbody>

@@ -34,6 +34,8 @@ import Revisiones from "./pages/Revisiones";
 import Gastos from "./pages/Gastos";
 import Comunas from "./pages/Comunas";
 import PedidosWeb from "./pages/PedidosWeb";
+import CajaOnline from "./pages/CajaOnline";
+import PedidosOnlinePendientes from "./pages/PedidosOnlinePendientes";
 import Configuracion from "./pages/Configuracion";
 import Avisos from "./pages/Avisos";
 import ControlPrecios from "./pages/ControlPrecios";
@@ -60,6 +62,7 @@ import CharcuteriaTrazabilidad from "./pages/CharcuteriaTrazabilidad";
 import CharcuteriaConsolidado from "./pages/CharcuteriaConsolidado";
 import CharcuteriaMiClave from "./pages/CharcuteriaMiClave";
 import CharcuteriaRoles from "./pages/CharcuteriaRoles";
+import CharcuteriaConfiguracion from "./pages/CharcuteriaConfiguracion";
 
 export default function App() {
   // En "modo caja exclusiva" (ver web/src/lib/modoCaja.ts), este PC arranca
@@ -104,6 +107,8 @@ export default function App() {
             <Route path="/gastos" element={<Gastos />} />
             <Route path="/comunas" element={<Comunas />} />
             <Route path="/pedidos-web" element={<PedidosWeb />} />
+            <Route path="/caja-online/:pedidoId" element={<CajaOnline />} />
+            <Route path="/caja/pedidos-online-pendientes" element={<PedidosOnlinePendientes />} />
             <Route path="/asistente" element={<Asistente />} />
             <Route path="/balanza" element={<Balanza />} />
             <Route path="/camara" element={<Camara />} />
@@ -129,6 +134,7 @@ export default function App() {
             <Route path="/charcuteria/reportes/consolidado" element={<CharcuteriaConsolidado />} />
             <Route path="/charcuteria/mi-clave" element={<CharcuteriaMiClave />} />
             <Route path="/charcuteria/roles" element={<CharcuteriaRoles />} />
+            <Route path="/charcuteria/configuracion" element={<CharcuteriaConfiguracion />} />
           </Route>
         </Route>
         <Route path="/" element={<Navigate to={inicio} replace />} />

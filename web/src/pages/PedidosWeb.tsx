@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { api, formatoCLP, formatoPeso, type Comuna, type PedidoWeb, type Producto } from "../api";
 import { etiquetaPedido, subtotalItem, totalPedido, ValePedidoWeb } from "../components/ValePedidoWeb";
 import { construirMensajeRutaWhatsapp, RutaDespacho, type DireccionRuta } from "../components/RutaDespacho";
@@ -103,21 +104,6 @@ export default function PedidosWeb() {
   // "Atendidos"), ya que "pedidos" solo trae los de la pestaña activa.
   const [seleccionRuta, setSeleccionRuta] = useState<Map<number, PedidoWeb>>(new Map());
   const [rutaParaImprimir, setRutaParaImprimir] = useState<PedidoWeb[] | null>(null);
-  const [enviandoACajaId, setEnviandoACajaId] = useState<number | null>(null);
-  // Antes de generar la venta, quien atiende elige con qué medio pagó
-  // realmente el cliente (efectivo/tarjeta/transferencia) — no se puede
-  // adivinar del campo "medio de pago" del pedido (texto libre).
-  const [eligiendoMedioId, setEligiendoMedioId] = useState<number | null>(null);
-  // El cliente cotiza los productos por kg con un peso estimado online,
-  // pero el corte real pesado puede variar — y la venta se genera cobrando
-  // el precio vigente × la cantidad guardada en el pedido, así que si nadie
-  // la corrige antes de cobrar, se cobra el peso estimado, no el real. Este
-  // paso obliga a confirmar (o ajustar) el peso real de cada ítem por kg
-  // antes de poder elegir el medio de pago, para no perder plata por la
-  // diferencia. Solo aparece si el pedido tiene algún ítem por kg.
-  const [confirmandoPesoId, setConfirmandoPesoId] = useState<number | null>(null);
-  const [formPesos, setFormPesos] = useState<Record<number, string>>({});
-  const [guardandoPesos, setGuardandoPesos] = useState(false);
   const [comunas, setComunas] = useState<Comuna[]>([]);
   const [direccionRuta, setDireccionRuta] = useState<DireccionRuta>("cercana");
 
@@ -440,74 +426,6 @@ export default function PedidosWeb() {
     }
   }
 
-  async function marcarAtendidoYCobrar(p: PedidoWeb, medio: "efectivo" | "tarjeta" | "transferencia") {
-    if (!usuario) return;
-    setEnviandoACajaId(p.id);
-    try {
-      const { ventaId } = await api.pedidosWeb.enviarACaja(p.id, usuario.id, medio);
-      const etiquetaMedio = medio === "efectivo" ? "efectivo" : medio === "tarjeta" ? "tarjeta" : "transferencia";
-      mostrarToast("Pedido atendido y cobrado", `Pedido de ${p.clienteNombre} quedó como venta #${ventaId}, pagada con ${etiquetaMedio}.`);
-      setEligiendoMedioId(null);
-      cargar();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setEnviandoACajaId(null);
-    }
-  }
-
-  // Al hacer clic en "Marcar atendido y cobrar": si hay ítems por kg, primero
-  // hay que confirmar/ajustar el peso real antes de elegir el medio de pago;
-  // si el pedido es solo por unidades, no hay nada que pesar y se salta
-  // directo a elegir el medio de pago, como antes.
-  function iniciarAtencion(p: PedidoWeb) {
-    const itemsKg = p.items.filter((item) => item.unidad === "kg");
-    if (itemsKg.length === 0) {
-      setEligiendoMedioId(p.id);
-      return;
-    }
-    const inicial: Record<number, string> = {};
-    p.items.forEach((item, i) => {
-      if (item.unidad === "kg") inicial[i] = String(item.cantidad / 1000);
-    });
-    setFormPesos(inicial);
-    setConfirmandoPesoId(p.id);
-  }
-
-  async function confirmarPesos(p: PedidoWeb) {
-    if (!usuario) return;
-    setGuardandoPesos(true);
-    setError(null);
-    try {
-      for (let i = 0; i < p.items.length; i++) {
-        const item = p.items[i];
-        if (item.unidad !== "kg") continue;
-        const texto = formPesos[i] ?? "";
-        const valor = Number(texto.replace(",", "."));
-        if (!texto.trim() || Number.isNaN(valor) || valor <= 0) {
-          setError(`El peso de "${item.descripcion}" no es válido`);
-          setGuardandoPesos(false);
-          return;
-        }
-        const cantidadNueva = Math.round(valor * 1000);
-        if (cantidadNueva !== item.cantidad) {
-          await api.pedidosWeb.editarItem(p.id, i, usuario.id, {
-            cantidad: cantidadNueva,
-            instrucciones: item.instrucciones ?? null,
-          });
-        }
-      }
-      setConfirmandoPesoId(null);
-      setFormPesos({});
-      setEligiendoMedioId(p.id);
-      cargar();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setGuardandoPesos(false);
-    }
-  }
-
   return (
     <>
     <div className="no-imprimir">
@@ -764,7 +682,12 @@ export default function PedidosWeb() {
               </div>
             )}
 
-            {p.ventaGeneradaId && <p className="exito">Atendido y cobrado — venta #{p.ventaGeneradaId}.</p>}
+            {p.ventaGeneradaId && (
+              <p className="exito">
+                Atendido — venta #{p.ventaGeneradaId} (revisa el cobro en "Pedidos online pendientes de pago" si
+                todavía no se ha pagado).
+              </p>
+            )}
 
             {p.comentario && (
               <p>
@@ -1042,88 +965,10 @@ export default function PedidosWeb() {
                   Agregar regalo
                 </button>
               )}
-              {p.estado !== "anulado" &&
-                !p.ventaGeneradaId &&
-                eligiendoMedioId !== p.id &&
-                confirmandoPesoId !== p.id && (
-                  <button type="button" className="boton boton-primario" onClick={() => iniciarAtencion(p)}>
-                    Marcar atendido y cobrar
-                  </button>
-                )}
-              {confirmandoPesoId === p.id && (
-                <div className="tarjeta tarjeta-mini">
-                  <h3>Confirmar peso real antes de cobrar</h3>
-                  <p className="ayuda">
-                    El cliente cotizó estos productos por un peso estimado — ajusta cada uno al peso real pesado
-                    antes de generar la venta, para no cobrar de más ni de menos.
-                  </p>
-                  {p.items.map((item, i) =>
-                    item.unidad === "kg" ? (
-                      <label key={i} className="fila-inline">
-                        {item.descripcion}
-                        <input
-                          type="number"
-                          min="0.001"
-                          step="0.001"
-                          className="input-chico"
-                          value={formPesos[i] ?? ""}
-                          onChange={(e) => setFormPesos({ ...formPesos, [i]: e.target.value })}
-                          autoFocus={i === 0}
-                        />
-                        kg
-                      </label>
-                    ) : null
-                  )}
-                  <div className="fila-inline">
-                    <button
-                      type="button"
-                      className="boton boton-primario"
-                      onClick={() => confirmarPesos(p)}
-                      disabled={guardandoPesos}
-                    >
-                      {guardandoPesos ? "Guardando..." : "Confirmar y continuar"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setConfirmandoPesoId(null);
-                        setFormPesos({});
-                      }}
-                      disabled={guardandoPesos}
-                    >
-                      Cancelar
-                    </button>
-                  </div>
-                </div>
-              )}
-              {eligiendoMedioId === p.id && (
-                <span className="fila-inline">
-                  ¿Con qué pagó?
-                  <button
-                    type="button"
-                    disabled={enviandoACajaId === p.id}
-                    onClick={() => marcarAtendidoYCobrar(p, "efectivo")}
-                  >
-                    Efectivo
-                  </button>
-                  <button
-                    type="button"
-                    disabled={enviandoACajaId === p.id}
-                    onClick={() => marcarAtendidoYCobrar(p, "tarjeta")}
-                  >
-                    Tarjeta
-                  </button>
-                  <button
-                    type="button"
-                    disabled={enviandoACajaId === p.id}
-                    onClick={() => marcarAtendidoYCobrar(p, "transferencia")}
-                  >
-                    Transferencia
-                  </button>
-                  <button type="button" disabled={enviandoACajaId === p.id} onClick={() => setEligiendoMedioId(null)}>
-                    Cancelar
-                  </button>
-                </span>
+              {p.estado !== "anulado" && !p.ventaGeneradaId && (
+                <Link to={`/caja-online/${p.id}`} className="boton boton-primario">
+                  Ir a pistolear
+                </Link>
               )}
               <button type="button" onClick={() => setPedidoParaImprimir(p)}>
                 Imprimir

@@ -137,6 +137,83 @@ describe("Charcutería — costeo, merma y trazabilidad de un lote", () => {
   });
 });
 
+describe("Charcutería — clave de supervisor para entrar a secciones sensibles", () => {
+  it("acepta la clave de supervisor vigente y rechaza una incorrecta", async () => {
+    await crearFixturesBasicas(); // deja la ClaveSupervisor en "1234"
+
+    const ok = await api.post("/api/charcuteria/verificar-clave-sensible").send({ clave: "1234" });
+    expect(ok.status).toBe(204);
+
+    const mal = await api.post("/api/charcuteria/verificar-clave-sensible").send({ clave: "no-es-esta" });
+    expect(mal.status).toBe(403);
+  });
+});
+
+describe("Charcutería — vincular un producto existente en vez de duplicarlo", () => {
+  it("vincula un producto de carnicería como espejo, conservando su PLU y stock, sin crear uno nuevo", async () => {
+    const { usuario, productoCarniceria } = await crearFixturesBasicas();
+
+    const buscador = await api.get(`/api/charcuteria/productos-vinculables?buscar=${encodeURIComponent(productoCarniceria.plu)}`);
+    expect(buscador.status).toBe(200);
+    expect(buscador.body.some((p: { id: number }) => p.id === productoCarniceria.id)).toBe(true);
+
+    const item = await crearItem(usuario.id, {
+      codigo: `SKU-VINC-${Date.now()}`,
+      nombre: "Pastrami vinculado",
+      tipoItem: "producto_terminado",
+      formatoGramos: 200,
+      productoExistenteId: productoCarniceria.id,
+    });
+
+    // No se crea una fila nueva en Producto — se reutiliza la misma, con el
+    // mismo PLU y el mismo stock que ya tenía.
+    expect(item.productoEspejoId).toBe(productoCarniceria.id);
+    expect(item.productoEspejo.plu).toBe(productoCarniceria.plu);
+    expect(item.productoEspejo.stockActual).toBe(100);
+
+    const productoActualizado = await prisma.producto.findUnique({ where: { id: productoCarniceria.id } });
+    expect(productoActualizado?.businessUnitId).toBe(2);
+    expect(productoActualizado?.stockActual).toBe(100);
+    expect(productoActualizado?.plu).toBe(productoCarniceria.plu);
+
+    // Una vez vinculado, ya no aparece como candidato para vincular de nuevo.
+    const buscadorDespues = await api.get(`/api/charcuteria/productos-vinculables?buscar=${encodeURIComponent(productoCarniceria.plu)}`);
+    expect(buscadorDespues.body.some((p: { id: number }) => p.id === productoCarniceria.id)).toBe(false);
+
+    // Intentar vincularlo de nuevo a otro ítem falla con un error claro.
+    const res = await api.post("/api/charcuteria/items").send({
+      usuarioId: usuario.id,
+      codigo: `SKU-VINC-DUP-${Date.now()}`,
+      nombre: "Otro SKU",
+      tipoItem: "producto_terminado",
+      productoExistenteId: productoCarniceria.id,
+    });
+    expect(res.status).toBe(409);
+  });
+
+  it("respeta el precio existente si no se manda uno nuevo, y lo actualiza si sí", async () => {
+    const { usuario, productoCarniceria } = await crearFixturesBasicas();
+    const precioOriginal = productoCarniceria.precio;
+
+    const item = await crearItem(usuario.id, {
+      codigo: `SKU-VINC-PRECIO-${Date.now()}`,
+      nombre: "Cecina vinculada",
+      tipoItem: "producto_terminado",
+      productoExistenteId: productoCarniceria.id,
+    });
+    expect(item.productoEspejo.precio).toBe(precioOriginal);
+
+    const item2 = await crearItem(usuario.id, {
+      codigo: `SKU-VINC-PRECIO2-${Date.now()}`,
+      nombre: "Otra cecina vinculada",
+      tipoItem: "producto_terminado",
+      productoExistenteId: (await crearFixturesBasicas()).productoCarniceria.id,
+      precioVenta: 12345,
+    });
+    expect(item2.productoEspejo.precio).toBe(12345);
+  });
+});
+
 describe("Charcutería — FEFO al vender", () => {
   let usuarioId: number;
   let productoCarniceriaId: number;

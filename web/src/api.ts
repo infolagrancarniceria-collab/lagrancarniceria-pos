@@ -598,7 +598,7 @@ export interface HistorialEntrada {
   fecha: string;
 }
 
-export type MedioPago = "efectivo" | "tarjeta" | "credito" | "transferencia";
+export type MedioPago = "efectivo" | "tarjeta" | "credito" | "transferencia" | "pedido_web";
 export type MedioCobro = "efectivo" | "tarjeta";
 
 // Cliente registrado para ventas a crédito/transferencia — reemplaza el
@@ -660,6 +660,10 @@ export interface PagoVenta {
   medioCobro: MedioCobro | null;
   sesionCajaCobroId: number | null;
   usuarioCobroId: number | null;
+  // Solo viene en la respuesta de cobrarCredito() (ver
+  // ComprobantePagoCredito) — en el resto de los endpoints basta con
+  // usuarioCobroId.
+  usuarioCobro?: { id: number; nombre: string } | null;
   fechaCobro: string | null;
 }
 
@@ -803,6 +807,7 @@ export interface AvisosCriticos {
   cajasEstancadas: { cantidad: number };
   ajustesPendientesCamara: { cantidad: number };
   pedidosWebPendientes: { cantidad: number };
+  pedidosOnlinePendientesPago: { cantidad: number };
   lotesCharcuteriaPorVencer: { cantidad: number };
 }
 
@@ -935,8 +940,9 @@ export interface ItemCharcuteria {
   productoElaboradoId: number | null;
   productoElaborado: { id: number; nombre: string } | null;
   productoEspejoId: number | null;
-  productoEspejo: { id: number; precio: number } | null;
+  productoEspejo: { id: number; plu: string; precio: number; stockActual: number } | null;
   linea: "tabla" | "fiestas" | null;
+  categoria: string | null;
   costoReferencia: number | null;
   ingredientes: string | null;
   alergenos: string | null;
@@ -960,12 +966,25 @@ export interface Receta {
   productoElaborado: ItemCharcuteria;
   version: number;
   activa: boolean;
-  rendimientoEsperadoPct: number;
+  // null = importada desde el programa anterior, todavía sin confirmar —
+  // no se puede usar para crear un lote (ver POST /charcuteria/lotes).
+  rendimientoEsperadoPct: number | null;
   dosisSalesCurantesPorKg: number | null;
   parametrosProceso: string | null;
   notas: string | null;
   creadoEn: string;
   ingredientes: RecetaIngrediente[];
+}
+
+export interface ResultadoImportarRecetas {
+  creadas: {
+    nombre: string;
+    recetaId: number;
+    ingredientesCreados: number;
+    ingredientesReusados: number;
+    ingredientesOmitidos: string[];
+  }[];
+  omitidas: { nombre: string; motivo: string }[];
 }
 
 export interface TransferenciaInterna {
@@ -1300,6 +1319,7 @@ export const api = {
   pedidosWeb: {
     listar: (estado?: "pendiente" | "atendido" | "anulado") =>
       get<PedidoWeb[]>(`/api/pedidos-web${estado ? `?estado=${estado}` : ""}`),
+    obtener: (id: number) => get<PedidoWeb>(`/api/pedidos-web/${id}`),
     anular: (id: number, usuarioId: number, clave: string, motivo: string) =>
       put<PedidoWeb>(`/api/pedidos-web/${id}/anular`, { usuarioId, clave, motivo }),
     aplicarDescuento: (
@@ -1337,8 +1357,6 @@ export const api = {
       cantidad: number,
       instrucciones?: string | null
     ) => post<PedidoWeb>(`/api/pedidos-web/${id}/items`, { usuarioId, productoId, cantidad, instrucciones }),
-    enviarACaja: (id: number, usuarioId: number, medio: "efectivo" | "tarjeta" | "transferencia") =>
-      post<{ pedido: PedidoWeb; ventaId: number }>(`/api/pedidos-web/${id}/enviar-a-caja`, { usuarioId, medio }),
     sincronizar: () => post<{ nuevos: number }>("/api/pedidos-web/sincronizar", {}),
   },
   inventario: {
@@ -1459,6 +1477,8 @@ export const api = {
     },
     crearVenta: (usuarioId: number, auxiliar?: boolean) =>
       post<Venta>("/api/caja/ventas", { usuarioId, auxiliar }),
+    crearVentaDesdePedidoWeb: (pedidoId: number, usuarioId: number) =>
+      post<Venta>(`/api/caja/ventas/desde-pedido-web/${pedidoId}`, { usuarioId }),
     agregarItem: (ventaId: number, data: { productoId: number; cantidad: number }) =>
       post<Venta>(`/api/caja/ventas/${ventaId}/items`, data),
     escanearCodigo: (ventaId: number, codigo: string) =>
@@ -1482,7 +1502,7 @@ export const api = {
       post<Venta>(`/api/caja/ventas/${ventaId}/confirmar`, { usuarioId }),
     cancelarVenta: (ventaId: number, data: { clave: string; usuarioId: number; motivo?: string }) =>
       post<Venta>(`/api/caja/ventas/${ventaId}/cancelar`, data),
-    creditosPendientes: (medio?: "credito" | "transferencia") =>
+    creditosPendientes: (medio?: "credito" | "transferencia" | "pedido_web") =>
       get<PagoVenta[]>(`/api/caja/creditos-pendientes${medio ? `?medio=${medio}` : ""}`),
     cobrarCredito: (pagoId: number, data: { medioCobro: MedioCobro; usuarioId: number }) =>
       post<PagoVenta>(`/api/caja/creditos/${pagoId}/cobrar`, data),
@@ -1528,6 +1548,7 @@ export const api = {
       id: number,
       data: { nombre: string; telefono?: string | null; rut?: string | null; notas?: string | null }
     ) => put<Cliente>(`/api/clientes/${id}`, data),
+    eliminar: (id: number) => del<void>(`/api/clientes/${id}`),
     estadoCuenta: (id: number) => get<EstadoCuentaCliente>(`/api/clientes/${id}/estado-cuenta`),
   },
   avisos: {
@@ -1730,6 +1751,9 @@ export const api = {
       put<Usuario>(`/api/charcuteria/usuarios/${usuarioId}/rol`, { clave, rol }),
     establecerClavePersonal: (usuarioId: number, claveNueva: string) =>
       put<void>(`/api/charcuteria/usuarios/${usuarioId}/clave-personal`, { claveNueva }),
+    // Gate de entrada a las secciones sensibles (Configuración, Roles,
+    // Costo y margen) — ver SeccionProtegidaCharcuteria.
+    verificarClaveSensible: (clave: string) => post<void>("/api/charcuteria/verificar-clave-sensible", { clave }),
 
     items: {
       listar: (params: { tipoItem?: TipoItemCharcuteria; buscar?: string; incluirInactivos?: boolean } = {}) => {
@@ -1756,12 +1780,19 @@ export const api = {
         formatoGramos?: number | null;
         productoElaboradoId?: number | null;
         linea?: "tabla" | "fiestas" | null;
+        categoria?: string | null;
         precioVenta?: number;
+        productoExistenteId?: number | null;
       }) => post<ItemCharcuteria>("/api/charcuteria/items", data),
       editar: (id: number, data: Record<string, unknown> & { usuarioId: number }) =>
         put<ItemCharcuteria>(`/api/charcuteria/items/${id}`, data),
       eliminar: (id: number) => del<void>(`/api/charcuteria/items/${id}`),
     },
+    // Productos de carnicería que se pueden vincular como espejo de un SKU
+    // nuevo (ej. el Pastrami que ya existía antes de este módulo) — para
+    // no duplicarlos, ver POST /items con productoExistenteId.
+    productosVinculables: (buscar: string) =>
+      get<Producto[]>(`/api/charcuteria/productos-vinculables?buscar=${encodeURIComponent(buscar)}`),
 
     recetas: {
       listar: (params: { productoElaboradoId?: number; soloActivas?: boolean } = {}) => {
@@ -1781,6 +1812,11 @@ export const api = {
         notas?: string | null;
         ingredientes: { itemId: number; cantidadPorLoteBase: number; unidad: "gramos" | "unidad" }[];
       }) => post<Receta>("/api/charcuteria/recetas", data),
+      // Importa el archivo JSON exportado por el programa anterior — ver
+      // comentario en server/routes/charcuteriaRecetas.ts para el detalle
+      // de qué trae y qué se deja afuera (las "pruebas" no se importan).
+      importarJson: (usuarioId: number, datos: unknown) =>
+        post<ResultadoImportarRecetas>("/api/charcuteria/recetas/importar-json", { usuarioId, datos }),
     },
 
     transferencias: {

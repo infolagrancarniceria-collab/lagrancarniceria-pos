@@ -15,6 +15,7 @@ export interface AvisosCriticos {
   cajasEstancadas: { cantidad: number };
   ajustesPendientesCamara: { cantidad: number };
   pedidosWebPendientes: { cantidad: number };
+  pedidosOnlinePendientesPago: { cantidad: number };
   lotesCharcuteriaPorVencer: { cantidad: number };
 }
 
@@ -23,21 +24,29 @@ export interface AvisosCriticos {
 // en cada pedido (nada se guarda "ya avisado" acá; eso lo maneja el
 // frontend, para decidir cuándo repetir una notificación nativa).
 export async function calcularAvisosCriticos(): Promise<AvisosCriticos> {
-  const [sesionAbierta, productosConUmbral, cajasEnCamara, ajustesPendientesCamara, pedidosWebPendientes, configCharcuteria] =
-    await Promise.all([
-      prisma.sesionCaja.findFirst({ where: { estado: "abierta" }, include: { usuarioApertura: true } }),
-      prisma.producto.findMany({
-        where: { activo: true, umbralStockBajo: { not: null } },
-        select: { stockActual: true, umbralStockBajo: true },
-      }),
-      prisma.cajaCamara.findMany({
-        where: { estado: "en_camara" },
-        select: { fechaIngreso: true, pesoInicialKg: true, saldoKg: true },
-      }),
-      prisma.cajaCamara.count({ where: { estado: "ajuste_pendiente" } }),
-      prisma.pedidoWeb.count({ where: { estado: "pendiente" } }),
-      prisma.configuracionCharcuteria.findFirst(),
-    ]);
+  const [
+    sesionAbierta,
+    productosConUmbral,
+    cajasEnCamara,
+    ajustesPendientesCamara,
+    pedidosWebPendientes,
+    pedidosOnlinePendientesPago,
+    configCharcuteria,
+  ] = await Promise.all([
+    prisma.sesionCaja.findFirst({ where: { estado: "abierta" }, include: { usuarioApertura: true } }),
+    prisma.producto.findMany({
+      where: { activo: true, umbralStockBajo: { not: null } },
+      select: { stockActual: true, umbralStockBajo: true },
+    }),
+    prisma.cajaCamara.findMany({
+      where: { estado: "en_camara" },
+      select: { fechaIngreso: true, pesoInicialKg: true, saldoKg: true },
+    }),
+    prisma.cajaCamara.count({ where: { estado: "ajuste_pendiente" } }),
+    prisma.pedidoWeb.count({ where: { estado: "pendiente" } }),
+    prisma.pagoVenta.count({ where: { medio: "pedido_web", cobrado: false } }),
+    prisma.configuracionCharcuteria.findFirst(),
+  ]);
 
   // Una caja abierta es normal mientras sea la de hoy — recién es un aviso
   // si quedó de un día anterior sin cerrar (el cierre X/Z de ese día nunca
@@ -82,6 +91,7 @@ export async function calcularAvisosCriticos(): Promise<AvisosCriticos> {
     cajasEstancadas: { cantidad: cajasEstancadasCantidad },
     ajustesPendientesCamara: { cantidad: ajustesPendientesCamara },
     pedidosWebPendientes: { cantidad: pedidosWebPendientes },
+    pedidosOnlinePendientesPago: { cantidad: pedidosOnlinePendientesPago },
     lotesCharcuteriaPorVencer: { cantidad: lotesCharcuteriaPorVencer },
   };
 }

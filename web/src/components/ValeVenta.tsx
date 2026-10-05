@@ -14,6 +14,7 @@ const etiquetaMedio: Record<string, string> = {
   tarjeta: "Tarjeta",
   credito: "Crédito",
   transferencia: "Transferencia",
+  pedido_web: "Pedido online — pendiente de pago",
 };
 
 interface Props {
@@ -52,6 +53,11 @@ export function ValeVenta({ venta, onImprimir, onAnular }: Props) {
           Venta anulada — {venta.motivoAnulacion ?? "sin motivo especificado"}
           {venta.usuarioAnulacion ? ` (autorizó: ${venta.usuarioAnulacion.nombre})` : ""}
           {venta.fechaAnulacion ? `, ${new Date(venta.fechaAnulacion).toLocaleString("es-CL")}` : ""}
+        </p>
+      )}
+      {venta.pagos.some((p) => p.medio === "pedido_web" && !p.cobrado) && (
+        <p className="error">
+          <strong>PENDIENTE DE PAGO</strong> — el cliente paga al recibir, no marcar como pagado.
         </p>
       )}
       <h2>La Gran Carnicería</h2>

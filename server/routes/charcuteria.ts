@@ -95,6 +95,29 @@ charcuteriaRouter.put("/usuarios/:id/clave-personal", async (req, res) => {
   res.status(204).send();
 });
 
+// --- Acceso a las secciones sensibles del módulo ---
+// Configuración, Roles y el reporte de Costo/margen piden la clave de
+// supervisor antes de mostrarse (no una acción puntual dentro de la
+// pantalla, sino para entrar a la pantalla misma) — misma clave que ya se
+// usa en el resto del sistema, para no sumar una más que recordar. Este
+// endpoint solo verifica; no guarda ni ata la verificación a ningún
+// usuario, así que el front la vuelve a pedir cada vez que se entra.
+const verificarClaveSensibleSchema = z.object({ clave: z.string().min(1, "Falta la clave de supervisor") });
+
+charcuteriaRouter.post("/verificar-clave-sensible", async (req, res) => {
+  const parsed = verificarClaveSensibleSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0].message });
+
+  const claveSupervisor = await prisma.claveSupervisor.findFirst();
+  if (!claveSupervisor) return res.status(403).json({ error: "Clave de supervisor incorrecta" });
+  const resultado = verificarClaveConLimite(req.ip ?? "desconocido", parsed.data.clave, claveSupervisor.hashClave);
+  if (resultado.bloqueado) {
+    return res.status(429).json({ error: `Demasiados intentos fallidos — espera ${resultado.segundosRestantes} segundos e intenta de nuevo` });
+  }
+  if (!resultado.valida) return res.status(403).json({ error: "Clave de supervisor incorrecta" });
+  res.status(204).send();
+});
+
 // --- Catálogo (ItemCharcuteria) ---
 
 export const TIPOS_ITEM = ["materia_prima", "insumo", "envase_etiqueta", "producto_elaborado", "producto_terminado"] as const;
@@ -153,13 +176,23 @@ const crearItemSchema = z
     formatoGramos: z.number().int().positive().optional().nullable(),
     productoElaboradoId: z.number().int().positive().optional().nullable(),
     linea: z.enum(["tabla", "fiestas"]).optional().nullable(),
-    // Precio de venta con IVA para el SKU — se copia al crear la fila
-    // espejo en Producto (ver más abajo); no se guarda en ItemCharcuteria
-    // porque el precio real de venta siempre vive en Producto.precio, para
-    // no tener dos fuentes de verdad.
+    // Agrupación libre (ej. "Longanizas", "Embutidos", "Ahumados") — solo
+    // para organizar el catálogo, no cambia ningún comportamiento.
+    categoria: z.string().trim().optional().nullable(),
+    // Precio de venta con IVA para el SKU — se copia a la fila espejo en
+    // Producto (ver más abajo); no se guarda en ItemCharcuteria porque el
+    // precio real de venta siempre vive en Producto.precio, para no tener
+    // dos fuentes de verdad. Si se vincula un producto existente
+    // (productoExistenteId) es opcional: sin valor, se deja el precio que
+    // el producto ya tenía.
     precioVenta: z.number().positive().optional(),
+    // Vincular un producto que ya existe en el catálogo de carnicería como
+    // espejo del SKU nuevo, en vez de crear uno desde cero — evita
+    // duplicar productos que ya se vendían antes de este módulo (ver
+    // GET /productos-vinculables). Solo aplica a producto_terminado.
+    productoExistenteId: z.number().int().positive().optional().nullable(),
   })
-  .refine((d) => d.tipoItem !== "producto_terminado" || d.precioVenta != null, {
+  .refine((d) => d.tipoItem !== "producto_terminado" || d.productoExistenteId != null || d.precioVenta != null, {
     message: "Falta el precio de venta",
     path: ["precioVenta"],
   });
@@ -174,6 +207,34 @@ async function obtenerCategoriaCharcuteria(tx: Prisma.TransactionClient) {
   if (existente) return existente;
   return tx.categoria.create({ data: { codigo: "CHARCUTERIA", nombre: "Charcutería", nivel: 1 } });
 }
+
+// Buscador para "vincular un producto existente" al crear un SKU de
+// charcutería (ver POST /items, productoExistenteId): solo productos de
+// carnicería (businessUnitId 1) activos que todavía no son la fila espejo
+// de ningún ítem de charcutería.
+charcuteriaRouter.get("/productos-vinculables", async (req, res) => {
+  const buscar = typeof req.query.buscar === "string" ? req.query.buscar.trim() : "";
+
+  const yaVinculados = await prisma.itemCharcuteria.findMany({
+    where: { productoEspejoId: { not: null } },
+    select: { productoEspejoId: true },
+  });
+  const idsVinculados = yaVinculados
+    .map((i) => i.productoEspejoId)
+    .filter((id): id is number => id != null);
+
+  const productos = await prisma.producto.findMany({
+    where: {
+      activo: true,
+      businessUnitId: 1,
+      id: { notIn: idsVinculados },
+      ...(buscar ? { OR: [{ plu: { contains: buscar } }, { descripcion: { contains: buscar } }] } : {}),
+    },
+    orderBy: { descripcion: "asc" },
+    take: 20,
+  });
+  res.json(productos);
+});
 
 charcuteriaRouter.post("/items", async (req, res) => {
   const parsed = crearItemSchema.safeParse(req.body);
@@ -193,6 +254,24 @@ charcuteriaRouter.post("/items", async (req, res) => {
     }
   }
 
+  // Vincular un producto que ya existía en el catálogo de carnicería (ej.
+  // el Pastrami, cargado antes de que existiera este módulo) en vez de
+  // crear uno nuevo — evita duplicarlo, conservando su mismo PLU, stock e
+  // historial de ventas.
+  let productoExistente: Awaited<ReturnType<typeof prisma.producto.findUnique>> = null;
+  if (data.tipoItem === "producto_terminado" && data.productoExistenteId) {
+    productoExistente = await prisma.producto.findUnique({ where: { id: data.productoExistenteId } });
+    if (!productoExistente || !productoExistente.activo) {
+      return res.status(400).json({ error: "El producto indicado no existe o está inactivo" });
+    }
+    const yaVinculado = await prisma.itemCharcuteria.findUnique({
+      where: { productoEspejoId: productoExistente.id },
+    });
+    if (yaVinculado) {
+      return res.status(409).json({ error: "Ese producto ya está vinculado a otro ítem de charcutería" });
+    }
+  }
+
   const item = await prisma.$transaction(async (tx) => {
     let productoEspejoId: number | null = null;
 
@@ -203,18 +282,38 @@ charcuteriaRouter.post("/items", async (req, res) => {
     // (PESABLE, se vende por peso) — mismo criterio que ya usa el resto
     // del catálogo de carnicería.
     if (data.tipoItem === "producto_terminado") {
-      const categoria = await obtenerCategoriaCharcuteria(tx);
-      const espejo = await tx.producto.create({
-        data: {
-          plu: `CH-${data.codigo}`,
-          descripcion: data.nombre,
-          categoriaId: categoria.id,
-          businessUnitId: 2,
-          precio: data.precioVenta!,
-          flagBalanza: data.formatoGramos != null ? "NORMAL" : "PESABLE",
-        },
-      });
-      productoEspejoId = espejo.id;
+      if (productoExistente) {
+        // Solo se toca lo necesario para que pase a venderse como SKU de
+        // charcutería — plu, descripción, categoría y stockActual quedan
+        // tal cual estaban (nunca se destruye ese historial). Si el SKU
+        // queda con formato fijo, ese stock heredado no va a estar
+        // asociado a ningún lote hasta que se registre uno nuevo en
+        // Producción — Caja bloqueará la venta mientras tanto (mismo
+        // chequeo que ya existe para cualquier SKU con formato fijo, ver
+        // POST /caja/ventas/:id/confirmar).
+        const actualizado = await tx.producto.update({
+          where: { id: productoExistente.id },
+          data: {
+            businessUnitId: 2,
+            flagBalanza: data.formatoGramos != null ? "NORMAL" : "PESABLE",
+            ...(data.precioVenta != null ? { precio: data.precioVenta } : {}),
+          },
+        });
+        productoEspejoId = actualizado.id;
+      } else {
+        const categoria = await obtenerCategoriaCharcuteria(tx);
+        const espejo = await tx.producto.create({
+          data: {
+            plu: `CH-${data.codigo}`,
+            descripcion: data.nombre,
+            categoriaId: categoria.id,
+            businessUnitId: 2,
+            precio: data.precioVenta!,
+            flagBalanza: data.formatoGramos != null ? "NORMAL" : "PESABLE",
+          },
+        });
+        productoEspejoId = espejo.id;
+      }
     }
 
     return tx.itemCharcuteria.create({
@@ -232,6 +331,7 @@ charcuteriaRouter.post("/items", async (req, res) => {
         formatoGramos: data.formatoGramos ?? null,
         productoElaboradoId: data.productoElaboradoId ?? null,
         linea: data.linea ?? null,
+        categoria: data.categoria ?? null,
         productoEspejoId,
         creadoPorId: data.usuarioId,
       },
@@ -258,7 +358,10 @@ charcuteriaRouter.put("/items/:id", async (req, res) => {
   const item = await prisma.itemCharcuteria.findUnique({ where: { id } });
   if (!item) return res.status(404).json({ error: "Ítem no encontrado" });
 
-  const { usuarioId: _usuarioId, codigo: _codigo, tipoItem: _tipoItem, precioVenta, ...cambios } = data;
+  // productoExistenteId solo tiene sentido al crear (decide si se vincula
+  // un producto ya existente en vez de crear uno nuevo) — no es una
+  // columna real de ItemCharcuteria, así que nunca se debe reenviar acá.
+  const { usuarioId: _usuarioId, codigo: _codigo, tipoItem: _tipoItem, precioVenta, productoExistenteId: _productoExistenteId, ...cambios } = data;
 
   const actualizado = await prisma.$transaction(async (tx) => {
     // El precio de venta de un SKU vendible se edita a través de la fila

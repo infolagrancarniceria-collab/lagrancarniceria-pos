@@ -704,6 +704,13 @@ model Cliente {
   notas    String?
   creadoEn DateTime @default(now())
 
+  // Soft-delete (mismo criterio que Comuna/Producto): "eliminar" un cliente
+  // desde la pantalla Clientes solo lo oculta de la lista — nunca se borra
+  // la fila de verdad, porque su historial de PagoVenta (quién pagó qué)
+  // tiene que seguir existiendo. Bloqueado en el servidor si el cliente
+  // todavía tiene deuda pendiente sin cobrar (ver DELETE /clientes/:id).
+  activo Boolean @default(true)
+
   pagos PagoVenta[]
 }
 
@@ -1170,6 +1177,14 @@ model ItemCharcuteria {
 
   linea String? // "tabla" | "fiestas"
 
+  // Agrupación libre para organizar el catálogo (ej. "Longanizas",
+  // "Embutidos", "Ahumados") — texto libre a propósito, igual criterio que
+  // familiaCorte en Producto: cada carnicería/charcutería agrupa distinto,
+  // no conviene forzar un enum fijo. No reemplaza tipoItem (ese sigue
+  // siendo lo que determina el comportamiento del sistema); esto es solo
+  // para que la pantalla de catálogo se pueda agrupar/filtrar.
+  categoria String?
+
   // Costo de referencia (última compra/transferencia) — igual criterio que
   // Producto.costoReferencia: informativo, nunca reemplaza el costeo real
   // de un lote (ver LoteProduccion.costoTotal).
@@ -1239,7 +1254,12 @@ model Receta {
   version Int
   activa  Boolean @default(true)
 
-  rendimientoEsperadoPct  Float // % de kg de salida esperados sobre kg de entrada
+  // % de kg de salida esperados sobre kg de entrada — null significa
+  // "todavía sin confirmar" (ver POST /recetas/importar-json): una receta
+  // así no puede usarse para crear un lote (se bloquea en el servidor) ni
+  // aparece en el selector de "nuevo lote" (que solo trae activas), hasta
+  // que alguien cree una versión nueva con el dato real desde Recetas.
+  rendimientoEsperadoPct  Float?
   dosisSalesCurantesPorKg Float?
 
   // JSON/texto libre a propósito: temperatura y tiempo de ahumado/cocción,

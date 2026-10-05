@@ -15,9 +15,12 @@ clientesRouter.get("/", async (req, res) => {
   const buscar = typeof req.query.buscar === "string" ? req.query.buscar.trim() : "";
 
   const clientes = await prisma.cliente.findMany({
-    where: buscar
-      ? { OR: [{ nombre: { contains: buscar } }, { rut: { contains: buscar } }, { telefono: { contains: buscar } }] }
-      : undefined,
+    where: {
+      activo: true,
+      ...(buscar
+        ? { OR: [{ nombre: { contains: buscar } }, { rut: { contains: buscar } }, { telefono: { contains: buscar } }] }
+        : {}),
+    },
     orderBy: { nombre: "asc" },
     take: buscar ? 20 : 500,
   });
@@ -81,6 +84,32 @@ clientesRouter.put("/:id", async (req, res) => {
     },
   });
   res.json(cliente);
+});
+
+// Soft-delete (ver comentario en Cliente.activo del schema) — bloqueado si
+// el cliente todavía tiene crédito/transferencia sin cobrar, para no poder
+// "perder de vista" por accidente a alguien que todavía debe plata (el
+// punto de esta pantalla es justamente saber quién debe qué). Una vez en
+// $0 pendiente, se puede eliminar para limpiar la lista sin perder su
+// historial: sigue existiendo en la base, solo deja de listarse.
+clientesRouter.delete("/:id", async (req, res) => {
+  const id = Number(req.params.id);
+  const existente = await prisma.cliente.findUnique({ where: { id } });
+  if (!existente) return res.status(404).json({ error: "Cliente no encontrado" });
+
+  const pendiente = await prisma.pagoVenta.aggregate({
+    where: { clienteId: id, cobrado: false },
+    _sum: { monto: true },
+  });
+  const deudaPendiente = pendiente._sum.monto ?? 0;
+  if (deudaPendiente > 0) {
+    return res.status(409).json({
+      error: `No se puede eliminar: todavía debe $${deudaPendiente.toLocaleString("es-CL")} sin cobrar. Cóbralo primero en Créditos pendientes.`,
+    });
+  }
+
+  await prisma.cliente.update({ where: { id }, data: { activo: false } });
+  res.status(204).send();
 });
 
 // Estado de cuenta: cuánto debe hoy (crédito + transferencia sin cobrar,

@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { api, formatoCLP, type ReporteCostoMargenLote } from "../api";
 import ModalAlerta from "../components/ModalAlerta";
+import SeccionProtegidaCharcuteria from "../components/SeccionProtegidaCharcuteria";
 
-export default function CharcuteriaReporteCostoMargen() {
+function ReporteCostoMargenContenido() {
   const [lotes, setLotes] = useState<ReporteCostoMargenLote[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -65,5 +66,13 @@ export default function CharcuteriaReporteCostoMargen() {
       ))}
       {lotes.length === 0 && <p>Sin lotes terminados todavía.</p>}
     </div>
+  );
+}
+
+export default function CharcuteriaReporteCostoMargen() {
+  return (
+    <SeccionProtegidaCharcuteria>
+      <ReporteCostoMargenContenido />
+    </SeccionProtegidaCharcuteria>
   );
 }

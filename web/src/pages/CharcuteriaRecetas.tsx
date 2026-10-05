@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { api, type ItemCharcuteria, type Receta } from "../api";
+import { useEffect, useRef, useState } from "react";
+import { api, type ItemCharcuteria, type Receta, type ResultadoImportarRecetas } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 import { mostrarToast } from "../lib/toast";
@@ -30,6 +30,10 @@ export default function CharcuteriaRecetas() {
   const [notas, setNotas] = useState("");
   const [filas, setFilas] = useState<FilaIngrediente[]>([filaVacia()]);
   const [guardando, setGuardando] = useState(false);
+
+  const [importando, setImportando] = useState(false);
+  const [resultadoImportar, setResultadoImportar] = useState<ResultadoImportarRecetas | null>(null);
+  const inputArchivoRef = useRef<HTMLInputElement>(null);
 
   function cargar() {
     api.charcuteria.recetas.listar().then(setRecetas).catch((e) => setError(e.message));
@@ -87,18 +91,95 @@ export default function CharcuteriaRecetas() {
     }
   }
 
+  async function importarArchivo(e: React.ChangeEvent<HTMLInputElement>) {
+    const archivo = e.target.files?.[0];
+    if (!archivo || !usuario) return;
+    setError(null);
+    setResultadoImportar(null);
+    setImportando(true);
+    try {
+      const texto = await archivo.text();
+      let datos: unknown;
+      try {
+        datos = JSON.parse(texto);
+      } catch {
+        throw new Error("El archivo no es un JSON válido");
+      }
+      const resultado = await api.charcuteria.recetas.importarJson(usuario.id, datos);
+      setResultadoImportar(resultado);
+      mostrarToast(
+        "Importación terminada",
+        `${resultado.creadas.length} receta(s) nueva(s), ${resultado.omitidas.length} omitida(s).`
+      );
+      cargar();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setImportando(false);
+      if (inputArchivoRef.current) inputArchivoRef.current.value = "";
+    }
+  }
+
   return (
     <div>
       <h1>Recetas</h1>
       <p className="ayuda">
         Cada producto elaborado tiene una sola versión activa a la vez — crear una receta nueva para un producto que
-        ya tenía una desactiva automáticamente la anterior (que queda de solo lectura).
+        ya tenía una desactiva automáticamente la anterior (que queda de solo lectura). Una receta importada del
+        programa anterior queda como borrador (fila en rojo abajo) hasta que se le complete el rendimiento esperado:
+        usa "+ Nueva receta", elige el mismo producto elaborado, copia sus ingredientes y agrega el % real — la nueva
+        versión activa reemplaza al borrador automáticamente.
       </p>
       {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
 
-      <button type="button" onClick={() => setMostrarForm((v) => !v)}>
-        {mostrarForm ? "Cancelar" : "+ Nueva receta"}
-      </button>
+      <div className="fila-inline">
+        <button type="button" onClick={() => setMostrarForm((v) => !v)}>
+          {mostrarForm ? "Cancelar" : "+ Nueva receta"}
+        </button>
+        <button type="button" disabled={importando} onClick={() => inputArchivoRef.current?.click()}>
+          {importando ? "Importando..." : "Importar desde JSON del programa anterior"}
+        </button>
+        <input ref={inputArchivoRef} type="file" accept=".json,application/json" hidden onChange={importarArchivo} />
+      </div>
+
+      {resultadoImportar && (
+        <div className="tarjeta">
+          <h2>Resultado de la importación</h2>
+          {resultadoImportar.creadas.length === 0 && resultadoImportar.omitidas.length === 0 && (
+            <p>El archivo no traía ninguna receta.</p>
+          )}
+          {resultadoImportar.creadas.length > 0 && (
+            <>
+              <p className="exito">{resultadoImportar.creadas.length} receta(s) nueva(s), como borrador (ver abajo).</p>
+              <ul>
+                {resultadoImportar.creadas.map((c) => (
+                  <li key={c.recetaId}>
+                    {c.nombre} — {c.ingredientesCreados} ingrediente(s) nuevo(s), {c.ingredientesReusados} ya existían
+                    {c.ingredientesOmitidos.length > 0 && (
+                      <>
+                        {" "}
+                        — <span className="error">omitidos: {c.ingredientesOmitidos.join("; ")}</span>
+                      </>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          {resultadoImportar.omitidas.length > 0 && (
+            <>
+              <p>{resultadoImportar.omitidas.length} omitida(s) (ya existían en el catálogo):</p>
+              <ul>
+                {resultadoImportar.omitidas.map((o, i) => (
+                  <li key={i}>
+                    {o.nombre} — {o.motivo}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
+      )}
 
       {mostrarForm && (
         <form onSubmit={crear} onKeyDown={manejarEnterComoTab} className="formulario tarjeta">
@@ -202,9 +283,21 @@ export default function CharcuteriaRecetas() {
             <tr key={r.id}>
               <td>{r.productoElaborado.nombre}</td>
               <td>v{r.version}</td>
-              <td>{r.activa ? <span className="exito">Activa</span> : "Solo lectura"}</td>
-              <td>{r.rendimientoEsperadoPct}%</td>
-              <td>{r.ingredientes.map((i) => `${i.item.nombre} (${i.cantidadPorLoteBase}${i.unidad === "gramos" ? "g" : "un."})`).join(", ")}</td>
+              <td>
+                {r.activa ? (
+                  <span className="exito">Activa</span>
+                ) : r.rendimientoEsperadoPct == null ? (
+                  <span className="error">Importada — falta rendimiento</span>
+                ) : (
+                  "Solo lectura"
+                )}
+              </td>
+              <td>{r.rendimientoEsperadoPct != null ? `${r.rendimientoEsperadoPct}%` : "Pendiente de confirmar"}</td>
+              <td>
+                {r.ingredientes.length > 0
+                  ? r.ingredientes.map((i) => `${i.item.nombre} (${i.cantidadPorLoteBase}${i.unidad === "gramos" ? "g" : "un."})`).join(", ")
+                  : "—"}
+              </td>
             </tr>
           ))}
           {recetas.length === 0 && (

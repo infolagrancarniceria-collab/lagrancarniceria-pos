@@ -105,7 +105,14 @@ charcuteriaLotesRouter.post("/", async (req, res) => {
 
   const receta = await prisma.receta.findUnique({ where: { id: data.recetaId }, include: { productoElaborado: true } });
   if (!receta) return res.status(404).json({ error: "Receta no encontrada" });
+  if (receta.rendimientoEsperadoPct == null) {
+    return res.status(400).json({
+      error:
+        "Esta receta todavía no tiene el rendimiento esperado confirmado (quedó así al importarla) — crea una versión nueva en Recetas con el dato real antes de producir.",
+    });
+  }
 
+  const rendimientoEsperadoPct = receta.rendimientoEsperadoPct;
   const lote = await prisma.$transaction(async (tx) => {
     const codigo = await generarCodigoLote(tx);
     const fechaVencimiento = receta.productoElaborado.vidaUtilDias
@@ -117,7 +124,7 @@ charcuteriaLotesRouter.post("/", async (req, res) => {
         recetaId: receta.id,
         recetaVersion: receta.version,
         responsableId: data.usuarioId,
-        mermaEsperadaPct: 100 - receta.rendimientoEsperadoPct,
+        mermaEsperadaPct: 100 - rendimientoEsperadoPct,
         fechaVencimiento,
       },
       include: loteConIncludes,
