@@ -731,6 +731,11 @@ camaraRouter.get("/existencias", async (req, res) => {
       familia: c.familiaNombre,
       fechaIngreso: c.fechaIngreso,
       diasEnCamara: Math.floor((Date.now() - c.fechaIngreso.getTime()) / (24 * 60 * 60 * 1000)),
+      // Para poder resolverla directo desde acá (ver botón "Registrar
+      // salida" en la pantalla) con el mismo POST /cajas/:id/salida de
+      // siempre, sin tener que ir a buscarla de nuevo a otra pantalla.
+      saldoKg: c.saldoKg,
+      version: c.version,
     }))
     .sort((a, b) => b.diasEnCamara - a.diasEnCamara);
 

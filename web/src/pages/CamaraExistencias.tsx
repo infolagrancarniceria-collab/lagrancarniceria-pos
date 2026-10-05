@@ -7,6 +7,7 @@ import {
   FAMILIAS_CAMARA,
   PROCEDENCIAS_VACUNO,
   type CajaCamara,
+  type DestinoSalidaCamara,
   type ExistenciasCamara,
   type FamiliaCamara,
   type LoteCamara,
@@ -19,6 +20,7 @@ import ModalConfirmarClave from "../components/ModalConfirmarClave";
 import { imprimirEtiquetaCamara, imprimirEtiquetasLoteCamara } from "../lib/imprimir";
 import { mostrarToast } from "../lib/toast";
 import ModalAlerta from "../components/ModalAlerta";
+import { DESTINOS_CAMARA } from "../lib/destinoCamara";
 
 const MOTIVOS_ANULAR_LOTE = ["Lote de prueba", "Entrada duplicada", "Datos incorrectos"];
 
@@ -79,6 +81,21 @@ export default function CamaraExistencias() {
   const [reimprimiendo, setReimprimiendo] = useState<CajaCamara[] | null>(null);
   const [imprimiendoId, setImprimiendoId] = useState<number | null>(null);
   const [imprimiendoLote, setImprimiendoLote] = useState(false);
+
+  // Resolver una caja estancada directo desde esta pantalla (ver sección más
+  // abajo) — registra una salida real igual que la pantalla dedicada
+  // (Salida de cámara), para no dejar estas cajas acumulándose sin que
+  // nadie sepa qué pasó con ellas. Un solo formulario abierto a la vez.
+  const [resolviendoId, setResolviendoId] = useState<number | null>(null);
+  const [formResolver, setFormResolver] = useState<{
+    destino: DestinoSalidaCamara;
+    pesoKg: string;
+    motivo: string;
+    mayoristaCliente: string;
+    mayoristaPrecio: string;
+    mayoristaEstadoPago: "pagado" | "pendiente";
+  } | null>(null);
+  const [guardandoResolver, setGuardandoResolver] = useState(false);
 
   async function cargar(filtro?: { desde: string; hasta: string }, e?: React.FormEvent) {
     e?.preventDefault();
@@ -215,6 +232,68 @@ export default function CamaraExistencias() {
     mostrarToast("Lote anulado", undefined, "eliminado");
     setAnulandoId(null);
     await cargar();
+  }
+
+  function abrirResolver(c: ExistenciasCamara["cajasEstancadas"][number]) {
+    setResolviendoId(c.cajaId);
+    setFormResolver({
+      destino: "sala_venta",
+      pesoKg: String(c.saldoKg),
+      motivo: "",
+      mayoristaCliente: "",
+      mayoristaPrecio: "",
+      mayoristaEstadoPago: "pendiente",
+    });
+  }
+
+  function cerrarResolver() {
+    setResolviendoId(null);
+    setFormResolver(null);
+  }
+
+  async function confirmarResolver(c: ExistenciasCamara["cajasEstancadas"][number]) {
+    if (!usuario || !formResolver) return;
+    setError(null);
+    const pesoKg = Number(formResolver.pesoKg.replace(",", "."));
+    if (!formResolver.pesoKg.trim() || Number.isNaN(pesoKg) || pesoKg <= 0) {
+      setError("El peso no es válido");
+      return;
+    }
+    if (formResolver.destino === "mayorista") {
+      const precio = Number(formResolver.mayoristaPrecio);
+      if (!formResolver.mayoristaPrecio.trim() || Number.isNaN(precio) || precio <= 0) {
+        setError("Falta el precio de la venta por mayor");
+        return;
+      }
+    }
+    setGuardandoResolver(true);
+    try {
+      await api.camara.salida(c.cajaId, {
+        destino: formResolver.destino,
+        pesoKg,
+        motivo:
+          formResolver.motivo.trim() ||
+          `Salida atrasada — caja sin movimiento desde hace ${c.diasEnCamara} días, registrada ahora al revisarla`,
+        usuarioId: usuario.id,
+        version: c.version,
+        ...(formResolver.destino === "mayorista"
+          ? {
+              mayorista: {
+                clienteNombre: formResolver.mayoristaCliente.trim() || undefined,
+                precioTotal: Number(formResolver.mayoristaPrecio),
+                estadoPago: formResolver.mayoristaEstadoPago,
+              },
+            }
+          : {}),
+      });
+      mostrarToast("Salida registrada", `Caja ${c.numero} (${c.producto}) ya no queda estancada.`);
+      cerrarResolver();
+      await cargar();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setGuardandoResolver(false);
+    }
   }
 
   if (reimprimiendo) {
@@ -414,19 +493,132 @@ export default function CamaraExistencias() {
                 <th>Familia</th>
                 <th>Ingreso</th>
                 <th>Días en cámara</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
               {existencias.cajasEstancadas.map((c) => (
-                <tr key={c.cajaId}>
-                  <td>{c.numero}</td>
-                  <td>{c.producto}</td>
-                  <td>{c.familia}</td>
-                  <td>{new Date(c.fechaIngreso).toLocaleDateString("es-CL")}</td>
-                  <td>
-                    <b>{c.diasEnCamara}</b>
-                  </td>
-                </tr>
+                <Fragment key={c.cajaId}>
+                  <tr>
+                    <td>{c.numero}</td>
+                    <td>{c.producto}</td>
+                    <td>{c.familia}</td>
+                    <td>{new Date(c.fechaIngreso).toLocaleDateString("es-CL")}</td>
+                    <td>
+                      <b>{c.diasEnCamara}</b>
+                    </td>
+                    <td>
+                      {resolviendoId !== c.cajaId && (
+                        <button type="button" className="boton-chico" onClick={() => abrirResolver(c)}>
+                          Registrar salida
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                  {resolviendoId === c.cajaId && formResolver && (
+                    <tr>
+                      <td colSpan={6}>
+                        <div className="tarjeta tarjeta-mini">
+                          <p className="ayuda">
+                            Para esta caja ya no quede estancada — si en realidad se vendió/usó hace tiempo y nadie
+                            lo registró, es esto. Si no sabes qué pasó con ella de verdad, ve a pesarla y haz un
+                            conteo de inventario en vez de adivinar acá.
+                          </p>
+                          <div className="fila-inline">
+                            <label>
+                              Destino
+                              <select
+                                value={formResolver.destino}
+                                onChange={(e) =>
+                                  setFormResolver({ ...formResolver, destino: e.target.value as DestinoSalidaCamara })
+                                }
+                              >
+                                {DESTINOS_CAMARA.map((d) => (
+                                  <option key={d.valor} value={d.valor}>
+                                    {d.icono} {d.etiqueta}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <label>
+                              Peso (kg)
+                              <input
+                                type="number"
+                                min="0.001"
+                                step="0.001"
+                                className="input-chico"
+                                value={formResolver.pesoKg}
+                                onChange={(e) => setFormResolver({ ...formResolver, pesoKg: e.target.value })}
+                              />
+                            </label>
+                            <label>
+                              Motivo (opcional)
+                              <input
+                                type="text"
+                                value={formResolver.motivo}
+                                onChange={(e) => setFormResolver({ ...formResolver, motivo: e.target.value })}
+                                placeholder="ej. se vendió hace 2 semanas, se me olvidó registrarla"
+                              />
+                            </label>
+                          </div>
+                          {formResolver.destino === "mayorista" && (
+                            <div className="fila-inline">
+                              <label>
+                                Cliente (opcional)
+                                <input
+                                  type="text"
+                                  value={formResolver.mayoristaCliente}
+                                  onChange={(e) =>
+                                    setFormResolver({ ...formResolver, mayoristaCliente: e.target.value })
+                                  }
+                                />
+                              </label>
+                              <label>
+                                Precio total
+                                <input
+                                  type="number"
+                                  min="1"
+                                  value={formResolver.mayoristaPrecio}
+                                  onChange={(e) =>
+                                    setFormResolver({ ...formResolver, mayoristaPrecio: e.target.value })
+                                  }
+                                />
+                              </label>
+                              <label>
+                                Estado de pago
+                                <select
+                                  value={formResolver.mayoristaEstadoPago}
+                                  onChange={(e) =>
+                                    setFormResolver({
+                                      ...formResolver,
+                                      mayoristaEstadoPago: e.target.value as "pagado" | "pendiente",
+                                    })
+                                  }
+                                >
+                                  <option value="pendiente">Pendiente</option>
+                                  <option value="pagado">Pagado</option>
+                                </select>
+                              </label>
+                            </div>
+                          )}
+                          <div className="fila-inline">
+                            <button
+                              type="button"
+                              className="boton boton-primario"
+                              disabled={guardandoResolver}
+                              onClick={() => confirmarResolver(c)}
+                            >
+                              {guardandoResolver ? "Guardando..." : "Confirmar salida"}
+                            </button>
+                            <button type="button" onClick={cerrarResolver} disabled={guardandoResolver}>
+                              Cancelar
+                            </button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               ))}
             </tbody>
           </table>
