@@ -239,6 +239,8 @@ export interface ExistenciasCamara {
     familia: string;
     fechaIngreso: string;
     diasEnCamara: number;
+    saldoKg: number;
+    version: number;
   }[];
 }
 
