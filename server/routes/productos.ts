@@ -164,8 +164,12 @@ async function productosConCostoEfectivo(categoriaId?: number) {
 // producto), para no duplicar la cuenta en dos lugares.
 productosRouter.get("/margenes", async (req, res) => {
   const categoriaId = req.query.categoriaId ? Number(req.query.categoriaId) : undefined;
-  const { conCosto } = await productosConCostoEfectivo(categoriaId);
-  res.json(conCosto);
+  const { total, conCosto } = await productosConCostoEfectivo(categoriaId);
+  // Se manda "total" además de la lista — antes se perdía acá, así que la
+  // pantalla nunca pudo avisar cuántos productos quedan fuera por no tener
+  // ningún costo conocido (ver comentario de MejorMargen.tsx, que ya
+  // documentaba esta intención sin que el dato llegara desde el servidor).
+  res.json({ total, conCosto });
 });
 
 // Para el Asistente (herramienta "reporte_margenes", ver asistenteIA.ts): a
