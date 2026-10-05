@@ -680,7 +680,14 @@ model PagoVenta {
   // es solo para mostrar.
   clienteNombre     String?
   cobrado           Boolean     @default(false)
-  medioCobro        String? // "efectivo" | "tarjeta", cómo pagó al cobrarlo
+  // "efectivo" | "tarjeta" (se cobró de verdad) | "condonado" (se dio de
+  // baja — ver POST /creditos/:pagoId/condonar: un crédito/transferencia
+  // que nunca se va a cobrar, para que no quede estancado para siempre
+  // inflando la deuda pendiente del cliente). motivoCondonacion solo se
+  // llena en ese caso, y esa acción pide clave de supervisor igual que
+  // anular una venta.
+  medioCobro        String?
+  motivoCondonacion String?
   sesionCajaCobroId Int?
   sesionCajaCobro   SesionCaja? @relation("CobrosDeCredito", fields: [sesionCajaCobroId], references: [id])
   usuarioCobroId    Int?

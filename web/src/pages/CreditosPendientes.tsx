@@ -4,7 +4,18 @@ import { api, codigoCliente, formatoCLP, type MedioCobro, type PagoVenta } from 
 import { useUsuario } from "../context/UsuarioContext";
 import { imprimirSilencioso as imprimirVale } from "../lib/imprimir";
 import ModalAlerta from "../components/ModalAlerta";
+import ModalConfirmarClave from "../components/ModalConfirmarClave";
 import ComprobantePagoCredito from "../components/ComprobantePagoCredito";
+
+const MOTIVOS_CONDONAR = [
+  "Cliente no ubicable",
+  "Deuda incobrable / muy antigua",
+  "Error al registrar, no corresponde cobrar",
+];
+
+function diasDesde(fecha: string): number {
+  return Math.floor((Date.now() - new Date(fecha).getTime()) / (24 * 60 * 60 * 1000));
+}
 
 // Crédito y transferencia funcionan igual (quedan pendientes hasta que se
 // marcan como cobrados/confirmados) — se llevan en la misma pantalla, con
@@ -38,6 +49,12 @@ export default function CreditosPendientes() {
   // respaldo de que quedó pagado — a pedido del usuario, no se imprime
   // solo, se ofrece el botón y la persona decide.
   const [comprobante, setComprobante] = useState<PagoVenta | null>(null);
+
+  // Dar de baja (condonar) — para créditos/transferencias que nunca se van
+  // a cobrar de verdad, así no quedan estancados para siempre inflando la
+  // deuda pendiente. Pide clave de supervisor (ver ModalConfirmarClave)
+  // porque efectivamente se está perdonando una deuda.
+  const [condonandoId, setCondonandoId] = useState<number | null>(null);
 
   function cargar() {
     setCargando(true);
@@ -75,6 +92,17 @@ export default function CreditosPendientes() {
     } catch (e) {
       setError((e as Error).message);
     }
+  }
+
+  async function confirmarCondonar(usuarioId: number, clave: string, motivo?: string) {
+    if (condonandoId == null || !motivo) return;
+    setError(null);
+    setMensaje(null);
+    const pagoActualizado = await api.caja.condonarCredito(condonandoId, { usuarioId, motivo, clave });
+    setMensaje(`Dado de baja: ${pagoActualizado.clienteNombre} — ${formatoCLP(pagoActualizado.monto)}`);
+    setComprobante(pagoActualizado);
+    setCondonandoId(null);
+    cargar();
   }
 
   function alternarSeleccion(id: number) {
@@ -218,39 +246,49 @@ export default function CreditosPendientes() {
               <th>Monto</th>
               <th>Venta</th>
               <th>Fecha de la venta</th>
+              <th>Días</th>
               <th></th>
             </tr>
           </thead>
           <tbody>
-            {creditos.map((c) => (
-              <tr key={c.id}>
-                <td>
-                  <input
-                    type="checkbox"
-                    checked={seleccionados.has(c.id)}
-                    onChange={() => alternarSeleccion(c.id)}
-                  />
-                </td>
-                <td>{c.medio === "transferencia" ? "Transferencia" : "Crédito"}</td>
-                <td>{c.clienteId != null ? `${codigoCliente(c.clienteId)} — ${c.clienteNombre}` : c.clienteNombre}</td>
-                <td>{formatoCLP(c.monto)}</td>
-                <td>
-                  #{c.ventaId} — {c.venta ? formatoCLP(c.venta.total) : ""}
-                </td>
-                <td>{c.venta ? new Date(c.venta.fecha).toLocaleString("es-CL") : ""}</td>
-                <td className="fila-inline">
-                  <button type="button" onClick={() => cobrar(c, "efectivo")}>
-                    Cobrar en efectivo
-                  </button>
-                  <button type="button" onClick={() => cobrar(c, "tarjeta")}>
-                    Cobrar con tarjeta
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {creditos.map((c) => {
+              const dias = c.venta ? diasDesde(c.venta.fecha) : null;
+              return (
+                <tr key={c.id}>
+                  <td>
+                    <input
+                      type="checkbox"
+                      checked={seleccionados.has(c.id)}
+                      onChange={() => alternarSeleccion(c.id)}
+                    />
+                  </td>
+                  <td>{c.medio === "transferencia" ? "Transferencia" : "Crédito"}</td>
+                  <td>{c.clienteId != null ? `${codigoCliente(c.clienteId)} — ${c.clienteNombre}` : c.clienteNombre}</td>
+                  <td>{formatoCLP(c.monto)}</td>
+                  <td>
+                    #{c.ventaId} — {c.venta ? formatoCLP(c.venta.total) : ""}
+                  </td>
+                  <td>{c.venta ? new Date(c.venta.fecha).toLocaleString("es-CL") : ""}</td>
+                  <td className={dias != null && dias >= 30 ? "error" : ""}>
+                    <b>{dias ?? "—"}</b>
+                  </td>
+                  <td className="fila-inline">
+                    <button type="button" onClick={() => cobrar(c, "efectivo")}>
+                      Cobrar en efectivo
+                    </button>
+                    <button type="button" onClick={() => cobrar(c, "tarjeta")}>
+                      Cobrar con tarjeta
+                    </button>
+                    <button type="button" className="boton-peligro" onClick={() => setCondonandoId(c.id)}>
+                      Dar de baja
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
             {!cargando && creditos.length === 0 && (
               <tr>
-                <td colSpan={7}>No hay créditos ni transferencias pendientes.</td>
+                <td colSpan={8}>No hay créditos ni transferencias pendientes.</td>
               </tr>
             )}
           </tbody>
@@ -259,6 +297,16 @@ export default function CreditosPendientes() {
 
       {comprobante && (
         <ComprobantePagoCredito pago={comprobante} onImprimir={imprimirVale} onCerrar={() => setComprobante(null)} />
+      )}
+
+      {condonandoId != null && (
+        <ModalConfirmarClave
+          titulo="Dar de baja (condonar)"
+          descripcion="Marca este crédito/transferencia como que nunca se va a cobrar — no registra ningún dinero recibido. Requiere clave de supervisor."
+          motivoOpciones={MOTIVOS_CONDONAR}
+          onConfirmar={confirmarCondonar}
+          onCancelar={() => setCondonandoId(null)}
+        />
       )}
     </>
   );

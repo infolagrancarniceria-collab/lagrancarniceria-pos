@@ -1,7 +1,7 @@
 import { formatoCLP, type PagoVenta } from "../api";
 
 const etiquetaOrigen: Record<string, string> = { credito: "Crédito", transferencia: "Transferencia", pedido_web: "Pedido online" };
-const etiquetaMedioCobro: Record<string, string> = { efectivo: "Efectivo", tarjeta: "Tarjeta" };
+const etiquetaMedioCobro: Record<string, string> = { efectivo: "Efectivo", tarjeta: "Tarjeta", condonado: "Dado de baja (no se cobró)" };
 
 interface Props {
   pago: PagoVenta;
@@ -28,14 +28,18 @@ export default function ComprobantePagoCredito({ pago, onImprimir, onCerrar }: P
         </button>
       </div>
       <h2>La Gran Carnicería</h2>
-      <h3>Comprobante de pago — {etiquetaOrigen[pago.medio] ?? pago.medio}</h3>
+      <h3>
+        {pago.medioCobro === "condonado" ? "Deuda dada de baja" : "Comprobante de pago"} —{" "}
+        {etiquetaOrigen[pago.medio] ?? pago.medio}
+      </h3>
       <p>
-        <strong>PAGADO</strong>
+        <strong>{pago.medioCobro === "condonado" ? "NO COBRADO — DADO DE BAJA" : "PAGADO"}</strong>
       </p>
       <p>Cliente: {pago.clienteNombre ?? "—"}</p>
-      <p>Monto cobrado: {formatoCLP(pago.monto)}</p>
-      <p>Pagado con: {etiquetaMedioCobro[pago.medioCobro ?? ""] ?? pago.medioCobro ?? "—"}</p>
-      <p>Fecha de cobro: {pago.fechaCobro ? new Date(pago.fechaCobro).toLocaleString("es-CL") : "—"}</p>
+      <p>Monto {pago.medioCobro === "condonado" ? "condonado" : "cobrado"}: {formatoCLP(pago.monto)}</p>
+      <p>{pago.medioCobro === "condonado" ? "Resolución" : "Pagado con"}: {etiquetaMedioCobro[pago.medioCobro ?? ""] ?? pago.medioCobro ?? "—"}</p>
+      {pago.medioCobro === "condonado" && pago.motivoCondonacion && <p>Motivo: {pago.motivoCondonacion}</p>}
+      <p>Fecha: {pago.fechaCobro ? new Date(pago.fechaCobro).toLocaleString("es-CL") : "—"}</p>
       {pago.usuarioCobro && <p>Registrado por: {pago.usuarioCobro.nombre}</p>}
       <p>
         Venta original: #{pago.ventaId}

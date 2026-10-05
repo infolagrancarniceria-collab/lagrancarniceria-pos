@@ -39,6 +39,65 @@ describe("Créditos — comprobante de pago", () => {
   });
 });
 
+describe("Créditos — dar de baja (condonar)", () => {
+  it("con la clave correcta y un motivo, marca el crédito como cobrado con medio 'condonado' y guarda el motivo", async () => {
+    const { usuario, productoCarniceria } = await crearFixturesBasicas();
+    const cliente = await prisma.cliente.create({ data: { nombre: "No va a pagar" } });
+    const { pagoId } = await crearVentaACredito(usuario.id, productoCarniceria.id, cliente.id);
+
+    const res = await api
+      .post(`/api/caja/creditos/${pagoId}/condonar`)
+      .send({ usuarioId: usuario.id, motivo: "Cliente se mudó, no se pudo ubicar", clave: "1234" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.cobrado).toBe(true);
+    expect(res.body.medioCobro).toBe("condonado");
+
+    const pago = await prisma.pagoVenta.findUnique({ where: { id: pagoId } });
+    expect(pago?.motivoCondonacion).toBe("Cliente se mudó, no se pudo ubicar");
+    expect(pago?.sesionCajaCobroId).toBeNull();
+  });
+
+  it("rechaza con clave incorrecta, y el crédito sigue pendiente", async () => {
+    const { usuario, productoCarniceria } = await crearFixturesBasicas();
+    const cliente = await prisma.cliente.create({ data: { nombre: "Cliente test" } });
+    const { pagoId } = await crearVentaACredito(usuario.id, productoCarniceria.id, cliente.id);
+
+    const res = await api
+      .post(`/api/caja/creditos/${pagoId}/condonar`)
+      .send({ usuarioId: usuario.id, motivo: "Motivo cualquiera", clave: "clave-mala" });
+
+    expect(res.status).toBe(403);
+    const pago = await prisma.pagoVenta.findUnique({ where: { id: pagoId } });
+    expect(pago?.cobrado).toBe(false);
+  });
+
+  it("exige un motivo", async () => {
+    const { usuario, productoCarniceria } = await crearFixturesBasicas();
+    const cliente = await prisma.cliente.create({ data: { nombre: "Cliente test 2" } });
+    const { pagoId } = await crearVentaACredito(usuario.id, productoCarniceria.id, cliente.id);
+
+    const res = await api.post(`/api/caja/creditos/${pagoId}/condonar`).send({ usuarioId: usuario.id, motivo: "", clave: "1234" });
+    expect(res.status).toBe(400);
+  });
+
+  it("un crédito condonado deja de aparecer en créditos pendientes y ya no bloquea eliminar al cliente", async () => {
+    const { usuario, productoCarniceria } = await crearFixturesBasicas();
+    const cliente = await prisma.cliente.create({ data: { nombre: "Se condona y se elimina" } });
+    const { pagoId } = await crearVentaACredito(usuario.id, productoCarniceria.id, cliente.id);
+
+    await api
+      .post(`/api/caja/creditos/${pagoId}/condonar`)
+      .send({ usuarioId: usuario.id, motivo: "Deuda incobrable", clave: "1234" });
+
+    const pendientes = await api.get("/api/caja/creditos-pendientes");
+    expect(pendientes.body.some((p: { id: number }) => p.id === pagoId)).toBe(false);
+
+    const eliminar = await api.delete(`/api/clientes/${cliente.id}`);
+    expect(eliminar.status).toBe(204);
+  });
+});
+
 describe("Clientes — editar y eliminar", () => {
   it("edita el nombre, teléfono y RUT de un cliente", async () => {
     const cliente = await prisma.cliente.create({ data: { nombre: "Nombre viejo" } });

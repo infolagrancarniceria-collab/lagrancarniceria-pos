@@ -1450,6 +1450,61 @@ cajaRouter.post("/creditos/:pagoId/cobrar", async (req, res) => {
   res.json(pagoActualizado);
 });
 
+const condonarCreditoSchema = z.object({
+  usuarioId: z.number().int().positive(),
+  motivo: z.string().trim().min(1, "Falta el motivo"),
+  clave: z.string().trim().min(1, "Falta la clave de supervisor"),
+});
+
+// Dar de baja un crédito/transferencia que nunca se va a cobrar de verdad
+// (ej. el cliente no va a pagar, o quedó mal registrado hace mucho y no se
+// puede corregir) — sin esto, la única forma de sacarlo de "pendientes" era
+// marcarlo "cobrado" con un medio real, lo que mentiría sobre haber
+// recibido ese dinero. Pide clave de supervisor y motivo, igual que anular
+// una venta, porque efectivamente se está perdonando una deuda.
+cajaRouter.post("/creditos/:pagoId/condonar", async (req, res) => {
+  const pagoId = Number(req.params.pagoId);
+  const parsed = condonarCreditoSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0].message });
+  }
+  const { usuarioId, motivo, clave } = parsed.data;
+
+  const usuario = await validarUsuario(usuarioId);
+  if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
+
+  const pago = await prisma.pagoVenta.findUnique({ where: { id: pagoId } });
+  if (!pago || (pago.medio !== "credito" && pago.medio !== "transferencia" && pago.medio !== "pedido_web")) {
+    return res.status(404).json({ error: "Crédito, transferencia o pedido online no encontrado" });
+  }
+  if (pago.cobrado) return res.status(400).json({ error: "Esto ya estaba marcado como cobrado" });
+
+  const claveSupervisor = await prisma.claveSupervisor.findFirst();
+  if (!claveSupervisor) {
+    return res.status(403).json({ error: "Clave de supervisor incorrecta" });
+  }
+  const resultadoClave = verificarClaveConLimite(req.ip ?? "desconocido", clave, claveSupervisor.hashClave);
+  if (resultadoClave.bloqueado) {
+    return res.status(429).json({ error: `Demasiados intentos fallidos — espera ${resultadoClave.segundosRestantes} segundos e intenta de nuevo` });
+  }
+  if (!resultadoClave.valida) {
+    return res.status(403).json({ error: "Clave de supervisor incorrecta" });
+  }
+
+  const pagoActualizado = await prisma.pagoVenta.update({
+    where: { id: pagoId },
+    data: {
+      cobrado: true,
+      medioCobro: "condonado",
+      motivoCondonacion: motivo,
+      usuarioCobroId: usuarioId,
+      fechaCobro: new Date(),
+    },
+    include: { venta: true, usuarioCobro: true },
+  });
+  res.json(pagoActualizado);
+});
+
 // --- Registro de anulaciones (pantalla aparte, para verlas todas juntas sin
 // tener que abrir venta por venta en "Buscar venta") ---
 

@@ -657,10 +657,15 @@ export interface PagoVenta {
   cliente?: Cliente | null;
   clienteNombre: string | null;
   cobrado: boolean;
-  medioCobro: MedioCobro | null;
+  // "condonado" solo puede venir del lado del servidor (ver
+  // POST /creditos/:pagoId/condonar) — cobrarCredito() nunca lo manda como
+  // input, por eso MedioCobro (el tipo del parámetro) se deja acotado a
+  // "efectivo" | "tarjeta" y acá se amplía aparte.
+  medioCobro: MedioCobro | "condonado" | null;
+  motivoCondonacion: string | null;
   sesionCajaCobroId: number | null;
   usuarioCobroId: number | null;
-  // Solo viene en la respuesta de cobrarCredito() (ver
+  // Solo viene en la respuesta de cobrarCredito()/condonarCredito() (ver
   // ComprobantePagoCredito) — en el resto de los endpoints basta con
   // usuarioCobroId.
   usuarioCobro?: { id: number; nombre: string } | null;
@@ -1506,6 +1511,8 @@ export const api = {
       get<PagoVenta[]>(`/api/caja/creditos-pendientes${medio ? `?medio=${medio}` : ""}`),
     cobrarCredito: (pagoId: number, data: { medioCobro: MedioCobro; usuarioId: number }) =>
       post<PagoVenta>(`/api/caja/creditos/${pagoId}/cobrar`, data),
+    condonarCredito: (pagoId: number, data: { usuarioId: number; motivo: string; clave: string }) =>
+      post<PagoVenta>(`/api/caja/creditos/${pagoId}/condonar`, data),
     actualizarComentario: (ventaId: number, comentario: string | null) =>
       put<Venta>(`/api/caja/ventas/${ventaId}/comentario`, { comentario }),
     actualizarDespacho: (ventaId: number, data: { esDespacho: boolean; comunaId?: number | null }) =>
