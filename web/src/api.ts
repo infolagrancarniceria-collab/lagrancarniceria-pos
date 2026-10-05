@@ -1181,7 +1181,7 @@ export const api = {
       const qs = new URLSearchParams();
       if (params.categoriaId) qs.set("categoriaId", String(params.categoriaId));
       const query = qs.toString();
-      return get<ProductoConCosto[]>(`/api/productos/margenes${query ? `?${query}` : ""}`);
+      return get<{ total: number; conCosto: ProductoConCosto[] }>(`/api/productos/margenes${query ? `?${query}` : ""}`);
     },
     crear: (
       data: Omit<

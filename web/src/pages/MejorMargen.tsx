@@ -19,6 +19,7 @@ interface FilaMargen extends ProductoConCosto {
 // de mostrar un margen inventado.
 export default function MejorMargen() {
   const [productos, setProductos] = useState<ProductoConCosto[]>([]);
+  const [totalProductos, setTotalProductos] = useState(0);
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [categoriaId, setCategoriaId] = useState<number | "">("");
   const [margenMinimo, setMargenMinimo] = useState("");
@@ -43,7 +44,10 @@ export default function MejorMargen() {
     setCargando(true);
     api.productos
       .margenes({ categoriaId: categoriaId || undefined })
-      .then(setProductos)
+      .then(({ total, conCosto }) => {
+        setProductos(conCosto);
+        setTotalProductos(total);
+      })
       .catch((e) => setError(e.message))
       .finally(() => setCargando(false));
   }, [categoriaId]);
@@ -92,6 +96,15 @@ export default function MejorMargen() {
       </p>
 
       {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
+
+      {!cargando && totalProductos > productos.length && (
+        <p className="ayuda error">
+          {totalProductos - productos.length} producto{totalProductos - productos.length === 1 ? "" : "s"} sin
+          ningún costo conocido (ni compra real ni costo de referencia) no se muestra
+          {totalProductos - productos.length === 1 ? "" : "n"} acá — complétalos en su ficha para poder ver su
+          margen.
+        </p>
+      )}
 
       <div className="filtros">
         <SelectorCategoria
