@@ -376,6 +376,58 @@ charcuteriaRouter.put("/items/:id", async (req, res) => {
   res.json(actualizado);
 });
 
+// Ajuste manual de stock — cuarta pieza de "cuadrar cada sección" (a pedido
+// del dueño). Hasta ahora no existía ninguna forma de corregir el stock de
+// un insumo/materia prima/envase desde la pantalla: solo entraba por
+// transferencia desde carnicería o salía consumido por un lote (ver
+// comentario de MovimientoCharcuteria.motivo, que ya documentaba "ajuste"
+// como motivo válido sin que ningún endpoint lo usara). No aplica a
+// producto_terminado — ese stock se trackea por lote (ver StockLoteSku),
+// Item.stockActual queda sin usar para ese tipo.
+const ajusteStockSchema = z.object({
+  tipo: z.enum(["entrada", "salida"]),
+  cantidad: z.number().positive("La cantidad debe ser mayor a 0"),
+  usuarioId: z.number().int().positive(),
+});
+
+charcuteriaRouter.post("/items/:id/ajuste-stock", async (req, res) => {
+  const id = Number(req.params.id);
+  const parsed = ajusteStockSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0].message });
+  }
+  const { tipo, cantidad, usuarioId } = parsed.data;
+
+  const usuario = await validarUsuarioActivo(usuarioId);
+  if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
+
+  const item = await prisma.itemCharcuteria.findUnique({ where: { id } });
+  if (!item) return res.status(404).json({ error: "Ítem no encontrado" });
+  if (item.tipoItem === "producto_terminado") {
+    return res.status(400).json({
+      error: "Un producto terminado se trackea por lote (ver Lotes/Envasado), no tiene un stock agregado para ajustar acá",
+    });
+  }
+  if (tipo === "salida" && item.stockActual < cantidad) {
+    return res.status(400).json({
+      error: `Stock insuficiente: quedan ${item.stockActual} ${item.unidadMedida}, se intentó sacar ${cantidad}`,
+    });
+  }
+
+  const [itemActualizado] = await prisma.$transaction([
+    prisma.itemCharcuteria.update({
+      where: { id },
+      data: { stockActual: tipo === "entrada" ? { increment: cantidad } : { decrement: cantidad } },
+      include: itemConIncludes,
+    }),
+    prisma.movimientoCharcuteria.create({
+      data: { itemId: id, tipo, motivo: "ajuste", cantidad, usuarioId },
+    }),
+  ]);
+
+  res.json(itemActualizado);
+});
+
 charcuteriaRouter.delete("/items/:id", async (req, res) => {
   const id = Number(req.params.id);
   const item = await prisma.itemCharcuteria.findUnique({ where: { id } });

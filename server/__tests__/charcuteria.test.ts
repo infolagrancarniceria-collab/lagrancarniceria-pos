@@ -309,3 +309,74 @@ describe("Charcutería — FEFO al vender", () => {
     expect(confirmar.body.items[0].loteId).toBe(loteNuevoId); // saltó el lote antiguo anulado, aunque le quedaba 1 unidad
   });
 });
+
+// Hasta esta funcionalidad, un insumo/materia prima/envase solo podía sumar
+// stock por transferencia desde carnicería, y solo podía restar por
+// consumo en un lote — no había ninguna forma de corregirlo a mano (ej. un
+// conteo físico que no calza, o una merma que no pasó por ningún lote).
+describe("POST /api/charcuteria/items/:id/ajuste-stock", () => {
+  let usuarioId: number;
+  let insumoId: number;
+  let skuId: number;
+
+  beforeAll(async () => {
+    const { usuario } = await crearFixturesBasicas();
+    usuarioId = usuario.id;
+
+    const insumo = await crearItem(usuarioId, {
+      codigo: `AJ-INS-${Date.now()}`, nombre: "Envase ajuste test", tipoItem: "envase_etiqueta", unidadMedida: "unidad",
+    });
+    insumoId = insumo.id;
+
+    const pe = await crearItem(usuarioId, {
+      codigo: `AJ-PE-${Date.now()}`, nombre: "Elaborado ajuste test", tipoItem: "producto_elaborado", unidadMedida: "gramos", vidaUtilDias: 15,
+    });
+    const sku = await crearItem(usuarioId, {
+      codigo: `AJ-SKU-${Date.now()}`, nombre: "SKU ajuste test", tipoItem: "producto_terminado",
+      formatoGramos: 200, productoElaboradoId: pe.id, precioVenta: 9990,
+    });
+    skuId = sku.id;
+  });
+
+  it("una entrada suma al stock y registra el movimiento con motivo ajuste", async () => {
+    const res = await api.post(`/api/charcuteria/items/${insumoId}/ajuste-stock`).send({ tipo: "entrada", cantidad: 10, usuarioId });
+    expect(res.status).toBe(200);
+    expect(res.body.stockActual).toBe(10);
+
+    const movimientos = await prisma.movimientoCharcuteria.findMany({ where: { itemId: insumoId } });
+    expect(movimientos).toHaveLength(1);
+    expect(movimientos[0]).toMatchObject({ tipo: "entrada", motivo: "ajuste", cantidad: 10 });
+  });
+
+  it("una salida resta del stock", async () => {
+    const res = await api.post(`/api/charcuteria/items/${insumoId}/ajuste-stock`).send({ tipo: "salida", cantidad: 4, usuarioId });
+    expect(res.status).toBe(200);
+    expect(res.body.stockActual).toBe(6);
+  });
+
+  it("rechaza una salida mayor al stock disponible, sin modificar nada", async () => {
+    const res = await api.post(`/api/charcuteria/items/${insumoId}/ajuste-stock`).send({ tipo: "salida", cantidad: 999, usuarioId });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/Stock insuficiente/);
+
+    const item = await prisma.itemCharcuteria.findUnique({ where: { id: insumoId } });
+    expect(item!.stockActual).toBe(6);
+  });
+
+  it("rechaza ajustar un producto_terminado: ese stock se trackea por lote", async () => {
+    const res = await api.post(`/api/charcuteria/items/${skuId}/ajuste-stock`).send({ tipo: "entrada", cantidad: 5, usuarioId });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/se trackea por lote/);
+  });
+
+  it("rechaza un usuario inválido", async () => {
+    const res = await api.post(`/api/charcuteria/items/${insumoId}/ajuste-stock`).send({ tipo: "entrada", cantidad: 1, usuarioId: 999999 });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("Usuario inválido");
+  });
+
+  it("rechaza una cantidad no positiva", async () => {
+    const res = await api.post(`/api/charcuteria/items/${insumoId}/ajuste-stock`).send({ tipo: "entrada", cantidad: 0, usuarioId });
+    expect(res.status).toBe(400);
+  });
+});

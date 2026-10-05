@@ -1795,6 +1795,8 @@ export const api = {
       editar: (id: number, data: Record<string, unknown> & { usuarioId: number }) =>
         put<ItemCharcuteria>(`/api/charcuteria/items/${id}`, data),
       eliminar: (id: number) => del<void>(`/api/charcuteria/items/${id}`),
+      ajustarStock: (id: number, data: { tipo: "entrada" | "salida"; cantidad: number; usuarioId: number }) =>
+        post<ItemCharcuteria>(`/api/charcuteria/items/${id}/ajuste-stock`, data),
     },
     // Productos de carnicería que se pueden vincular como espejo de un SKU
     // nuevo (ej. el Pastrami que ya existía antes de este módulo) — para
