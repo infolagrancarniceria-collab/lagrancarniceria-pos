@@ -26,6 +26,12 @@
   --color-oro: #a9781f;
   --color-oro-fondo: #fbf1dc;
   --color-oro-borde: #e6cd93;
+  /* Acento reservado para Caja Online (ver más abajo) — azul, para que se
+     distinga de un vistazo del vino/rojo del mesón principal. */
+  --color-online: #1f5c8a;
+  --color-online-hover: #184a6e;
+  --color-online-fondo: #e7f0f7;
+  --color-online-borde: #bcd7ea;
   --sombra-tarjeta: 0 1px 2px rgba(42, 32, 25, 0.06), 0 8px 20px -12px rgba(42, 32, 25, 0.18);
   --fuente-titulos: Georgia, Cambria, "Times New Roman", serif;
   font-size: 17px;
@@ -600,6 +606,59 @@ select {
   padding: 0.4rem 1.3rem;
   border-radius: 10px;
   box-shadow: 0 4px 14px -6px rgba(154, 40, 25, 0.55);
+}
+
+/* Caja Online (pistolear pedidos web) — a pedido del usuario: misma
+   pantalla táctil que Punto de Venta (reusa ".punto-de-venta" para el
+   tamaño grande de letra/botones, ver más abajo), pero con acento azul en
+   vez del vino/rojo del mesón principal, para que el cajero note de un
+   vistazo en qué caja está y no las confunda. */
+.caja-online-banda {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: var(--color-online-fondo);
+  border: 1px solid var(--color-online-borde);
+  border-radius: 10px;
+  padding: 0.5rem 0.9rem;
+  margin-bottom: 0.5rem;
+}
+.caja-online-etiqueta {
+  font-family: var(--fuente-titulos);
+  font-weight: 700;
+  color: var(--color-online);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.95rem;
+  white-space: nowrap;
+}
+.caja-online .total-venta-destacado {
+  background: var(--color-online);
+  border-color: var(--color-online-hover);
+  box-shadow: 0 4px 14px -6px rgba(31, 92, 138, 0.55);
+}
+.caja-online.punto-de-venta {
+  border-top: 6px solid var(--color-online);
+  padding-top: 0.6rem;
+}
+.badge-entrega {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-weight: 700;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.95rem;
+}
+.badge-entrega-despacho {
+  background: var(--color-online-fondo);
+  color: var(--color-online);
+  border: 1px solid var(--color-online-borde);
+}
+.badge-entrega-retiro {
+  background: var(--color-exito-fondo);
+  color: var(--color-exito);
+  border: 1px solid var(--color-exito);
 }
 
 /* Aviso emergente del vuelto en efectivo — antes un window.alert() del

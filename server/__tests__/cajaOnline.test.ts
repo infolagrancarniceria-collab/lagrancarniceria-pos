@@ -51,6 +51,18 @@ describe("Caja Online — crear venta desde un pedido web", () => {
     expect(todas).toHaveLength(1);
   });
 
+  it("no bloquea la venta si la comuna del pedido ya no calza con ninguna del catálogo (ej. se renombró después)", async () => {
+    const { usuario } = await crearFixturesBasicas();
+    const pedido = await crearPedidoWeb({ tipoEntrega: "despacho", comunaNombre: "Comuna Que Ya No Existe", costoEnvio: 2000 });
+
+    const res = await api.post(`/api/caja/ventas/desde-pedido-web/${pedido.id}`).send({ usuarioId: usuario.id });
+
+    expect(res.status).toBe(201);
+    expect(res.body.esDespacho).toBe(true);
+    expect(res.body.comunaId).toBeNull();
+    expect(res.body.costoEnvio).toBe(2000);
+  });
+
   it("no deja crear una venta desde un pedido anulado", async () => {
     const { usuario } = await crearFixturesBasicas();
     const pedido = await crearPedidoWeb({ estado: "anulado" });
