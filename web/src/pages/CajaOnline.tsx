@@ -14,6 +14,9 @@ const ERROR_CODIGO_SIN_MATCH = "No se encontró ningún producto con ese código
 interface FilaChecklist {
   plu: string;
   descripcion: string;
+  corte: string | null;
+  envasado: "Tradicional" | "Al vacío" | null;
+  instrucciones: string | null;
   unidad: "kg" | "unidad";
   cantidadPedida: number; // gramos si es "kg", unidades si no
   cantidadEscaneada: number; // misma escala que cantidadPedida
@@ -37,6 +40,9 @@ function construirChecklist(pedido: PedidoWeb, venta: Venta | null): FilaCheckli
   return pedido.items.map((item) => ({
     plu: item.plu,
     descripcion: item.descripcion,
+    corte: item.corte,
+    envasado: item.envasado,
+    instrucciones: item.instrucciones,
     unidad: item.unidad,
     cantidadPedida: item.cantidad,
     cantidadEscaneada: escaneadoPorPlu.get(item.plu) ?? 0,
@@ -65,19 +71,27 @@ export default function CajaOnline() {
     imprimirSilencioso().finally(() => setVentaParaImprimir(null));
   }, [ventaParaImprimir]);
 
-  useEffect(() => {
+  // Se separa en dos pasos (antes era un solo Promise.all) para que, si el
+  // pedido existe pero crearVentaDesdePedidoWeb falla por algo puntual (ej.
+  // no hay caja abierta), se siga mostrando el detalle del pedido con el
+  // error real en vez de la pantalla genérica "Pedido no encontrado" —
+  // ese mensaje genérico escondía la causa real y dejaba al cajero sin
+  // forma de saber qué pasaba ni qué pedido era.
+  const cargarPedidoYVenta = useCallback(() => {
     if (!pedidoId || !usuario) return;
     setCargando(true);
     setError(null);
-    Promise.all([api.pedidosWeb.obtener(Number(pedidoId)), api.caja.crearVentaDesdePedidoWeb(Number(pedidoId), usuario.id)])
-      .then(([pedidoCargado, ventaCreada]) => {
+    api.pedidosWeb
+      .obtener(Number(pedidoId))
+      .then((pedidoCargado) => {
         setPedido(pedidoCargado);
-        setVenta(ventaCreada);
+        return api.caja.crearVentaDesdePedidoWeb(Number(pedidoId), usuario.id).then(setVenta);
       })
       .catch((e) => setError((e as Error).message))
       .finally(() => setCargando(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pedidoId, usuario?.id]);
+
+  useEffect(cargarPedidoYVenta, [cargarPedidoYVenta]);
 
   const escanearCodigo = useCallback(
     async (codigo: string) => {
@@ -165,13 +179,23 @@ export default function CajaOnline() {
   if (!pedido) return <p className="error">Pedido no encontrado.</p>;
 
   const checklist = construirChecklist(pedido, venta);
-  const yaConfirmada = venta?.estado !== "abierta";
+  const yaConfirmada = venta != null && venta.estado !== "abierta";
+  // El pedido sí existe (se llegó a mostrar su detalle abajo) pero no se
+  // pudo armar la venta — ver cargarPedidoYVenta. Antes esto escondía el
+  // pedido entero detrás de "Pedido no encontrado"; ahora se ve el detalle
+  // igual, con el motivo real y un botón para reintentar después de
+  // corregir lo que falte (ej. abrir la caja, o completar la comuna).
+  const noSePudoArmarVenta = venta == null && error != null;
 
   return (
     <>
-      <div className="no-imprimir">
+      <div className="punto-de-venta caja-online no-imprimir">
+        <div className="caja-online-banda">
+          <span className="caja-online-etiqueta">🛒 Caja Online</span>
+          <span className="ayuda">— esta es la caja de pedidos web, distinta del mesón principal</span>
+        </div>
         <div className="encabezado-pantalla">
-          <h1>Caja Online — pedido de {pedido.clienteNombre}</h1>
+          <h1>Pedido de {pedido.clienteNombre}</h1>
           <button type="button" onClick={() => navigate("/pedidos-web")}>
             Volver a Pedidos web
           </button>
@@ -182,15 +206,25 @@ export default function CajaOnline() {
           defecto la venta queda "pendiente de pago" hasta que se registre el cobro en Pedidos online pendientes de
           pago.
         </p>
-        {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
+        {error && venta != null && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
         {mensaje && <p className="exito">{mensaje}</p>}
 
         <div className="tarjeta">
           <h2>Lo que pidió el cliente</h2>
-          <p>
-            <strong>Teléfono:</strong> {pedido.clienteTelefono} · <strong>Entrega:</strong>{" "}
-            {pedido.tipoEntrega === "despacho" ? "Despacho a domicilio" : "Retiro en tienda"}
+          <p className="fila-inline">
+            <strong>Teléfono:</strong> {pedido.clienteTelefono}
+            {pedido.tipoEntrega === "despacho" ? (
+              <span className="badge-entrega badge-entrega-despacho">🚚 Despacho a domicilio</span>
+            ) : (
+              <span className="badge-entrega badge-entrega-retiro">🏪 Retiro en tienda</span>
+            )}
           </p>
+          {pedido.tipoEntrega === "despacho" && (
+            <p>
+              <strong>Dirección:</strong> {pedido.clienteDireccion ?? "—"} ({pedido.comunaNombre ?? "sin comuna"}) ·{" "}
+              <strong>Costo de envío:</strong> {pedido.costoEnvio != null ? formatoCLP(pedido.costoEnvio) : "—"}
+            </p>
+          )}
           {pedido.comentario && (
             <p>
               <strong>Comentario del cliente:</strong> {pedido.comentario}
@@ -200,6 +234,9 @@ export default function CajaOnline() {
             <thead>
               <tr>
                 <th>Producto</th>
+                <th>Corte</th>
+                <th>Envasado</th>
+                <th>Instrucciones</th>
                 <th>Pedido</th>
                 <th>Pistoleado</th>
                 <th></th>
@@ -211,6 +248,9 @@ export default function CajaOnline() {
                 return (
                   <tr key={fila.plu}>
                     <td>{fila.descripcion}</td>
+                    <td>{fila.corte ?? "—"}</td>
+                    <td>{fila.envasado ?? "—"}</td>
+                    <td>{fila.instrucciones ?? "—"}</td>
                     <td>{fila.unidad === "kg" ? formatoPeso(fila.cantidadPedida) : `${fila.cantidadPedida} un.`}</td>
                     <td>{fila.unidad === "kg" ? formatoPeso(fila.cantidadEscaneada) : `${fila.cantidadEscaneada} un.`}</td>
                     <td>{completo ? "✓" : fila.cantidadEscaneada > 0 ? "⚠ parcial" : "— falta"}</td>
@@ -221,7 +261,16 @@ export default function CajaOnline() {
           </table>
         </div>
 
-        {!yaConfirmada && (
+        {noSePudoArmarVenta && (
+          <div className="tarjeta">
+            <p className="error">No se pudo armar la venta de este pedido: {error}</p>
+            <button type="button" className="boton boton-primario" onClick={cargarPedidoYVenta}>
+              Reintentar
+            </button>
+          </div>
+        )}
+
+        {!noSePudoArmarVenta && !yaConfirmada && (
           <div className="tarjeta">
             <h2>Pistolear productos</h2>
             <p className="ayuda">Usa el lector de código de barras, o búscalo a mano si el código no se reconoce.</p>
@@ -245,6 +294,7 @@ export default function CajaOnline() {
           </div>
         )}
 
+        {!noSePudoArmarVenta && (
         <div className="tarjeta">
           <h2>Venta #{venta?.id}</h2>
           <table className="tabla">
@@ -282,8 +332,9 @@ export default function CajaOnline() {
           </table>
           <h3>Total: {venta ? formatoCLP(venta.total) : "—"}</h3>
         </div>
+        )}
 
-        {!yaConfirmada && (
+        {!noSePudoArmarVenta && !yaConfirmada && (
           <div className="tarjeta">
             <h2>Cobro</h2>
             <p className="ayuda">

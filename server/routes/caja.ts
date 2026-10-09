@@ -591,11 +591,17 @@ cajaRouter.post("/ventas/desde-pedido-web/:pedidoId", async (req, res) => {
   const sesion = await prisma.sesionCaja.findFirst({ where: { estado: "abierta" } });
   if (!sesion) return res.status(400).json({ error: "No hay una caja abierta — ábrela primero" });
 
+  // Si el nombre de la comuna del pedido ya no calza con ninguna del
+  // catálogo (ej. el dueño la renombró/corrigió en Configuración después de
+  // que este pedido quedó pendiente, o se eliminó), NO se bloquea la venta
+  // — mismo criterio que cuando el pedido no trae comuna: queda sin
+  // comunaId, y "Pedidos web" ya avisa "comuna sin listado, completar a
+  // mano" para ese caso. Antes esto respondía 400 y el pedido quedaba
+  // atascado en Pendientes sin ninguna forma de pistolearlo.
   let comunaId: number | null = null;
   if (pedido.tipoEntrega === "despacho" && pedido.comunaNombre) {
     const comuna = await prisma.comuna.findUnique({ where: { nombre: pedido.comunaNombre } });
-    if (!comuna) return res.status(400).json({ error: `No se encontró la comuna "${pedido.comunaNombre}" en el catálogo` });
-    comunaId = comuna.id;
+    comunaId = comuna?.id ?? null;
   }
 
   try {
