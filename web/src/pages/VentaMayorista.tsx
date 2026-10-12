@@ -9,6 +9,26 @@ import { imprimirSilencioso } from "../lib/imprimir";
 import { mostrarToast } from "../lib/toast";
 import ModalAlerta from "../components/ModalAlerta";
 
+// Último costo de compra de un producto, para referencia al dejar el precio
+// neto: el de Inventario (costoEfectivo, de "Cargar factura") manda si
+// existe; si no, cae al de la última entrada a Cámara (ultimoCostoCamaraKg)
+// — muchos productos que se venden por mayor salen de Cámara y nunca pasan
+// por Inventario, así que sin este respaldo el costo quedaba sin mostrarse
+// aunque se le hubiera registrado una entrada a Cámara.
+function textoUltimoCosto(p: ProductoConUltimoCosto): string {
+  if (p.costoEfectivo != null) {
+    return `último costo de compra: ${formatoCLP(p.costoEfectivo)}${p.costoEsEstimado ? " (estimado)" : ""}`;
+  }
+  if (p.ultimoCostoCamaraKg != null) {
+    return `último costo de compra: ${formatoCLP(p.ultimoCostoCamaraKg)}/kg (cámara)`;
+  }
+  return "sin compras registradas";
+}
+
+function capitalizar(texto: string): string {
+  return texto.charAt(0).toUpperCase() + texto.slice(1);
+}
+
 // Reemplaza la planilla Excel que usaba el dueño para armar pedidos al por
 // mayor: se arma la lista de líneas mostrando el precio NETO negociado (sin
 // el % de cobro, como la "entrega" que ve el cliente), y recién al cobrar se
@@ -81,6 +101,12 @@ export default function VentaMayorista() {
       )
       .catch((e) => setError(e.message));
   }, [origenStock, productoElegido]);
+
+  // La caja de cámara puntual elegida para esta línea (si hay una) — tiene
+  // su propio costoNetoKg exacto, más preciso que el "último costo" general
+  // del producto (ver textoUltimoCosto), porque es literalmente la caja que
+  // se está vendiendo.
+  const cajaCamaraSeleccionada = origenStock === "camara" ? cajasDisponibles.find((c) => c.id === cajaCamaraId) : undefined;
 
   async function iniciarVenta() {
     if (!usuario) return;
@@ -332,24 +358,16 @@ export default function VentaMayorista() {
                         <button key={p.id} type="button" className="resultado-item" onClick={() => elegirProductoExistente(p)}>
                           {p.plu} — {p.descripcion}
                           {p.precioMayor != null ? ` (precio mayor sugerido: ${formatoCLP(p.precioMayor)})` : ""}
-                          {p.costoEfectivo != null
-                            ? ` — último costo de compra: ${formatoCLP(p.costoEfectivo)}${p.costoEsEstimado ? " (estimado)" : ""}`
-                            : ""}
+                          {` — ${textoUltimoCosto(p)}`}
                         </button>
                       ))}
                     </div>
                   )}
                   {productoElegido && (
                     <p className="ayuda">
-                      Último costo de compra:{" "}
-                      {productoElegido.costoEfectivo != null ? (
-                        <>
-                          {formatoCLP(productoElegido.costoEfectivo)}
-                          {productoElegido.costoEsEstimado && " (estimado)"}
-                        </>
-                      ) : (
-                        "sin compras registradas"
-                      )}
+                      {cajaCamaraSeleccionada
+                        ? `Costo de esta caja (#${cajaCamaraSeleccionada.id}): ${formatoCLP(cajaCamaraSeleccionada.costoNetoKg)}/kg`
+                        : capitalizar(textoUltimoCosto(productoElegido))}
                     </p>
                   )}
                 </div>
@@ -427,11 +445,17 @@ export default function VentaMayorista() {
         {!yaConfirmada && mostrarCobro && (
           <div className="tarjeta">
             <h2>Cobro</h2>
-            <p className="ayuda">Con el % de cobro de cada categoría ya aplicado (configurable en Categorías).</p>
+            <p className="ayuda">
+              Con el % de cobro de cada categoría ya aplicado (configurable en Categorías) — mismo detalle de pesos y
+              precio neto que al armar el pedido, para poder imprimirlo y entregárselo al cliente.
+            </p>
             <table className="tabla">
               <thead>
                 <tr>
                   <th>Producto</th>
+                  <th>Origen</th>
+                  <th>Cantidad</th>
+                  <th>Precio neto</th>
                   <th>% cobro</th>
                   <th>Total a cobrar</th>
                 </tr>
@@ -440,12 +464,20 @@ export default function VentaMayorista() {
                 {itemsActivos.map((item) => (
                   <tr key={item.id}>
                     <td>{item.producto.descripcion}</td>
+                    <td>
+                      {item.cajaCamaraId != null ? `Cámara (caja #${item.cajaCamaraId})` : "Sala de venta"}
+                    </td>
+                    <td>
+                      {item.cantidad} {item.producto.flagBalanza === "PESABLE" ? "kg" : "un."}
+                    </td>
+                    <td>{formatoCLP(item.precioNetoUnitario ?? item.precioUnitario)}</td>
                     <td>{item.porcentajeCobro != null ? `${(item.porcentajeCobro * 100).toFixed(0)}%` : "—"}</td>
                     <td>{formatoCLP(item.subtotal)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            <h3>Total neto: {formatoCLP(totalNeto)}</h3>
             <h3>Total a cobrar: {formatoCLP(venta.total)}</h3>
             <div className="acciones-formulario">
               <button

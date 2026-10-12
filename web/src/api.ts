@@ -439,6 +439,11 @@ export interface ProductoConUltimoCosto extends Producto {
   ultimoCosto: number | null;
   costoEfectivo: number | null;
   costoEsEstimado: boolean;
+  // Costo de la última entrada a Cámara (aparte del de compras de
+  // Inventario — ver comentario en GET /api/productos) — muchos productos
+  // que se venden por mayor nunca pasan por "Cargar factura" de Inventario.
+  ultimoCostoCamaraKg: number | null;
+  ultimoCostoCamaraFecha: string | null;
 }
 
 // Margen (%) al estilo del sistema anterior (Gexus): markup sobre el costo,
