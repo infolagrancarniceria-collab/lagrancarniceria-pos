@@ -36,6 +36,8 @@ import Comunas from "./pages/Comunas";
 import PedidosWeb from "./pages/PedidosWeb";
 import CajaOnline from "./pages/CajaOnline";
 import PedidosOnlinePendientes from "./pages/PedidosOnlinePendientes";
+import VentaMayorista from "./pages/VentaMayorista";
+import MayoristasPendientesPago from "./pages/MayoristasPendientesPago";
 import Configuracion from "./pages/Configuracion";
 import Avisos from "./pages/Avisos";
 import ControlPrecios from "./pages/ControlPrecios";
@@ -109,6 +111,8 @@ export default function App() {
             <Route path="/pedidos-web" element={<PedidosWeb />} />
             <Route path="/caja-online/:pedidoId" element={<CajaOnline />} />
             <Route path="/caja/pedidos-online-pendientes" element={<PedidosOnlinePendientes />} />
+            <Route path="/venta-mayorista" element={<VentaMayorista />} />
+            <Route path="/caja/mayoristas-pendientes" element={<MayoristasPendientesPago />} />
             <Route path="/asistente" element={<Asistente />} />
             <Route path="/balanza" element={<Balanza />} />
             <Route path="/camara" element={<Camara />} />

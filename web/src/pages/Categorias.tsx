@@ -12,6 +12,14 @@ export default function Categorias() {
   const [error, setError] = useState<string | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
 
+  // % que Venta Mayorista suma al precio neto al cobrar (ver
+  // Categoria.porcentajeCobroMayorista) — solo tiene sentido en una
+  // categoría raíz (nivel 1). Se edita en línea, como un porcentaje normal
+  // (ej. "19"), no como fracción.
+  const [editandoPctId, setEditandoPctId] = useState<number | null>(null);
+  const [pctValor, setPctValor] = useState("");
+  const [guardandoPct, setGuardandoPct] = useState(false);
+
   function cargar() {
     api.categorias.listar().then(setCategorias).catch((e) => setError(e.message));
   }
@@ -42,6 +50,31 @@ export default function Categorias() {
       cargar();
     } catch (e) {
       setError((e as Error).message);
+    }
+  }
+
+  function abrirEdicionPct(c: Categoria) {
+    setEditandoPctId(c.id);
+    setPctValor(c.porcentajeCobroMayorista != null ? String(c.porcentajeCobroMayorista * 100) : "");
+  }
+
+  async function guardarPct(id: number) {
+    const valor = Number(pctValor.replace(",", "."));
+    if (!pctValor.trim() || Number.isNaN(valor) || valor < 0) {
+      setError("El % no es válido");
+      return;
+    }
+    setGuardandoPct(true);
+    setError(null);
+    try {
+      await api.categorias.actualizarPorcentajeCobroMayorista(id, valor / 100);
+      setEditandoPctId(null);
+      setMensaje("% de cobro mayorista actualizado");
+      cargar();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setGuardandoPct(false);
     }
   }
 
@@ -97,6 +130,7 @@ export default function Categorias() {
             <th>Código</th>
             <th>Nombre</th>
             <th>Nivel</th>
+            <th>% cobro mayorista</th>
           </tr>
         </thead>
         <tbody>
@@ -108,11 +142,42 @@ export default function Categorias() {
               </td>
               <td>{c.nombre}</td>
               <td>{c.nivel}</td>
+              <td>
+                {c.nivel !== 1 ? (
+                  "—"
+                ) : editandoPctId === c.id ? (
+                  <span className="fila-inline">
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      className="input-chico"
+                      value={pctValor}
+                      onChange={(e) => setPctValor(e.target.value)}
+                      autoFocus
+                    />
+                    %
+                    <button type="button" className="boton-chico boton-primario" disabled={guardandoPct} onClick={() => guardarPct(c.id)}>
+                      {guardandoPct ? "Guardando..." : "Guardar"}
+                    </button>
+                    <button type="button" className="boton-chico" onClick={() => setEditandoPctId(null)} disabled={guardandoPct}>
+                      Cancelar
+                    </button>
+                  </span>
+                ) : (
+                  <span className="fila-inline">
+                    {c.porcentajeCobroMayorista != null ? `${(c.porcentajeCobroMayorista * 100).toFixed(0)}%` : "sin configurar"}
+                    <button type="button" className="boton-chico" onClick={() => abrirEdicionPct(c)}>
+                      ✎
+                    </button>
+                  </span>
+                )}
+              </td>
             </tr>
           ))}
           {categorias.length === 0 && (
             <tr>
-              <td colSpan={3}>Todavía no hay categorías creadas.</td>
+              <td colSpan={4}>Todavía no hay categorías creadas.</td>
             </tr>
           )}
         </tbody>

@@ -1,13 +1,17 @@
 import { prisma } from "../db";
 
 // Sube por la jerarquía hasta la categoría de nivel 1 (la "familia" en el
-// sentido del módulo de cámara — ej. Vacuno/Cerdo/Pollo/Otros).
-export async function obtenerCategoriaRaiz(categoriaId: number): Promise<{ id: number; nombre: string }> {
+// sentido del módulo de cámara — ej. Vacuno/Cerdo/Pollo/Otros). Incluye
+// porcentajeCobroMayorista porque solo se configura en la raíz (ver Venta
+// Mayorista) — cualquier producto hereda el % de su categoría raíz.
+export async function obtenerCategoriaRaiz(
+  categoriaId: number
+): Promise<{ id: number; nombre: string; porcentajeCobroMayorista: number | null }> {
   let actual = await prisma.categoria.findUniqueOrThrow({ where: { id: categoriaId } });
   while (actual.padreId !== null) {
     actual = await prisma.categoria.findUniqueOrThrow({ where: { id: actual.padreId } });
   }
-  return { id: actual.id, nombre: actual.nombre };
+  return { id: actual.id, nombre: actual.nombre, porcentajeCobroMayorista: actual.porcentajeCobroMayorista };
 }
 
 // Un cambio masivo "por categoría" debe alcanzar también a las subcategorías,

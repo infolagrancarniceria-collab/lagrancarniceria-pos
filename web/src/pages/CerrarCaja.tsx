@@ -90,6 +90,12 @@ export default function CerrarCaja() {
             <strong>Pedidos web cobrados hoy:</strong> {formatoCLP(cerrada.totalCobrosPedidoWeb)}
           </p>
           <p>
+            <strong>Mayorista pendiente hoy:</strong> {formatoCLP(cerrada.totalPorMedio.mayorista ?? 0)}
+          </p>
+          <p>
+            <strong>Mayorista cobrado hoy:</strong> {formatoCLP(cerrada.totalCobrosMayorista)}
+          </p>
+          <p>
             <strong>Retiros de caja:</strong> {formatoCLP(cerrada.totalRetiros)}
           </p>
           <p>
@@ -157,6 +163,12 @@ export default function CerrarCaja() {
           </p>
           <p>
             <strong>Pedidos web cobrados hoy:</strong> {formatoCLP(resumen.totalCobrosPedidoWeb)}
+          </p>
+          <p>
+            <strong>Mayorista pendiente hoy:</strong> {formatoCLP(resumen.totalPorMedio.mayorista ?? 0)}
+          </p>
+          <p>
+            <strong>Mayorista cobrado hoy:</strong> {formatoCLP(resumen.totalCobrosMayorista)}
           </p>
           <p>
             <strong>Retiros de caja:</strong> {formatoCLP(resumen.totalRetiros)}

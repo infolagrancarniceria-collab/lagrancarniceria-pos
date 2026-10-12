@@ -123,6 +123,13 @@ export default function Layout() {
                 etiqueta="Pedidos online pendientes"
                 badge={avisos?.pedidosOnlinePendientesPago.cantidad}
               />
+              <Item to="/venta-mayorista" emoji="📋" etiqueta="Venta mayorista" />
+              <Item
+                to="/caja/mayoristas-pendientes"
+                emoji="💰"
+                etiqueta="Mayoristas pendientes"
+                badge={avisos?.mayoristasPendientesPago.cantidad}
+              />
               <Item to="/clientes" emoji="🧑‍🤝‍🧑" etiqueta="Clientes" />
               <Item to="/pedidos-web" emoji="🛵" etiqueta="Pedidos web" badge={avisos?.pedidosWebPendientes.cantidad} />
               <Item to="/configuracion" emoji="⚙️" etiqueta="Configuración" />
@@ -146,6 +153,13 @@ export default function Layout() {
                 emoji="🛒"
                 etiqueta="Pedidos online pendientes"
                 badge={avisos?.pedidosOnlinePendientesPago.cantidad}
+              />
+              <Item to="/venta-mayorista" emoji="📋" etiqueta="Venta mayorista" />
+              <Item
+                to="/caja/mayoristas-pendientes"
+                emoji="💰"
+                etiqueta="Mayoristas pendientes"
+                badge={avisos?.mayoristasPendientesPago.cantidad}
               />
               <Item to="/clientes" emoji="🧑‍🤝‍🧑" etiqueta="Clientes" />
               <Item to="/pedidos-web" emoji="🛵" etiqueta="Pedidos web" badge={avisos?.pedidosWebPendientes.cantidad} />

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { Router } from "express";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
@@ -8,6 +9,7 @@ import { calcularProximoPlu } from "../lib/proximoPlu";
 import { sincronizarCatalogoConWeb } from "../lib/syncWeb";
 import { rangoFechasDesdeTexto } from "./reportes";
 import { skuCharcuteriaDeProducto, elegirLoteFefo } from "../lib/charcuteriaFefo";
+import { obtenerCategoriaRaiz } from "../lib/categorias";
 
 export const cajaRouter = Router();
 
@@ -181,7 +183,14 @@ async function calcularResumenSesion(sesionId: number) {
     include: { pagos: true },
   });
 
-  const totalPorMedio: Record<string, number> = { efectivo: 0, tarjeta: 0, credito: 0, transferencia: 0, pedido_web: 0 };
+  const totalPorMedio: Record<string, number> = {
+    efectivo: 0,
+    tarjeta: 0,
+    credito: 0,
+    transferencia: 0,
+    pedido_web: 0,
+    mayorista: 0,
+  };
   let totalVentas = 0;
   for (const venta of ventas) {
     totalVentas += venta.total;
@@ -196,20 +205,24 @@ async function calcularResumenSesion(sesionId: number) {
   // se cobró (efectivo/tarjeta), no queda como "credito"/"transferencia"
   // (eso ya se descontó cuando se dio el crédito/transferencia
   // originalmente). Se llevan separados (totalCobrosCredito vs
-  // totalCobrosTransferencia vs totalCobrosPedidoWeb) a pedido del dueño,
-  // que quiere ese registro aparte aunque el mecanismo sea el mismo.
+  // totalCobrosTransferencia vs totalCobrosPedidoWeb vs
+  // totalCobrosMayorista) a pedido del dueño, que quiere ese registro
+  // aparte aunque el mecanismo sea el mismo.
   const cobrosHoy = await prisma.pagoVenta.findMany({
     where: { sesionCajaCobroId: sesionId, cobrado: true },
   });
   let totalCobrosCredito = 0;
   let totalCobrosTransferencia = 0;
   let totalCobrosPedidoWeb = 0;
+  let totalCobrosMayorista = 0;
   for (const cobro of cobrosHoy) {
     totalPorMedio[cobro.medioCobro!] = (totalPorMedio[cobro.medioCobro!] ?? 0) + cobro.monto;
     if (cobro.medio === "transferencia") {
       totalCobrosTransferencia += cobro.monto;
     } else if (cobro.medio === "pedido_web") {
       totalCobrosPedidoWeb += cobro.monto;
+    } else if (cobro.medio === "mayorista") {
+      totalCobrosMayorista += cobro.monto;
     } else {
       totalCobrosCredito += cobro.monto;
     }
@@ -232,6 +245,7 @@ async function calcularResumenSesion(sesionId: number) {
     totalCobrosCredito,
     totalCobrosTransferencia,
     totalCobrosPedidoWeb,
+    totalCobrosMayorista,
     retiros,
     totalRetiros,
     ingresos,
@@ -297,6 +311,7 @@ cajaRouter.get("/cuadratura", async (req, res) => {
         credito: acc.totalPorMedio.credito + dia.totalPorMedio.credito,
         transferencia: acc.totalPorMedio.transferencia + dia.totalPorMedio.transferencia,
         pedido_web: acc.totalPorMedio.pedido_web + (dia.totalPorMedio.pedido_web ?? 0),
+        mayorista: acc.totalPorMedio.mayorista + (dia.totalPorMedio.mayorista ?? 0),
       },
       totalRetiros: acc.totalRetiros + dia.totalRetiros,
       totalIngresos: acc.totalIngresos + dia.totalIngresos,
@@ -306,7 +321,7 @@ cajaRouter.get("/cuadratura", async (req, res) => {
     {
       fondoFijoInicial: 0,
       totalVentas: 0,
-      totalPorMedio: { efectivo: 0, tarjeta: 0, credito: 0, transferencia: 0, pedido_web: 0 },
+      totalPorMedio: { efectivo: 0, tarjeta: 0, credito: 0, transferencia: 0, pedido_web: 0, mayorista: 0 },
       totalRetiros: 0,
       totalIngresos: 0,
       efectivoEsperado: 0,
@@ -638,6 +653,165 @@ cajaRouter.post("/ventas/desde-pedido-web/:pedidoId", async (req, res) => {
     }
     throw e;
   }
+});
+
+// --- Venta Mayorista ---
+//
+// A pedido del usuario, para reemplazar la calculadora en Excel que usaba
+// su papá: arma un pedido de varias líneas (cualquier producto del
+// catálogo, a precio neto negociado línea por línea, no el precio de
+// venta normal) y al cobrar aplica el % de la categoría de cada producto
+// (ver Categoria.porcentajeCobroMayorista) sobre su propio subtotal neto —
+// igual que las 15 filas de ese Excel, donde cada producto tenía su propio
+// % según fuera pollo o cerdo. Es una Venta real (canal "mayorista",
+// esAuxiliar para no bloquear la caja del mesón) para que el stock, Caja,
+// Cuadratura y Reportes la traten igual que cualquier otra — ver
+// confirmarVenta más abajo para cómo se descuenta el stock según el
+// origen de cada línea (sala de venta o una caja puntual de Cámara).
+const crearVentaMayoristaSchema = z.object({ usuarioId: z.number().int().positive() });
+
+cajaRouter.post("/ventas/mayorista", async (req, res) => {
+  const parsed = crearVentaMayoristaSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0].message });
+  }
+  const { usuarioId } = parsed.data;
+
+  const usuario = await validarUsuario(usuarioId);
+  if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
+
+  const sesion = await prisma.sesionCaja.findFirst({ where: { estado: "abierta" } });
+  if (!sesion) return res.status(400).json({ error: "No hay una caja abierta — ábrela primero" });
+
+  const venta = await prisma.venta.create({
+    data: { sesionCajaId: sesion.id, usuarioId, esAuxiliar: true, canal: "mayorista" },
+    include: { items: { include: { producto: true, usuarioAnulacion: true, cajaCamara: true } }, pagos: true, comuna: true },
+  });
+  res.status(201).json(venta);
+});
+
+const agregarItemMayoristaSchema = z
+  .object({
+    usuarioId: z.number().int().positive(),
+    // Producto ya en el catálogo, o datos mínimos para crear uno al vuelo
+    // si todavía no existe — mismo criterio que "crear rápido" al
+    // escanear en Caja (ver POST /ventas/:id/items/crear-rapido), pero sin
+    // código de barras: acá nunca se pistolea, el producto se elige a
+    // mano. Queda creadoRapido:true para completarlo después.
+    productoId: z.number().int().positive().optional(),
+    productoNuevo: z
+      .object({
+        descripcion: z.string().trim().min(1, "Falta la descripción"),
+        categoriaId: z.number().int().positive("Falta la categoría"),
+        flagBalanza: z.enum(["NORMAL", "PESABLE"]).default("PESABLE"),
+      })
+      .optional(),
+    cantidad: z.number().positive("La cantidad debe ser mayor a 0"),
+    precioNetoUnitario: z.number().positive("El precio neto debe ser mayor a 0"),
+    // De dónde sale físicamente esta línea: el stock general de sala de
+    // venta (se descuenta Producto.stockActual, igual que cualquier venta)
+    // o una caja puntual de Cámara (se descuenta esa caja) — ver
+    // confirmarVenta. Una misma Venta Mayorista puede mezclar líneas de
+    // los dos orígenes.
+    origen: z.enum(["sala_venta", "camara"]),
+    cajaCamaraId: z.number().int().positive().optional(),
+  })
+  .refine((d) => d.productoId != null || d.productoNuevo != null, {
+    message: "Falta elegir o crear el producto",
+    path: ["productoId"],
+  })
+  .refine((d) => d.origen !== "camara" || d.cajaCamaraId != null, {
+    message: "Falta elegir de qué caja de cámara sale",
+    path: ["cajaCamaraId"],
+  });
+
+cajaRouter.post("/ventas/:id/items/mayorista", async (req, res) => {
+  const ventaId = Number(req.params.id);
+  const parsed = agregarItemMayoristaSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0].message });
+  }
+  const { usuarioId, productoId, productoNuevo, cantidad, precioNetoUnitario, origen, cajaCamaraId } = parsed.data;
+
+  const usuario = await validarUsuario(usuarioId);
+  if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
+
+  const venta = await prisma.venta.findUnique({ where: { id: ventaId } });
+  if (!venta) return res.status(404).json({ error: "Venta no encontrada" });
+  if (venta.estado !== "abierta") return res.status(400).json({ error: "Esta venta ya no admite cambios" });
+
+  let producto = productoId ? await prisma.producto.findUnique({ where: { id: productoId } }) : null;
+  if (productoId && !producto) return res.status(404).json({ error: "Producto no encontrado" });
+
+  if (!producto && productoNuevo) {
+    const categoria = await prisma.categoria.findUnique({ where: { id: productoNuevo.categoriaId } });
+    if (!categoria) return res.status(400).json({ error: "La categoría indicada no existe" });
+
+    producto = await prisma.producto.create({
+      data: {
+        plu: await calcularProximoPlu(),
+        descripcion: productoNuevo.descripcion,
+        categoriaId: productoNuevo.categoriaId,
+        flagBalanza: productoNuevo.flagBalanza,
+        // Sin un precio de venta normal mejor que adivinar, se parte del
+        // mismo precio neto negociado — se corrige después en Productos →
+        // Revisión rápida, igual que cualquier producto creadoRapido.
+        precio: precioNetoUnitario,
+        precioMayor: precioNetoUnitario,
+        creadoRapido: true,
+      },
+    });
+    void sincronizarCatalogoConWeb();
+  }
+  if (!producto) return res.status(400).json({ error: "Falta elegir o crear el producto" });
+
+  let cajaCamara = null;
+  if (origen === "camara") {
+    cajaCamara = await prisma.cajaCamara.findUnique({ where: { id: cajaCamaraId! }, include: { producto: true } });
+    if (!cajaCamara) return res.status(404).json({ error: "Caja de cámara no encontrada" });
+    if (cajaCamara.productoId !== producto.id) {
+      return res
+        .status(400)
+        .json({ error: `Esa caja tiene "${cajaCamara.producto.descripcion}", no "${producto.descripcion}"` });
+    }
+    if (cajaCamara.estado === "salida" || cajaCamara.estado === "anulada") {
+      return res.status(400).json({ error: "Esa caja ya no tiene saldo disponible" });
+    }
+    if (cantidad > cajaCamara.saldoKg + 0.0005) {
+      return res.status(400).json({ error: `Esa caja solo tiene ${cajaCamara.saldoKg} kg disponibles` });
+    }
+  }
+
+  const categoriaRaiz = await obtenerCategoriaRaiz(producto.categoriaId);
+  if (categoriaRaiz.porcentajeCobroMayorista == null) {
+    return res.status(400).json({
+      error: `La categoría "${categoriaRaiz.nombre}" todavía no tiene configurado su % de cobro mayorista — configúralo en Categorías antes de vender este producto al por mayor`,
+    });
+  }
+
+  const subtotalNeto = Math.round(precioNetoUnitario * cantidad);
+  const subtotal = Math.round(subtotalNeto * (1 + categoriaRaiz.porcentajeCobroMayorista));
+  const precioUnitario = cantidad > 0 ? Math.round(subtotal / cantidad) : subtotal;
+
+  await prisma.itemVenta.create({
+    data: {
+      ventaId,
+      productoId: producto.id,
+      cantidad,
+      precioUnitario,
+      subtotal,
+      precioNetoUnitario,
+      porcentajeCobro: categoriaRaiz.porcentajeCobroMayorista,
+      cajaCamaraId: origen === "camara" ? cajaCamaraId : null,
+    },
+  });
+  await recalcularTotal(ventaId);
+
+  const ventaActualizada = await prisma.venta.findUnique({
+    where: { id: ventaId },
+    include: { items: { include: { producto: true, usuarioAnulacion: true, cajaCamara: true } }, pagos: true, comuna: true },
+  });
+  res.status(201).json(ventaActualizada);
 });
 
 const comentarioSchema = z.object({
@@ -1077,13 +1251,15 @@ cajaRouter.delete("/ventas/:id/items/:itemId", async (req, res) => {
 
 const agregarPagoSchema = z
   .object({
-    medio: z.enum(["efectivo", "tarjeta", "credito", "transferencia", "pedido_web"]),
+    medio: z.enum(["efectivo", "tarjeta", "credito", "transferencia", "pedido_web", "mayorista"]),
     monto: z.number().positive("El monto debe ser mayor a 0"),
     // Crédito y transferencia necesitan un Cliente ya registrado (ver
     // selector de cliente en Punto de Venta) — reemplaza el nombre libre
     // que se escribía antes, para no duplicar al mismo cliente por typos.
     // "pedido_web" no lo necesita acá: se resuelve solo desde el pedido
     // ligado a la venta (ver más abajo), salvo que se mande explícito.
+    // "mayorista" también es opcional: no siempre hay un cliente cargado
+    // para una venta al por mayor.
     clienteId: z.number().int().positive().optional().nullable(),
     // Solo tiene sentido en efectivo: lo que el cliente entregó en la mano,
     // antes del tope/redondeo aplicado a "monto" — para poder mostrar en el
@@ -1129,6 +1305,9 @@ cajaRouter.post("/ventas/:id/pagos", async (req, res) => {
         }
       }
     }
+  } else if (medio === "mayorista" && clienteId) {
+    cliente = await prisma.cliente.findUnique({ where: { id: clienteId } });
+    if (!cliente) return res.status(400).json({ error: "El cliente seleccionado no existe" });
   }
 
   await prisma.pagoVenta.create({
@@ -1213,11 +1392,43 @@ cajaRouter.post("/ventas/:id/confirmar", async (req, res) => {
     });
   }
 
+  // Venta Mayorista: una línea con cajaCamaraId sale de una caja puntual de
+  // Cámara, no del stock general de sala de venta — se descuenta aparte
+  // (más abajo) y queda fuera de cantidadPorProducto/expandirCombos/FEFO,
+  // que siguen siendo solo para lo que sí sale de sala de venta. Cualquier
+  // venta que no sea mayorista no tiene ninguna línea con cajaCamaraId, así
+  // que este filtro no le cambia nada.
+  const itemsDeCamara = itemsActivos.filter((i) => i.cajaCamaraId != null);
+  const itemsDeSalaVenta = itemsActivos.filter((i) => i.cajaCamaraId == null);
+
   // Suma por producto, por si el mismo producto se agregó más de una vez.
   const cantidadPorProducto = new Map<number, number>();
-  for (const item of itemsActivos) {
+  for (const item of itemsDeSalaVenta) {
     cantidadPorProducto.set(item.productoId, (cantidadPorProducto.get(item.productoId) ?? 0) + item.cantidad);
   }
+
+  // Se agrupa por caja (en vez de por línea) por si la misma caja aparece
+  // en más de una línea, y se revalida el saldo ACTUAL — puede haber
+  // cambiado desde que se agregó la línea (ej. otra venta mayorista sacó
+  // de la misma caja mientras tanto).
+  const EPSILON_KG_MAYORISTA = 0.0005;
+  const cantidadPorCajaCamara = new Map<number, number>();
+  for (const item of itemsDeCamara) {
+    cantidadPorCajaCamara.set(item.cajaCamaraId!, (cantidadPorCajaCamara.get(item.cajaCamaraId!) ?? 0) + item.cantidad);
+  }
+  const cajasCamaraADescontar: { cajaId: number; saldoActual: number; pesoKg: number }[] = [];
+  for (const [cajaCamaraId, pesoKg] of cantidadPorCajaCamara) {
+    const caja = await prisma.cajaCamara.findUnique({ where: { id: cajaCamaraId } });
+    if (!caja) return res.status(400).json({ error: "Una de las cajas de cámara de esta venta ya no existe" });
+    if (caja.estado === "salida" || caja.estado === "anulada") {
+      return res.status(400).json({ error: `La caja de cámara #${cajaCamaraId} ya no tiene saldo disponible` });
+    }
+    if (pesoKg > caja.saldoKg + EPSILON_KG_MAYORISTA) {
+      return res.status(400).json({ error: `La caja de cámara #${cajaCamaraId} solo tiene ${caja.saldoKg} kg disponibles` });
+    }
+    cajasCamaraADescontar.push({ cajaId: caja.id, saldoActual: caja.saldoKg, pesoKg });
+  }
+
   // No se bloquea por falta de stock (ver agregarItemAVenta) — el stock
   // puede quedar negativo y se corrige después con un ajuste manual. Esto
   // sigue siendo así para carnicería; los SKU de charcutería con formato
@@ -1295,6 +1506,35 @@ cajaRouter.post("/ventas/:id/confirmar", async (req, res) => {
           }),
         ]
       : []),
+    // Venta Mayorista: las líneas que salen de una caja puntual de Cámara
+    // descuentan esa caja (no Producto.stockActual) y dejan el mismo
+    // registro de MovimientoCamara que dejaría una Salida de cámara normal
+    // con destino "mayorista" — mismo criterio de esCompleta/tipo que usa
+    // POST /cajas/:id/salida en camara.ts.
+    ...cajasCamaraADescontar.flatMap(({ cajaId, saldoActual, pesoKg }) => {
+      const esCompleta = pesoKg >= saldoActual - EPSILON_KG_MAYORISTA;
+      const nuevoSaldo = esCompleta ? 0 : Math.round((saldoActual - pesoKg) * 1000) / 1000;
+      return [
+        prisma.cajaCamara.update({
+          where: { id: cajaId },
+          data: { saldoKg: nuevoSaldo, estado: esCompleta ? "salida" : "parcial", version: { increment: 1 } },
+        }),
+        prisma.movimientoCamara.create({
+          data: {
+            cajaId,
+            tipo: esCompleta ? "salida_completa" : "salida_parcial",
+            pesoKg,
+            origen: "camara",
+            destino: "mayorista",
+            motivo: "Venta mayorista",
+            referenciaTipo: "Venta",
+            referenciaId: ventaId,
+            usuarioId,
+            claveIdempotencia: randomUUID(),
+          },
+        }),
+      ];
+    }),
   ]);
 
   const ventaFinal = await prisma.venta.findUnique({
@@ -1358,13 +1598,18 @@ cajaRouter.post("/ventas/:id/cancelar", async (req, res) => {
 
   if (venta.estado === "pagada") {
     const itemsActivos = venta.items.filter((i) => !i.anulado);
+    // Venta Mayorista: las líneas con cajaCamaraId descontaron esa caja al
+    // confirmar (no Producto.stockActual) — se devuelven aparte, más abajo.
+    const itemsDeSalaVenta = itemsActivos.filter((i) => i.cajaCamaraId == null);
+    const itemsDeCamara = itemsActivos.filter((i) => i.cajaCamaraId != null);
+
     const cantidadPorProducto = new Map<number, number>();
     // Mismo loteId para todos los ítems de un mismo producto en esta venta
     // (FEFO lo fija así al confirmar, ver POST /ventas/:id/confirmar) — se
     // usa para devolver el stock al lote de origen, no solo al agregado
     // genérico de Producto.
     const loteIdPorProducto = new Map<number, number>();
-    for (const item of itemsActivos) {
+    for (const item of itemsDeSalaVenta) {
       cantidadPorProducto.set(item.productoId, (cantidadPorProducto.get(item.productoId) ?? 0) + item.cantidad);
       if (item.loteId != null) loteIdPorProducto.set(item.productoId, item.loteId);
     }
@@ -1376,6 +1621,36 @@ cajaRouter.post("/ventas/:id/cancelar", async (req, res) => {
     }
 
     const cantidadStockPorProducto = await expandirCombos(cantidadPorProducto);
+
+    // Se agrupa por caja — misma validación de seguridad que "Anular venta
+    // por mayor" de Cámara: solo se devuelve el peso si esa caja no tuvo
+    // NINGÚN movimiento después del que dejó esta venta al confirmar (si
+    // tuvo, el saldo actual ya no corresponde a "como quedó justo después
+    // de esta venta", y devolverlo a ciegas podría mezclarse con otro
+    // movimiento real — se corrige a mano en ese caso).
+    const cantidadPorCajaCamara = new Map<number, number>();
+    for (const item of itemsDeCamara) {
+      cantidadPorCajaCamara.set(item.cajaCamaraId!, (cantidadPorCajaCamara.get(item.cajaCamaraId!) ?? 0) + item.cantidad);
+    }
+    const cajasCamaraADevolver: { cajaId: number; saldoActual: number; pesoInicialKg: number; pesoKg: number }[] = [];
+    for (const [cajaCamaraId, pesoKg] of cantidadPorCajaCamara) {
+      const caja = await prisma.cajaCamara.findUnique({ where: { id: cajaCamaraId } });
+      if (!caja) return res.status(400).json({ error: "Una de las cajas de cámara de esta venta ya no existe" });
+      const movimientoDeEstaVenta = await prisma.movimientoCamara.findFirst({
+        where: { cajaId: cajaCamaraId, referenciaTipo: "Venta", referenciaId: ventaId },
+        orderBy: { id: "desc" },
+      });
+      const movimientoMasReciente = await prisma.movimientoCamara.findFirst({
+        where: { cajaId: cajaCamaraId },
+        orderBy: { id: "desc" },
+      });
+      if (!movimientoDeEstaVenta || movimientoMasReciente?.id !== movimientoDeEstaVenta.id) {
+        return res.status(400).json({
+          error: `La caja de cámara #${cajaCamaraId} tuvo movimientos después de esta venta — no se puede anular directamente, corrígelo con un ajuste manual en Cámara`,
+        });
+      }
+      cajasCamaraADevolver.push({ cajaId: caja.id, saldoActual: caja.saldoKg, pesoInicialKg: caja.pesoInicialKg, pesoKg });
+    }
 
     await prisma.$transaction([
       prisma.venta.update({ where: { id: ventaId }, data: datosAnulacion }),
@@ -1391,6 +1666,30 @@ cajaRouter.post("/ventas/:id/cancelar", async (req, res) => {
           data: { saldoUnidades: { increment: d.cantidad } },
         })
       ),
+      ...cajasCamaraADevolver.flatMap(({ cajaId, saldoActual, pesoInicialKg, pesoKg }) => {
+        const nuevoSaldo = Math.min(pesoInicialKg, Math.round((saldoActual + pesoKg) * 1000) / 1000);
+        const nuevoEstado = nuevoSaldo >= pesoInicialKg - 0.0005 ? "en_camara" : "parcial";
+        return [
+          prisma.cajaCamara.update({
+            where: { id: cajaId },
+            data: { saldoKg: nuevoSaldo, estado: nuevoEstado, version: { increment: 1 } },
+          }),
+          prisma.movimientoCamara.create({
+            data: {
+              cajaId,
+              tipo: "anulacion_mayorista",
+              pesoKg,
+              origen: "camara",
+              destino: "en_camara",
+              motivo: motivo || null,
+              referenciaTipo: "Venta",
+              referenciaId: ventaId,
+              usuarioId,
+              claveIdempotencia: randomUUID(),
+            },
+          }),
+        ];
+      }),
     ]);
   } else {
     await prisma.venta.update({ where: { id: ventaId }, data: datosAnulacion });
@@ -1405,13 +1704,17 @@ cajaRouter.post("/ventas/:id/cancelar", async (req, res) => {
 
 cajaRouter.get("/creditos-pendientes", async (req, res) => {
   const medio =
-    req.query.medio === "credito" || req.query.medio === "transferencia" || req.query.medio === "pedido_web"
+    req.query.medio === "credito" ||
+    req.query.medio === "transferencia" ||
+    req.query.medio === "pedido_web" ||
+    req.query.medio === "mayorista"
       ? req.query.medio
       : undefined;
-  // Sin filtro, "pedido_web" queda afuera a propósito — esta misma lista
-  // también alimenta Créditos pendientes, que no debería mezclarse con
-  // pedidos online (ver Pedidos Online pendientes de pago, que sí pide
-  // medio=pedido_web explícito).
+  // Sin filtro, "pedido_web" y "mayorista" quedan afuera a propósito — esta
+  // misma lista también alimenta Créditos pendientes, que no debería
+  // mezclarse con pedidos online ni ventas mayoristas (ver Pedidos Online
+  // pendientes de pago y Mayoristas pendientes de pago, que sí piden su
+  // medio explícito).
   const creditos = await prisma.pagoVenta.findMany({
     where: { medio: medio ?? { in: ["credito", "transferencia"] }, cobrado: false },
     include: { venta: true, cliente: true },
@@ -1437,8 +1740,11 @@ cajaRouter.post("/creditos/:pagoId/cobrar", async (req, res) => {
   if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
 
   const pago = await prisma.pagoVenta.findUnique({ where: { id: pagoId } });
-  if (!pago || (pago.medio !== "credito" && pago.medio !== "transferencia" && pago.medio !== "pedido_web")) {
-    return res.status(404).json({ error: "Crédito, transferencia o pedido online no encontrado" });
+  if (
+    !pago ||
+    (pago.medio !== "credito" && pago.medio !== "transferencia" && pago.medio !== "pedido_web" && pago.medio !== "mayorista")
+  ) {
+    return res.status(404).json({ error: "Crédito, transferencia, pedido online o venta mayorista no encontrado" });
   }
   if (pago.cobrado) return res.status(400).json({ error: "Esto ya estaba marcado como cobrado" });
 
@@ -1485,8 +1791,11 @@ cajaRouter.post("/creditos/:pagoId/condonar", async (req, res) => {
   if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
 
   const pago = await prisma.pagoVenta.findUnique({ where: { id: pagoId } });
-  if (!pago || (pago.medio !== "credito" && pago.medio !== "transferencia" && pago.medio !== "pedido_web")) {
-    return res.status(404).json({ error: "Crédito, transferencia o pedido online no encontrado" });
+  if (
+    !pago ||
+    (pago.medio !== "credito" && pago.medio !== "transferencia" && pago.medio !== "pedido_web" && pago.medio !== "mayorista")
+  ) {
+    return res.status(404).json({ error: "Crédito, transferencia, pedido online o venta mayorista no encontrado" });
   }
   if (pago.cobrado) return res.status(400).json({ error: "Esto ya estaba marcado como cobrado" });
 

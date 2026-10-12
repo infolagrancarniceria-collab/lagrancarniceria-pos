@@ -51,3 +51,30 @@ categoriasRouter.post("/", async (req, res) => {
   });
   res.status(201).json(categoria);
 });
+
+// El % de cobro de Venta Mayorista (ver obtenerCategoriaRaiz) solo tiene
+// sentido en una categoría raíz — las subcategorías heredan el de su raíz,
+// así que no tienen su propio campo editable.
+const porcentajeCobroMayoristaSchema = z.object({
+  porcentajeCobroMayorista: z.number().min(0, "El % no puede ser negativo").max(5, "¿Seguro? Eso es más de 500%"),
+});
+
+categoriasRouter.put("/:id/porcentaje-cobro-mayorista", async (req, res) => {
+  const id = Number(req.params.id);
+  const parsed = porcentajeCobroMayoristaSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0].message });
+  }
+
+  const categoria = await prisma.categoria.findUnique({ where: { id } });
+  if (!categoria) return res.status(404).json({ error: "Categoría no encontrada" });
+  if (categoria.nivel !== 1) {
+    return res.status(400).json({ error: "El % de cobro mayorista solo se configura en una categoría raíz (nivel 1)" });
+  }
+
+  const actualizada = await prisma.categoria.update({
+    where: { id },
+    data: { porcentajeCobroMayorista: parsed.data.porcentajeCobroMayorista },
+  });
+  res.json(actualizada);
+});

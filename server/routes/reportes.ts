@@ -64,12 +64,23 @@ export async function calcularReporteVentas(desdeTexto?: unknown, hastaTexto?: u
 
   const totalVentas = ventasEnRango.reduce((s, v) => s + v.total, 0);
 
-  // Ventas que se originaron en "Pedidos web" (botón "Enviar a Caja"), para
-  // poder distinguirlas del resto — a pedido del usuario, para consultar
-  // cuánto se vendió online sin tener que ir a revisar pedido por pedido.
-  const ventasOnline = ventasEnRango.filter((v) => v.origenPedidoWebId != null);
+  // Separado por canal (ver Venta.canal) — a pedido del usuario, para
+  // distinguir de un vistazo cuánto se vendió en el mesón, cuánto online
+  // (Caja Online) y cuánto al por mayor (Venta Mayorista), sin tener que
+  // revisar venta por venta. "local" agrupa el canal por defecto más
+  // cualquier valor viejo/no usado (ej. "whatsapp", "corporativo"), para
+  // que las tres cifras siempre sumen el total exacto.
+  const ventasOnline = ventasEnRango.filter((v) => v.canal === "online");
   const cantidadVentasOnline = ventasOnline.length;
   const totalVentasOnline = ventasOnline.reduce((s, v) => s + v.total, 0);
+
+  const ventasMayorista = ventasEnRango.filter((v) => v.canal === "mayorista");
+  const cantidadVentasMayorista = ventasMayorista.length;
+  const totalVentasMayorista = ventasMayorista.reduce((s, v) => s + v.total, 0);
+
+  const ventasLocal = ventasEnRango.filter((v) => v.canal !== "online" && v.canal !== "mayorista");
+  const cantidadVentasLocal = ventasLocal.length;
+  const totalVentasLocal = ventasLocal.reduce((s, v) => s + v.total, 0);
 
   const porProducto = new Map<
     number,
@@ -144,8 +155,12 @@ export async function calcularReporteVentas(desdeTexto?: unknown, hastaTexto?: u
     hasta: hasta.toISOString(),
     cantidadVentas: ventasEnRango.length,
     totalVentas,
+    cantidadVentasLocal,
+    totalVentasLocal,
     cantidadVentasOnline,
     totalVentasOnline,
+    cantidadVentasMayorista,
+    totalVentasMayorista,
     masVendidosPorCantidad,
     masVendidosPorIngreso,
     porCategoria,
