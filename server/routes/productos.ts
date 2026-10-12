@@ -90,10 +90,34 @@ productosRouter.get("/", async (req, res) => {
     }
   }
 
+  // Costo de la última entrada a Cámara (LoteCamara.costoNetoKg) — un costo
+  // APARTE del de compras de Inventario (mismo criterio que GET /:id más
+  // abajo, ver su comentario). Muchos productos que se venden por mayor
+  // salen de Cámara y nunca pasan por "Cargar factura" de Inventario, así
+  // que sin esto su "último costo" quedaba vacío aunque se le acabara de
+  // registrar una entrada a Cámara con costo conocido.
+  const lotesCamara = await prisma.loteCamara.findMany({
+    orderBy: { fechaIngreso: "desc" },
+    select: { productoId: true, costoNetoKg: true, fechaIngreso: true },
+  });
+  const ultimoLoteCamaraPorProducto = new Map<number, { costoNetoKg: number; fechaIngreso: Date }>();
+  for (const l of lotesCamara) {
+    if (!ultimoLoteCamaraPorProducto.has(l.productoId)) {
+      ultimoLoteCamaraPorProducto.set(l.productoId, l);
+    }
+  }
+
   res.json(
     productos.map((p) => {
       const ultimoCosto = ultimoCostoPorProducto.get(p.id) ?? null;
-      return { ...p, ultimoCosto, ...calcularCostoEfectivo(ultimoCosto, p.costoReferencia) };
+      const ultimoLoteCamara = ultimoLoteCamaraPorProducto.get(p.id) ?? null;
+      return {
+        ...p,
+        ultimoCosto,
+        ultimoCostoCamaraKg: ultimoLoteCamara?.costoNetoKg ?? null,
+        ultimoCostoCamaraFecha: ultimoLoteCamara?.fechaIngreso ?? null,
+        ...calcularCostoEfectivo(ultimoCosto, p.costoReferencia),
+      };
     })
   );
 });

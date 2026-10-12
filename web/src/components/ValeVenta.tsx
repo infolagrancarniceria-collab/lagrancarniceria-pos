@@ -71,33 +71,69 @@ export function ValeVenta({ venta, onImprimir, onAnular }: Props) {
           Despacho a {venta.comuna?.nombre ?? "—"} ({formatoCLP(venta.costoEnvio ?? 0)})
         </p>
       )}
-      <table className="tabla tabla-vale">
-        <thead>
-          <tr>
-            <th>Producto</th>
-            <th>Cant.</th>
-            <th>Precio</th>
-            <th>Subtotal</th>
-          </tr>
-        </thead>
-        <tbody>
-          {itemsActivos.map((item) => (
-            <tr key={item.id}>
-              <td>{item.producto.descripcion}</td>
-              <td>{item.cantidad}</td>
-              <td>{formatoCLP(item.precioUnitario)}</td>
-              <td>
-                {formatoCLP(item.subtotal)}
-                {item.descuentoTipo && (
-                  <div className="ayuda">
-                    desc. {item.descuentoTipo === "porcentaje" ? `${item.descuentoValor}%` : formatoCLP(item.descuentoValor ?? 0)}
-                  </div>
-                )}
-              </td>
+      {venta.canal === "mayorista" ? (
+        // Detalle completo (peso, origen, precio neto negociado y % de
+        // cobro aplicado) a pedido del usuario — es lo que se le entrega
+        // impreso al cliente mayorista, no solo el total final como en una
+        // venta normal.
+        <table className="tabla tabla-vale">
+          <thead>
+            <tr>
+              <th>Producto</th>
+              <th>Origen</th>
+              <th>Cant.</th>
+              <th>Precio neto</th>
+              <th>% cobro</th>
+              <th>Subtotal</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {itemsActivos.map((item) => (
+              <tr key={item.id}>
+                <td>{item.producto.descripcion}</td>
+                <td>{item.cajaCamaraId != null ? `Cámara (caja #${item.cajaCamaraId})` : "Sala de venta"}</td>
+                <td>
+                  {item.cantidad} {item.producto.flagBalanza === "PESABLE" ? "kg" : "un."}
+                </td>
+                <td>{formatoCLP(item.precioNetoUnitario ?? item.precioUnitario)}</td>
+                <td>{item.porcentajeCobro != null ? `${(item.porcentajeCobro * 100).toFixed(0)}%` : "—"}</td>
+                <td>{formatoCLP(item.subtotal)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <table className="tabla tabla-vale">
+          <thead>
+            <tr>
+              <th>Producto</th>
+              <th>Cant.</th>
+              <th>Precio</th>
+              <th>Subtotal</th>
+            </tr>
+          </thead>
+          <tbody>
+            {itemsActivos.map((item) => (
+              <tr key={item.id}>
+                <td>{item.producto.descripcion}</td>
+                <td>{item.cantidad}</td>
+                <td>{formatoCLP(item.precioUnitario)}</td>
+                <td>
+                  {formatoCLP(item.subtotal)}
+                  {item.descuentoTipo && (
+                    <div className="ayuda">
+                      desc. {item.descuentoTipo === "porcentaje" ? `${item.descuentoValor}%` : formatoCLP(item.descuentoValor ?? 0)}
+                    </div>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {venta.canal === "mayorista" && (
+        <p>Total neto: {formatoCLP(itemsActivos.reduce((s, i) => s + (i.precioNetoUnitario ?? i.precioUnitario) * i.cantidad, 0))}</p>
+      )}
       {itemsAnulados.length > 0 && (
         <div className="no-imprimir">
           <h3>Productos anulados</h3>
