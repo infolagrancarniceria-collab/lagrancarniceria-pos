@@ -14,6 +14,9 @@ export interface Categoria {
   nombre: string;
   nivel: 1 | 2 | 3;
   padreId: number | null;
+  // Solo tiene un valor real en una categoría raíz (nivel 1) — el % que
+  // Venta Mayorista suma al precio neto al cobrar (ver ItemVenta.porcentajeCobro).
+  porcentajeCobroMayorista: number | null;
 }
 
 export type FlagBalanza = "NORMAL" | "PESABLE" | "IMPORTE";
@@ -577,8 +580,12 @@ export interface ReporteVentas {
   hasta: string;
   cantidadVentas: number;
   totalVentas: number;
+  cantidadVentasLocal: number;
+  totalVentasLocal: number;
   cantidadVentasOnline: number;
   totalVentasOnline: number;
+  cantidadVentasMayorista: number;
+  totalVentasMayorista: number;
   masVendidosPorCantidad: { productoId: number; plu: string; descripcion: string; cantidad: number; ingreso: number }[];
   masVendidosPorIngreso: { productoId: number; plu: string; descripcion: string; cantidad: number; ingreso: number }[];
   porCategoria: { categoria: string; cantidad: number; ingreso: number }[];
@@ -598,7 +605,7 @@ export interface HistorialEntrada {
   fecha: string;
 }
 
-export type MedioPago = "efectivo" | "tarjeta" | "credito" | "transferencia" | "pedido_web";
+export type MedioPago = "efectivo" | "tarjeta" | "credito" | "transferencia" | "pedido_web" | "mayorista";
 export type MedioCobro = "efectivo" | "tarjeta";
 
 // Cliente registrado para ventas a crédito/transferencia — reemplaza el
@@ -637,6 +644,15 @@ export interface ItemVenta {
   cantidad: number;
   precioUnitario: number;
   subtotal: number;
+  // Solo en un ítem de Venta Mayorista (ver POST /ventas/:id/items/mayorista):
+  // el precio neto negociado y el % de la categoría aplicado, para poder
+  // mostrar el desglose antes de cobrar. null en cualquier ítem normal.
+  precioNetoUnitario: number | null;
+  porcentajeCobro: number | null;
+  // Solo si esta línea de Venta Mayorista salió de una caja puntual de
+  // Cámara en vez del stock general de sala de venta.
+  cajaCamaraId: number | null;
+  cajaCamara?: CajaCamara | null;
   descuentoTipo: "porcentaje" | "monto_fijo" | null;
   descuentoValor: number | null;
   anulado: boolean;
@@ -680,6 +696,7 @@ export interface Venta {
   fecha: string;
   estado: "abierta" | "pagada" | "anulada";
   total: number;
+  canal: string;
   // "Caja auxiliar" — ver comentario de Venta.esAuxiliar en el schema del
   // servidor: marca una venta abierta a propósito en paralelo a la
   // principal, para seguir cobrando mientras otra queda esperando algo.
@@ -745,6 +762,7 @@ export interface ResumenSesion {
   totalCobrosCredito: number;
   totalCobrosTransferencia: number;
   totalCobrosPedidoWeb: number;
+  totalCobrosMayorista: number;
   retiros: RetiroCaja[];
   totalRetiros: number;
   ingresos: RetiroCaja[];
@@ -814,6 +832,7 @@ export interface AvisosCriticos {
   ajustesPendientesCamara: { cantidad: number };
   pedidosWebPendientes: { cantidad: number };
   pedidosOnlinePendientesPago: { cantidad: number };
+  mayoristasPendientesPago: { cantidad: number };
   lotesCharcuteriaPorVencer: { cantidad: number };
 }
 
@@ -1137,6 +1156,8 @@ export const api = {
     listar: () => get<Categoria[]>("/api/categorias"),
     crear: (data: { codigo: string; nombre: string; nivel: 1 | 2 | 3; padreId: number | null }) =>
       post<Categoria>("/api/categorias", data),
+    actualizarPorcentajeCobroMayorista: (id: number, porcentajeCobroMayorista: number) =>
+      put<Categoria>(`/api/categorias/${id}/porcentaje-cobro-mayorista`, { porcentajeCobroMayorista }),
   },
   productos: {
     listar: (
@@ -1485,6 +1506,19 @@ export const api = {
       post<Venta>("/api/caja/ventas", { usuarioId, auxiliar }),
     crearVentaDesdePedidoWeb: (pedidoId: number, usuarioId: number) =>
       post<Venta>(`/api/caja/ventas/desde-pedido-web/${pedidoId}`, { usuarioId }),
+    crearVentaMayorista: (usuarioId: number) => post<Venta>("/api/caja/ventas/mayorista", { usuarioId }),
+    agregarItemMayorista: (
+      ventaId: number,
+      data: {
+        usuarioId: number;
+        productoId?: number;
+        productoNuevo?: { descripcion: string; categoriaId: number; flagBalanza?: "NORMAL" | "PESABLE" };
+        cantidad: number;
+        precioNetoUnitario: number;
+        origen: "sala_venta" | "camara";
+        cajaCamaraId?: number;
+      }
+    ) => post<Venta>(`/api/caja/ventas/${ventaId}/items/mayorista`, data),
     agregarItem: (ventaId: number, data: { productoId: number; cantidad: number }) =>
       post<Venta>(`/api/caja/ventas/${ventaId}/items`, data),
     escanearCodigo: (ventaId: number, codigo: string) =>
@@ -1508,7 +1542,7 @@ export const api = {
       post<Venta>(`/api/caja/ventas/${ventaId}/confirmar`, { usuarioId }),
     cancelarVenta: (ventaId: number, data: { clave: string; usuarioId: number; motivo?: string }) =>
       post<Venta>(`/api/caja/ventas/${ventaId}/cancelar`, data),
-    creditosPendientes: (medio?: "credito" | "transferencia" | "pedido_web") =>
+    creditosPendientes: (medio?: "credito" | "transferencia" | "pedido_web" | "mayorista") =>
       get<PagoVenta[]>(`/api/caja/creditos-pendientes${medio ? `?medio=${medio}` : ""}`),
     cobrarCredito: (pagoId: number, data: { medioCobro: MedioCobro; usuarioId: number }) =>
       post<PagoVenta>(`/api/caja/creditos/${pagoId}/cobrar`, data),

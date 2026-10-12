@@ -16,6 +16,7 @@ export interface AvisosCriticos {
   ajustesPendientesCamara: { cantidad: number };
   pedidosWebPendientes: { cantidad: number };
   pedidosOnlinePendientesPago: { cantidad: number };
+  mayoristasPendientesPago: { cantidad: number };
   lotesCharcuteriaPorVencer: { cantidad: number };
 }
 
@@ -31,6 +32,7 @@ export async function calcularAvisosCriticos(): Promise<AvisosCriticos> {
     ajustesPendientesCamara,
     pedidosWebPendientes,
     pedidosOnlinePendientesPago,
+    mayoristasPendientesPago,
     configCharcuteria,
   ] = await Promise.all([
     prisma.sesionCaja.findFirst({ where: { estado: "abierta" }, include: { usuarioApertura: true } }),
@@ -45,6 +47,7 @@ export async function calcularAvisosCriticos(): Promise<AvisosCriticos> {
     prisma.cajaCamara.count({ where: { estado: "ajuste_pendiente" } }),
     prisma.pedidoWeb.count({ where: { estado: "pendiente" } }),
     prisma.pagoVenta.count({ where: { medio: "pedido_web", cobrado: false } }),
+    prisma.pagoVenta.count({ where: { medio: "mayorista", cobrado: false } }),
     prisma.configuracionCharcuteria.findFirst(),
   ]);
 
@@ -92,6 +95,7 @@ export async function calcularAvisosCriticos(): Promise<AvisosCriticos> {
     ajustesPendientesCamara: { cantidad: ajustesPendientesCamara },
     pedidosWebPendientes: { cantidad: pedidosWebPendientes },
     pedidosOnlinePendientesPago: { cantidad: pedidosOnlinePendientesPago },
+    mayoristasPendientesPago: { cantidad: mayoristasPendientesPago },
     lotesCharcuteriaPorVencer: { cantidad: lotesCharcuteriaPorVencer },
   };
 }

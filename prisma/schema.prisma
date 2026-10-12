@@ -99,6 +99,14 @@ model Categoria {
   hijos   Categoria[] @relation("CategoriaJerarquia")
 
   productos Producto[]
+
+  // Solo tiene sentido en una categoría raíz (nivel 1, ej. Pollo, Cerdo,
+  // Vacuno) — el % que se suma al precio neto de Venta Mayorista al
+  // momento de cobrar (ver ItemVenta.porcentajeCobro). Null = esa
+  // categoría todavía no tiene el % configurado; Venta Mayorista bloquea
+  // el cobro de un ítem de esa categoría hasta que se configure acá, en
+  // vez de adivinar un valor.
+  porcentajeCobroMayorista Float?
 }
 
 // SQLite no soporta enums nativos en Prisma; el valor permitido
@@ -559,10 +567,13 @@ model Venta {
   businessUnitId Int          @default(1)
   businessUnit   BusinessUnit @relation(fields: [businessUnitId], references: [id])
 
-  // Canal por el que se originó la venta — solo informativo para reportes,
-  // no cambia ningún cálculo. "local" = mesón, valor por defecto para toda
-  // venta hecha directo en caja (incluidas todas las previas a este campo).
-  canal String @default("local") // "local" | "online" | "whatsapp" | "corporativo"
+  // Canal por el que se originó la venta — no cambia ningún cálculo, pero
+  // SÍ se usa para separar los totales de Reportes (ver
+  // calcularReporteVentas): "local" = mesón, valor por defecto para toda
+  // venta hecha directo en caja (incluidas todas las previas a este
+  // campo); "online" = pedido web pistoleado en Caja Online; "mayorista" =
+  // Venta Mayorista.
+  canal String @default("local") // "local" | "online" | "mayorista" | "whatsapp" | "corporativo"
 
   // "Caja auxiliar": normalmente solo hay UNA venta "abierta" a la vez por
   // sesión (ver POST /ventas) — este flag marca las que el cajero abrió
@@ -621,9 +632,31 @@ model ItemVenta {
   cantidad       Float
   precioUnitario Float // copia del precio al momento de vender — mientras la venta sigue "abierta" SÍ se
   // actualiza en cascada si el precio del producto cambia después (ver actualizarItemsAbiertosPorProducto
-  // en server/routes/precios.ts); una vez la venta queda "pagada"/"anulada" ya no se toca, para que quede
-  // el registro real de lo que se cobró
+  // en server/routes/precios.ts, que excluye los ítems con precioNetoUnitario propio — ver abajo); una vez
+  // la venta queda "pagada"/"anulada" ya no se toca, para que quede el registro real de lo que se cobró
   subtotal       Float // ya con el descuento de este ítem aplicado, si tiene uno
+
+  // Solo se llena en un ítem de Venta Mayorista (ver POST
+  // /ventas/:id/items/mayorista): precioUnitario queda con el precio YA
+  // con el % de cobro aplicado (igual que en cualquier otro ítem, para que
+  // el resto del sistema —Caja, Reportes, Cuadratura— lo sume igual que
+  // cualquier venta), y estos dos campos guardan el desglose original
+  // (precio neto negociado y el % de la categoría al momento de vender,
+  // por si esa categoría cambia su % después) para poder mostrarlo en la
+  // "entrega" (antes de cobrar) y en el historial. precioNetoUnitario !=
+  // null es también la marca que usa actualizarItemsAbiertosPorProducto
+  // para NO pisar este precio negociado si el precio de catálogo del
+  // producto cambia mientras la venta sigue abierta.
+  precioNetoUnitario Float?
+  porcentajeCobro    Float?
+
+  // Solo se llena si esta línea de Venta Mayorista salió de una caja
+  // puntual de Cámara (en vez de descontar el stock general de sala de
+  // venta) — mismo criterio que SalidaMayorista.cajaCamaraId, pero acá
+  // vive en el ítem porque una misma venta mayorista puede mezclar líneas
+  // de sala de venta y líneas de cámara. Ver confirmarVenta.
+  cajaCamaraId Int?
+  cajaCamara   CajaCamara? @relation(fields: [cajaCamaraId], references: [id])
 
   // Solo se llena cuando "producto" es la fila espejo de un SKU de
   // charcutería (ver ItemCharcuteria.productoEspejoId) — de qué lote salió
@@ -657,7 +690,10 @@ model PagoVenta {
   // separados, en vez de uno solo, porque el dueño quiere llevarlos como
   // registros aparte (no es lo mismo fiar que esperar que confirme una
   // transferencia), aunque contablemente sean el mismo mecanismo.
-  medio String // "efectivo" | "tarjeta" | "credito" | "transferencia"
+  // "pedido_web" y "mayorista" funcionan igual (pendiente hasta cobrarse),
+  // una por cada pantalla de pendientes propia (Pedidos online pendientes
+  // / Mayoristas pendientes), para no mezclarlas con crédito a un cliente.
+  medio String // "efectivo" | "tarjeta" | "credito" | "transferencia" | "pedido_web" | "mayorista"
   monto Float
 
   // Solo aplica cuando medio = "efectivo": lo que el cliente entregó en la
@@ -970,6 +1006,7 @@ model CajaCamara {
   esperados         InventarioCamaraEsperado[]
   escaneos          EscaneoInventarioCamara[]
   salidasMayoristas SalidaMayorista[]
+  itemsVentaMayorista ItemVenta[]
 }
 
 // Cada cambio a una caja es un movimiento inmutable — nunca se reemplaza el

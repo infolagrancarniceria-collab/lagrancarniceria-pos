@@ -27,8 +27,11 @@ async function validarUsuario(usuarioId: number) {
 // Si el ítem tenía su propio descuento (ver /ventas/:id/items/:itemId/
 // descuento), se recalcula sobre el precio nuevo para no perderlo.
 async function actualizarItemsAbiertosPorProducto(productoId: number, precioNuevo: number) {
+  // precioNetoUnitario != null marca un ítem de Venta Mayorista: su precio
+  // es el neto negociado línea por línea (ver POST /ventas/:id/items/mayorista),
+  // no el precio de catálogo — no debe pisarse con un cambio de precio normal.
   const items = await prisma.itemVenta.findMany({
-    where: { productoId, anulado: false, venta: { estado: "abierta" } },
+    where: { productoId, anulado: false, precioNetoUnitario: null, venta: { estado: "abierta" } },
   });
   const ventaIds = new Set<number>();
   for (const item of items) {

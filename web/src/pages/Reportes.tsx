@@ -210,9 +210,12 @@ export default function Reportes() {
             )}
           </div>
           <p className="ayuda">
-            De eso, <strong>{reporteVentas.cantidadVentasOnline}</strong> venta
-            {reporteVentas.cantidadVentasOnline === 1 ? "" : "s"} vinieron de Pedidos web (
-            {formatoCLP(reporteVentas.totalVentasOnline)}).
+            Mesón: <strong>{reporteVentas.cantidadVentasLocal}</strong> venta
+            {reporteVentas.cantidadVentasLocal === 1 ? "" : "s"} ({formatoCLP(reporteVentas.totalVentasLocal)}) · Online:{" "}
+            <strong>{reporteVentas.cantidadVentasOnline}</strong> venta{reporteVentas.cantidadVentasOnline === 1 ? "" : "s"} (
+            {formatoCLP(reporteVentas.totalVentasOnline)}) · Mayorista:{" "}
+            <strong>{reporteVentas.cantidadVentasMayorista}</strong> venta
+            {reporteVentas.cantidadVentasMayorista === 1 ? "" : "s"} ({formatoCLP(reporteVentas.totalVentasMayorista)}).
           </p>
 
           <h3>Ventas por día</h3>

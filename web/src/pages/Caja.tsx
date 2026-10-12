@@ -144,6 +144,9 @@ export default function Caja() {
                 <strong>Pedidos web pendientes hoy:</strong> {formatoCLP(resumen.totalPorMedio.pedido_web ?? 0)}
               </div>
               <div>
+                <strong>Mayorista pendiente hoy:</strong> {formatoCLP(resumen.totalPorMedio.mayorista ?? 0)}
+              </div>
+              <div>
                 <strong>Retiros de caja:</strong> {formatoCLP(resumen.totalRetiros)}
               </div>
               <div>
