@@ -477,12 +477,18 @@ cajaRouter.get("/ventas", async (req, res) => {
   res.json(ventas);
 });
 
+// canal: "local" — SIN esto, una venta mayorista u online abierta en la
+// misma sesión de caja (comparten SesionCaja con el mesón) podía quedar
+// seleccionada acá como si fuera la venta del mesón, dejando que un
+// escaneo o cobro del mesón cayera encima de esa venta ajena. Punto de
+// Venta solo debe ver/crear ventas de canal "local" — Caja Online y Venta
+// Mayorista tienen su propio flujo para encontrar su venta.
 cajaRouter.get("/ventas/abierta", async (_req, res) => {
   const sesion = await prisma.sesionCaja.findFirst({ where: { estado: "abierta" } });
   if (!sesion) return res.json(null);
 
   const venta = await prisma.venta.findFirst({
-    where: { sesionCajaId: sesion.id, estado: "abierta" },
+    where: { sesionCajaId: sesion.id, estado: "abierta", canal: "local" },
     include: { items: { include: { producto: true, usuarioAnulacion: true } }, pagos: true, comuna: true },
   });
   res.json(venta);
@@ -493,12 +499,13 @@ cajaRouter.get("/ventas/abierta", async (_req, res) => {
 // venta en curso a la vez (ej. una esperando que se confirme una
 // transferencia, mientras cobra otra). Debe ir ANTES de "/ventas/:id" en
 // las rutas (si no, Express intentaría matchear "abiertas" como el id).
+// canal: "local" — mismo motivo que en "/ventas/abierta" arriba.
 cajaRouter.get("/ventas/abiertas", async (_req, res) => {
   const sesion = await prisma.sesionCaja.findFirst({ where: { estado: "abierta" } });
   if (!sesion) return res.json([]);
 
   const ventas = await prisma.venta.findMany({
-    where: { sesionCajaId: sesion.id, estado: "abierta" },
+    where: { sesionCajaId: sesion.id, estado: "abierta", canal: "local" },
     include: { items: { include: { producto: true, usuarioAnulacion: true } }, pagos: true, comuna: true },
     orderBy: { id: "asc" },
   });
@@ -544,7 +551,10 @@ cajaRouter.post("/ventas", async (req, res) => {
   if (!sesion) return res.status(400).json({ error: "No hay una caja abierta" });
 
   if (!auxiliar) {
-    const yaAbierta = await prisma.venta.findFirst({ where: { sesionCajaId: sesion.id, estado: "abierta" } });
+    // canal: "local" — sin esto, una venta mayorista u online abierta en la
+    // misma sesión se confundía con "ya hay una venta de mesón en curso" y
+    // bloqueaba (o peor, apuntaba) al cajero hacia esa venta ajena.
+    const yaAbierta = await prisma.venta.findFirst({ where: { sesionCajaId: sesion.id, estado: "abierta", canal: "local" } });
     if (yaAbierta) return res.status(409).json({ error: "Ya hay una venta en curso", ventaId: yaAbierta.id });
   }
 

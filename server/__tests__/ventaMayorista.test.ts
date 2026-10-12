@@ -319,6 +319,35 @@ describe("Venta Mayorista — no pisa el precio negociado si cambia el precio de
   });
 });
 
+describe("Venta Mayorista — no debe pisar ni bloquear la venta del mesón", () => {
+  it("una venta mayorista abierta no aparece en /ventas/abierta ni /ventas/abiertas (que son del mesón)", async () => {
+    const { usuario } = await crearFixturesBasicas();
+
+    const mayorista = await api.post("/api/caja/ventas/mayorista").send({ usuarioId: usuario.id });
+    expect(mayorista.status).toBe(201);
+
+    const abierta = await api.get("/api/caja/ventas/abierta");
+    expect(abierta.body?.id).not.toBe(mayorista.body.id);
+
+    const abiertas = await api.get("/api/caja/ventas/abiertas");
+    expect(abiertas.body.some((v: { id: number }) => v.id === mayorista.body.id)).toBe(false);
+  });
+
+  it("con una venta mayorista abierta, Punto de Venta igual puede abrir su propia venta de mesón sin chocar", async () => {
+    const { usuario } = await crearFixturesBasicas();
+
+    const mayorista = await api.post("/api/caja/ventas/mayorista").send({ usuarioId: usuario.id });
+    expect(mayorista.status).toBe(201);
+
+    // Antes del fix, esto devolvía 409 apuntando a la venta mayorista (o
+    // directamente la entregaba como si fuera la venta del mesón).
+    const venta = await api.post("/api/caja/ventas").send({ usuarioId: usuario.id });
+    expect(venta.status).toBe(201);
+    expect(venta.body.canal).toBe("local");
+    expect(venta.body.id).not.toBe(mayorista.body.id);
+  });
+});
+
 describe("Categorías — % de cobro mayorista", () => {
   it("se puede configurar solo en una categoría raíz (nivel 1)", async () => {
     const raiz = await prisma.categoria.create({
