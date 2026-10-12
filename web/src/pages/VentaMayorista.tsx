@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, formatoCLP, type CajaCamara, type Categoria, type Producto, type Venta } from "../api";
+import { api, formatoCLP, type CajaCamara, type Categoria, type ProductoConUltimoCosto, type Venta } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
 import SelectorCategoria from "../components/SelectorCategoria";
 import ModalConfirmarClave from "../components/ModalConfirmarClave";
@@ -35,8 +35,8 @@ export default function VentaMayorista() {
   // --- Formulario de nueva línea ---
   const [origenProducto, setOrigenProducto] = useState<"existente" | "nuevo">("existente");
   const [busqueda, setBusqueda] = useState("");
-  const [resultados, setResultados] = useState<Producto[]>([]);
-  const [productoElegido, setProductoElegido] = useState<Producto | null>(null);
+  const [resultados, setResultados] = useState<ProductoConUltimoCosto[]>([]);
+  const [productoElegido, setProductoElegido] = useState<ProductoConUltimoCosto | null>(null);
   const [nuevoDescripcion, setNuevoDescripcion] = useState("");
   const [nuevoCategoriaId, setNuevoCategoriaId] = useState<number | "">("");
   const [nuevoFlagBalanza, setNuevoFlagBalanza] = useState<"NORMAL" | "PESABLE">("PESABLE");
@@ -62,7 +62,7 @@ export default function VentaMayorista() {
       return;
     }
     const t = setTimeout(() => {
-      api.productos.listar({ buscar: busqueda }).then((r) => setResultados(r.slice(0, 8))).catch(() => setResultados([]));
+      api.productos.listarConCosto({ buscar: busqueda }).then((r) => setResultados(r.slice(0, 8))).catch(() => setResultados([]));
     }, 250);
     return () => clearTimeout(t);
   }, [origenProducto, busqueda]);
@@ -96,7 +96,7 @@ export default function VentaMayorista() {
     }
   }
 
-  function elegirProductoExistente(p: Producto) {
+  function elegirProductoExistente(p: ProductoConUltimoCosto) {
     setProductoElegido(p);
     setBusqueda("");
     setResultados([]);
@@ -332,9 +332,25 @@ export default function VentaMayorista() {
                         <button key={p.id} type="button" className="resultado-item" onClick={() => elegirProductoExistente(p)}>
                           {p.plu} — {p.descripcion}
                           {p.precioMayor != null ? ` (precio mayor sugerido: ${formatoCLP(p.precioMayor)})` : ""}
+                          {p.costoEfectivo != null
+                            ? ` — último costo de compra: ${formatoCLP(p.costoEfectivo)}${p.costoEsEstimado ? " (estimado)" : ""}`
+                            : ""}
                         </button>
                       ))}
                     </div>
+                  )}
+                  {productoElegido && (
+                    <p className="ayuda">
+                      Último costo de compra:{" "}
+                      {productoElegido.costoEfectivo != null ? (
+                        <>
+                          {formatoCLP(productoElegido.costoEfectivo)}
+                          {productoElegido.costoEsEstimado && " (estimado)"}
+                        </>
+                      ) : (
+                        "sin compras registradas"
+                      )}
+                    </p>
                   )}
                 </div>
               ) : (
