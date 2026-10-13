@@ -92,6 +92,15 @@ export default function ProductoForm() {
   const { usuario } = useUsuario();
 
   const [categorias, setCategorias] = useState<Categoria[]>([]);
+  // Familias de corte disponibles para elegir acá: FAMILIAS_CAMARA (Vacuno,
+  // Cerdo, Pollo, Otros — siempre ofrecidas, aunque todavía no tengan
+  // ninguna opción de corte cargada) más cualquier familia más específica
+  // que ya se haya creado en Comunas → Opciones de corte (ej. "Pechugas"),
+  // para no estar atados a esas 4 genéricas — así, productos que comparten
+  // "Pollo" pero necesitan cortes distintos entre sí (ej. Pechuga vs.
+  // Trutro) pueden tener cada uno su propia familia, sin que les aparezcan
+  // las mismas opciones a todos.
+  const [familiasCorte, setFamiliasCorte] = useState<string[]>(FAMILIAS_CAMARA);
   const [form, setForm] = useState<FormState>(formVacio);
   const [productoActual, setProductoActual] = useState<ProductoConCosto | null>(null);
   const [precioNuevo, setPrecioNuevo] = useState("");
@@ -104,6 +113,16 @@ export default function ProductoForm() {
 
   useEffect(() => {
     api.categorias.listar().then(setCategorias).catch((e) => setError(e.message));
+  }, []);
+
+  useEffect(() => {
+    api.cortes
+      .listar()
+      .then((cortes) => {
+        const existentes = Array.from(new Set(cortes.map((c) => c.familia)));
+        setFamiliasCorte(Array.from(new Set([...FAMILIAS_CAMARA, ...existentes])));
+      })
+      .catch(() => {});
   }, []);
 
   // Sugerencia de PLU al crear un producto nuevo (el siguiente número
@@ -801,15 +820,18 @@ export default function ProductoForm() {
             Familia de corte (página web)
             <select value={form.familiaCorte} onChange={(e) => actualizarCampo("familiaCorte", e.target.value)}>
               <option value="">Sin selector de corte</option>
-              {FAMILIAS_CAMARA.map((f) => (
-                <option key={f} value={f}>
-                  {f}
-                </option>
-              ))}
+              {Array.from(new Set(form.familiaCorte ? [...familiasCorte, form.familiaCorte] : familiasCorte)).map(
+                (f) => (
+                  <option key={f} value={f}>
+                    {f}
+                  </option>
+                )
+              )}
             </select>
             <span className="ayuda">
               Si eliges una familia, en la web este producto muestra las opciones de corte configuradas para esa
-              familia (Bifes, Trozo entero, Molida, etc. — ver Comunas → Opciones de corte).
+              familia (Bifes, Trozo entero, Molida, etc. — ver Comunas → Opciones de corte). Las familias nuevas
+              (ej. "Pechugas", distinta de "Pollo") se crean desde esa misma pantalla.
             </span>
           </label>
         )}
