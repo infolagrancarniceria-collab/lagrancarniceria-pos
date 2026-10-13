@@ -20,6 +20,11 @@ export default function Comunas() {
   const [corteFamilia, setCorteFamilia] = useState<string>(FAMILIAS_CAMARA[0]);
   const [corteNombre, setCorteNombre] = useState("");
   const [errorCortes, setErrorCortes] = useState<string | null>(null);
+  // Sugerencias para el campo "Familia" al crear una opción de corte: las 4
+  // genéricas de siempre más cualquier familia más específica que ya se
+  // haya usado (ej. "Pechugas") — así se ve de un vistazo qué nombres ya
+  // existen, sin obligar a elegir solo entre esas 4.
+  const familiasCorteExistentes = Array.from(new Set([...FAMILIAS_CAMARA, ...cortes.map((c) => c.familia)]));
 
   function cargar() {
     api.comunas.listar().then(setComunas).catch((e) => setError(e.message));
@@ -98,12 +103,16 @@ export default function Comunas() {
   async function crearCorte(e: React.FormEvent) {
     e.preventDefault();
     setErrorCortes(null);
+    if (!corteFamilia.trim()) {
+      setErrorCortes("Falta la familia");
+      return;
+    }
     if (!corteNombre.trim()) {
       setErrorCortes("Falta el nombre del corte");
       return;
     }
     try {
-      await api.cortes.crear({ familia: corteFamilia, nombre: corteNombre.trim(), orden: cortes.length });
+      await api.cortes.crear({ familia: corteFamilia.trim(), nombre: corteNombre.trim(), orden: cortes.length });
       setCorteNombre("");
       cargarCortes();
     } catch (e) {
@@ -234,13 +243,22 @@ export default function Comunas() {
         <form onSubmit={crearCorte} onKeyDown={manejarEnterComoTab} className="formulario">
           <label>
             Familia
-            <select value={corteFamilia} onChange={(e) => setCorteFamilia(e.target.value)}>
-              {FAMILIAS_CAMARA.map((f) => (
-                <option key={f} value={f}>
-                  {f}
-                </option>
+            <input
+              list="familias-corte-existentes"
+              value={corteFamilia}
+              onChange={(e) => setCorteFamilia(e.target.value)}
+              placeholder="ej. Vacuno, Pechugas, Trutros"
+              required
+            />
+            <datalist id="familias-corte-existentes">
+              {familiasCorteExistentes.map((f) => (
+                <option key={f} value={f} />
               ))}
-            </select>
+            </datalist>
+            <span className="ayuda">
+              Puede ser una de las ya usadas, o una nueva más específica (ej. "Pechugas" aparte de "Pollo") para que
+              no le aparezcan las mismas opciones de corte a productos que no corresponde.
+            </span>
           </label>
           <label>
             Nombre del corte
