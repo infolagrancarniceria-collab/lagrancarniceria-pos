@@ -1486,6 +1486,9 @@ export const api = {
     resumenSesion: (id: number) => get<ResumenSesion>(`/api/caja/sesiones/${id}/resumen`),
     cerrarSesion: (id: number, data: { efectivoContado: number; usuarioId: number }) =>
       post<ResumenSesion>(`/api/caja/sesiones/${id}/cerrar`, data),
+    ventasAbiertasDeSesion: (id: number) => get<Venta[]>(`/api/caja/sesiones/${id}/ventas-abiertas`),
+    dividirSesion: (id: number, data: { corte: string; usuarioId: number; clave: string }) =>
+      post<{ sesionAnterior: ResumenSesion; sesionActual: ResumenSesion }>(`/api/caja/sesiones/${id}/dividir`, data),
     registrarRetiro: (
       sesionId: number,
       data: { tipo: "retiro" | "ingreso"; monto: number; motivo: string; usuarioId: number; clave: string }
