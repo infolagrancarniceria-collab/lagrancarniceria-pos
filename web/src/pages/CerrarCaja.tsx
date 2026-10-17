@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { api, formatoCLP, type ResumenSesion } from "../api";
+import { Link, useNavigate } from "react-router-dom";
+import { api, formatoCLP, type ResumenSesion, type Venta } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 import ModalAlerta from "../components/ModalAlerta";
+import ModalConfirmarClave from "../components/ModalConfirmarClave";
 
 export default function CerrarCaja() {
   const { usuario } = useUsuario();
@@ -14,6 +15,11 @@ export default function CerrarCaja() {
   const [error, setError] = useState<string | null>(null);
   const [cerrada, setCerrada] = useState<ResumenSesion | null>(null);
   const [guardando, setGuardando] = useState(false);
+  // Ventas que bloquean el cierre (ej. una venta de Caja Online que nunca se
+  // confirmó ni se canceló) — se muestran recién cuando "Cerrar caja" falla
+  // por eso, para no pedirle la lista de más al servidor en el caso normal.
+  const [ventasBloqueantes, setVentasBloqueantes] = useState<Venta[] | null>(null);
+  const [cancelandoVentaId, setCancelandoVentaId] = useState<number | null>(null);
 
   useEffect(() => {
     api.caja
@@ -28,9 +34,21 @@ export default function CerrarCaja() {
       .catch((e) => setError(e.message));
   }, []);
 
+  function buscarVentasBloqueantes() {
+    if (!resumen) return;
+    api.caja
+      .ventasAbiertasDeSesion(resumen.sesion.id)
+      .then(setVentasBloqueantes)
+      .catch(() => {
+        // Si ni siquiera se pudo traer la lista, se deja el mensaje de error
+        // genérico tal cual — no hay nada más que mostrar.
+      });
+  }
+
   async function cerrar(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setVentasBloqueantes(null);
     if (!resumen || !usuario) return;
     const contado = Number(efectivoContado);
     if (Number.isNaN(contado) || contado < 0) {
@@ -48,9 +66,17 @@ export default function CerrarCaja() {
       setCerrada(resultado);
     } catch (e) {
       setError((e as Error).message);
+      buscarVentasBloqueantes();
     } finally {
       setGuardando(false);
     }
+  }
+
+  async function confirmarCancelarVentaBloqueante(usuarioId: number, clave: string, motivo?: string) {
+    if (cancelandoVentaId == null) return;
+    await api.caja.cancelarVenta(cancelandoVentaId, { usuarioId, clave, motivo });
+    setCancelandoVentaId(null);
+    buscarVentasBloqueantes();
   }
 
   if (cerrada) {
@@ -199,6 +225,56 @@ export default function CerrarCaja() {
           </button>
         </div>
       </form>
+
+      {ventasBloqueantes && ventasBloqueantes.length > 0 && (
+        <div className="tarjeta">
+          <h2>Ventas sin terminar que bloquean el cierre</h2>
+          <p className="ayuda">
+            Confírmalas o cancélalas para poder cerrar la caja. Si en realidad son de otro día (la caja se quedó
+            abierta de más), puede ser más rápido{" "}
+            <Link to="/caja/dividir">dividir la caja</Link> en vez de cancelar ventas reales.
+          </p>
+          <table className="tabla">
+            <thead>
+              <tr>
+                <th>N° venta</th>
+                <th>Fecha y hora</th>
+                <th>Canal</th>
+                <th>Ítems</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {ventasBloqueantes.map((v) => (
+                <tr key={v.id}>
+                  <td>{v.id}</td>
+                  <td>{new Date(v.fecha).toLocaleString("es-CL")}</td>
+                  <td>
+                    {v.canal}
+                    {v.esAuxiliar ? " (auxiliar)" : ""}
+                  </td>
+                  <td>{v.items.length}</td>
+                  <td>
+                    <button type="button" onClick={() => setCancelandoVentaId(v.id)}>
+                      Cancelar esta venta
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {cancelandoVentaId != null && (
+        <ModalConfirmarClave
+          titulo="Cancelar venta sin terminar"
+          descripcion="No se guardará nada de esta venta. Elige el motivo, quién autoriza y la clave de supervisor."
+          motivoOpciones={["Cliente canceló la compra", "Venta duplicada", "Error del cajero", "Venta antigua abandonada"]}
+          onConfirmar={confirmarCancelarVentaBloqueante}
+          onCancelar={() => setCancelandoVentaId(null)}
+        />
+      )}
     </div>
   );
 }

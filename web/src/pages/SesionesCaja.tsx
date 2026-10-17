@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { api, formatoCLP, type SesionCaja } from "../api";
 import ModalAlerta from "../components/ModalAlerta";
 
@@ -26,6 +27,7 @@ export default function SesionesCaja() {
             <th>Ajuste de fondo</th>
             <th>Efectivo contado</th>
             <th>Estado</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
@@ -48,11 +50,16 @@ export default function SesionesCaja() {
               </td>
               <td>{s.efectivoContado != null ? formatoCLP(s.efectivoContado) : "—"}</td>
               <td>{s.estado === "abierta" ? "Abierta" : "Cerrada"}</td>
+              {/* Dividir solo tiene sentido para la sesión que sigue abierta
+                  (ver POST /sesiones/:id/dividir) — para una ya cerrada que
+                  cruzó medianoche sin querer, no hay forma de corregirla acá
+                  sin riesgo de pisar un cierre X/Z ya hecho. */}
+              <td>{s.estado === "abierta" && <Link to="/caja/dividir">Dividir</Link>}</td>
             </tr>
           ))}
           {sesiones.length === 0 && (
             <tr>
-              <td colSpan={8}>Todavía no hay sesiones de caja registradas.</td>
+              <td colSpan={9}>Todavía no hay sesiones de caja registradas.</td>
             </tr>
           )}
         </tbody>

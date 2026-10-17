@@ -446,6 +446,140 @@ cajaRouter.post("/sesiones/:id/cerrar", async (req, res) => {
   });
 });
 
+// Ventas abiertas (con ítems reales) de UNA sesión puntual, de cualquier
+// canal — a diferencia de "/ventas/abierta(s)" (que solo miran la sesión
+// ACTUAL y solo canal "local", pensadas para Punto de Venta), esta sirve
+// para que "Cerrar caja" pueda mostrarle al usuario exactamente qué venta(s)
+// le están bloqueando el cierre y dejarlo cancelarlas ahí mismo — antes, si
+// la venta bloqueante era de Caja Online o Venta Mayorista, quedaba
+// invisible para el cajero (esas pantallas solo encuentran su propia venta
+// a través de su propio flujo, no hay forma de "buscarla" a mano).
+cajaRouter.get("/sesiones/:id/ventas-abiertas", async (req, res) => {
+  const id = Number(req.params.id);
+  const ventas = await prisma.venta.findMany({
+    where: { sesionCajaId: id, estado: "abierta" },
+    include: { items: { include: { producto: true } }, pagos: true },
+    orderBy: { id: "asc" },
+  });
+  // Mismo criterio que el cierre (ver arriba): un carrito vacío que Punto de
+  // Venta deja listo para la próxima venta no es una venta real pendiente.
+  res.json(ventas.filter((v) => v.items.length > 0));
+});
+
+const dividirSesionSchema = z.object({
+  corte: z.coerce.date(),
+  usuarioId: z.number().int().positive(),
+  clave: z.string().trim().min(1, "Falta la clave de supervisor"),
+});
+
+// Divide una caja ABIERTA en dos, en la hora que se elija: todo lo vendido
+// (y los retiros/ingresos) desde que se abrió hasta "corte" queda en una
+// sesión nueva, ya cerrada, representando el día anterior; la sesión
+// original sigue abierta pero con su fechaApertura adelantada a "corte", así
+// que de ahí en adelante representa solo el día de hoy. Pensado para cuando
+// a alguien se le olvidó cerrar la caja y se siguió vendiendo después de
+// medianoche — sin esto, todo quedaba mezclado en un solo cierre X/Z, sin
+// forma de separar cuánto fue de cada día.
+//
+// Deliberadamente NO reasigna PagoVenta.sesionCajaCobroId (créditos o
+// transferencias de OTRA venta que se cobraron durante este turno) — ese
+// caso (alguien pagando un fiado viejo a la 1 AM) es extremadamente raro acá
+// y agregarlo complica bastante la lógica para un caso límite que en la
+// práctica no pasa; si llega a pasar, el cobro queda contado en el día en
+// que se dividió, corregible a mano si hace falta.
+cajaRouter.post("/sesiones/:id/dividir", async (req, res) => {
+  const id = Number(req.params.id);
+  const parsed = dividirSesionSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0].message });
+  }
+  const { corte, usuarioId, clave } = parsed.data;
+
+  const usuario = await validarUsuario(usuarioId);
+  if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
+
+  const claveSupervisor = await prisma.claveSupervisor.findFirst();
+  if (!claveSupervisor) {
+    return res.status(403).json({ error: "Clave de supervisor incorrecta" });
+  }
+  const resultadoClave = verificarClaveConLimite(req.ip ?? "desconocido", clave, claveSupervisor.hashClave);
+  if (resultadoClave.bloqueado) {
+    return res.status(429).json({ error: `Demasiados intentos fallidos — espera ${resultadoClave.segundosRestantes} segundos e intenta de nuevo` });
+  }
+  if (!resultadoClave.valida) {
+    return res.status(403).json({ error: "Clave de supervisor incorrecta" });
+  }
+
+  const sesion = await prisma.sesionCaja.findUnique({ where: { id } });
+  if (!sesion) return res.status(404).json({ error: "Sesión no encontrada" });
+  if (sesion.estado !== "abierta") return res.status(400).json({ error: "Solo se puede dividir una caja que sigue abierta" });
+  if (corte <= sesion.fechaApertura) {
+    return res.status(400).json({ error: "La hora de corte tiene que ser después de cuándo se abrió la caja" });
+  }
+  if (corte >= new Date()) {
+    return res.status(400).json({ error: "La hora de corte tiene que ser anterior a ahora" });
+  }
+
+  const cantidadAntesDelCorte = await prisma.venta.count({
+    where: { sesionCajaId: id, fecha: { lt: corte } },
+  });
+  if (cantidadAntesDelCorte === 0) {
+    return res.status(400).json({ error: "No hay ninguna venta antes de esa hora — no hay nada que dividir" });
+  }
+
+  const sesionAnterior = await prisma.$transaction(async (tx) => {
+    const nueva = await tx.sesionCaja.create({
+      data: {
+        usuarioAperturaId: sesion.usuarioAperturaId,
+        fondoFijoInicial: sesion.fondoFijoInicial,
+        fechaApertura: sesion.fechaApertura,
+        estado: "cerrada",
+        usuarioCierreId: usuarioId,
+        fechaCierre: corte,
+      },
+    });
+
+    await tx.venta.updateMany({
+      where: { sesionCajaId: id, fecha: { lt: corte } },
+      data: { sesionCajaId: nueva.id },
+    });
+    await tx.retiroCaja.updateMany({
+      where: { sesionCajaId: id, fecha: { lt: corte } },
+      data: { sesionCajaId: nueva.id },
+    });
+
+    await tx.sesionCaja.update({ where: { id }, data: { fechaApertura: corte } });
+
+    return nueva;
+  });
+
+  const sesionActual = await prisma.sesionCaja.findUnique({ where: { id } });
+  const resumenAnterior = await calcularResumenSesion(sesionAnterior.id);
+  const resumenActual = await calcularResumenSesion(id);
+  const efectivoEsperadoAnterior =
+    sesionAnterior.fondoFijoInicial + resumenAnterior.totalPorMedio.efectivo - resumenAnterior.totalRetiros + resumenAnterior.totalIngresos;
+  const efectivoEsperadoActual =
+    sesionActual!.fondoFijoInicial + resumenActual.totalPorMedio.efectivo - resumenActual.totalRetiros + resumenActual.totalIngresos;
+
+  res.json({
+    sesionAnterior: {
+      sesion: sesionAnterior,
+      ...resumenAnterior,
+      efectivoEsperado: efectivoEsperadoAnterior,
+      // Nadie contó efectivo físico en este momento (es un corte retroactivo,
+      // no un cierre real) — queda sin diferencia, igual que cualquier
+      // sesión con efectivoContado null (ver /resumen).
+      diferencia: null,
+    },
+    sesionActual: {
+      sesion: sesionActual,
+      ...resumenActual,
+      efectivoEsperado: efectivoEsperadoActual,
+      diferencia: null,
+    },
+  });
+});
+
 // --- Ventas ---
 
 // Buscar ventas confirmadas (pagadas) por rango de fechas y/o N° de venta —

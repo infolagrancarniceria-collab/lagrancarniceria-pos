@@ -82,6 +82,9 @@ export default function Caja() {
           <Link to="/caja/cerrar" className="boton">
             Cerrar caja
           </Link>
+          <Link to="/caja/dividir" className="boton">
+            Dividir caja
+          </Link>
           <Link to="/caja/sesiones" className="boton">
             Historial de cajas
           </Link>
