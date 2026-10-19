@@ -47,6 +47,14 @@ export default function VentaMayorista() {
   const [error, setError] = useState<string | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
   const [iniciando, setIniciando] = useState(false);
+  // Antes, cada vez que se entraba a esta pantalla había que tocar "Iniciar
+  // venta mayorista" aunque ya hubiera una en curso (ej. se salió a atender
+  // la caja a mitad de armarla) — eso creaba una venta nueva y dejaba la
+  // anterior, con sus líneas ya cargadas, abierta para siempre sin forma de
+  // recuperarla. "resumiendo" cubre la espera de esa búsqueda para no
+  // mostrar el botón de "Iniciar" en el instante antes de saber si hay una
+  // que retomar.
+  const [resumiendo, setResumiendo] = useState(true);
   const [procesandoCobro, setProcesandoCobro] = useState<"pendiente" | "efectivo" | "tarjeta" | null>(null);
   const [itemAAnular, setItemAAnular] = useState<number | null>(null);
   const [ventaParaImprimir, setVentaParaImprimir] = useState<Venta | null>(null);
@@ -70,6 +78,21 @@ export default function VentaMayorista() {
   useEffect(() => {
     api.categorias.listar().then(setCategorias).catch((e) => setError(e.message));
   }, []);
+
+  useEffect(() => {
+    if (!usuario) return;
+    api.caja
+      .ventaMayoristaAbierta(usuario.id)
+      .then((encontrada) => {
+        if (encontrada) {
+          setVenta(encontrada);
+          setMensaje(`Se retomó la venta mayorista que tenías en curso (${encontrada.items.length} línea(s)).`);
+        }
+      })
+      .catch((e) => setError(e.message))
+      .finally(() => setResumiendo(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [usuario?.id]);
 
   useEffect(() => {
     if (!ventaParaImprimir) return;
@@ -249,9 +272,13 @@ export default function VentaMayorista() {
           ve separada en Reportes.
         </p>
         {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
-        <button type="button" className="boton boton-primario" disabled={iniciando} onClick={iniciarVenta}>
-          {iniciando ? "Iniciando..." : "+ Iniciar venta mayorista"}
-        </button>
+        {resumiendo ? (
+          <p className="ayuda">Buscando si hay una venta mayorista en curso...</p>
+        ) : (
+          <button type="button" className="boton boton-primario" disabled={iniciando} onClick={iniciarVenta}>
+            {iniciando ? "Iniciando..." : "+ Iniciar venta mayorista"}
+          </button>
+        )}
       </div>
     );
   }
