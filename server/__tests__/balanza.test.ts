@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { diasDesdeDuracion, detalleEnvio, type ProductoParaBalanza } from "../lib/balanza";
+import { diasDesdeDuracion, detalleEnvio, construirMensajeActualizacion, type ProductoParaBalanza } from "../lib/balanza";
 
 // Antes el envío a la balanza mandaba siempre "005" (5 días) sin importar lo
 // que se cargara en Producto.duracion — estos tests cubren que ahora se lea
@@ -35,5 +35,35 @@ describe("detalleEnvio incluye los días de vencimiento enviados", () => {
 
     expect(detalle.find((d) => d.plu === "1001")?.diasVencimientoEnviados).toBe(120);
     expect(detalle.find((d) => d.plu === "1002")?.diasVencimientoEnviados).toBe(5);
+  });
+});
+
+// Mismo motivo que ya está confirmado para <ItemPrices> (ver el comentario
+// de construirItem): la balanza no "actualiza" un sub-elemento marcado como
+// Action="Create" si el PLU ya existe, lo ignora en silencio. Por eso
+// <Dates> necesita el mismo Create/Update por pasada que ya tenía
+// <ItemPrices> — si no, el vencimiento nunca se refresca para un producto
+// que ya está cargado en la balanza (que es el caso normal: casi ningún
+// envío es realmente de un PLU nuevo).
+describe("construirMensajeActualizacion: <Dates> usa el mismo Action que <ItemPrices>", () => {
+  const producto: ProductoParaBalanza = {
+    plu: "1001",
+    descripcion: "Churrasco",
+    precio: 5000,
+    flagBalanza: "PESABLE",
+    duracion: "180",
+  };
+
+  it('pasada "Add": ambos piden Action="Create" (el PLU todavía no existe)', () => {
+    const mensaje = construirMensajeActualizacion([producto], "Add");
+    expect(mensaje).toContain('<ItemPrices Action="Create">');
+    expect(mensaje).toContain('<Dates Action="Create">');
+  });
+
+  it('pasada "Update": ambos piden Action="Update" (el PLU ya existe, hay que refrescarlo)', () => {
+    const mensaje = construirMensajeActualizacion([producto], "Update");
+    expect(mensaje).toContain('<ItemPrices Action="Update">');
+    expect(mensaje).toContain('<Dates Action="Update">');
+    expect(mensaje).toContain(">180</DateOffset>");
   });
 });

@@ -71,7 +71,15 @@ function construirItem(producto: ProductoParaBalanza, actionCode: "Add" | "Updat
   const alternativeItemId = pluNumerico.padStart(13, "0");
   const nombre = escaparXml(producto.descripcion);
   const precio = Math.round(producto.precio);
-  const actionPrecio = actionCode === "Add" ? "Create" : "Update";
+  // Mismo motivo que el ajuste anterior de <ItemPrices>: la balanza no
+  // "actualiza" un sub-elemento que mandamos como Action="Create" si el PLU
+  // ya existe — lo ignora en silencio. <Dates> quedaba fijo en "Create" sin
+  // importar la pasada, así que para un PLU que YA está cargado en la
+  // balanza (la inmensa mayoría — recién probado con "Churrasco" tras
+  // cargarle 180 días de duración) la fecha de vencimiento nunca llegaba a
+  // refrescarse: solo <ItemPrices> tenía el Action correcto por pasada,
+  // <Dates> no. Ahora usa el mismo Create/Update que el precio.
+  const accionSiYaExiste = actionCode === "Add" ? "Create" : "Update";
   // Antes esto quedaba fijo en "005" (5 días) para TODOS los productos, sin
   // importar lo que se cargara en Producto.duracion — el campo se guardaba
   // pero nunca se leía para armar este mensaje, así que cualquier valor
@@ -84,8 +92,8 @@ function construirItem(producto: ProductoParaBalanza, actionCode: "Add" | "Updat
     `<Item><PLU>${pluNumerico}</PLU><DepartmentID>0</DepartmentID>` +
     `<AlternativeItemIDs Action="Create"><AlternativeItemID>${alternativeItemId}</AlternativeItemID></AlternativeItemIDs>` +
     `<Descriptions Action="Create"><Description Type="ItemName">${nombre}</Description><Description ID="0" Type="ExtraText"></Description></Descriptions>` +
-    `<ItemPrices Action="${actionPrecio}"><ItemPrice ValueTypeCode="BasePrice" Index="0" UnitOfMeasureCode="${unidad}" PriceOverrideFlag="false" DiscountFlag="false" Hidden="false">${precio}</ItemPrice></ItemPrices>` +
-    `<Dates Action="Create"><DateOffset Type="PackedDate" UnitOfOffset="day" IsPrintEnabled="true">0</DateOffset><DateOffset Type="SellBy" UnitOfOffset="day" IsPrintEnabled="true">${diasVencimiento}</DateOffset></Dates>` +
+    `<ItemPrices Action="${accionSiYaExiste}"><ItemPrice ValueTypeCode="BasePrice" Index="0" UnitOfMeasureCode="${unidad}" PriceOverrideFlag="false" DiscountFlag="false" Hidden="false">${precio}</ItemPrice></ItemPrices>` +
+    `<Dates Action="${accionSiYaExiste}"><DateOffset Type="PackedDate" UnitOfOffset="day" IsPrintEnabled="true">0</DateOffset><DateOffset Type="SellBy" UnitOfOffset="day" IsPrintEnabled="true">${diasVencimiento}</DateOffset></Dates>` +
     `<LabelFormats Action="Create"><LabelFormatID Index="0">2</LabelFormatID></LabelFormats>` +
     `<TargetWeights Action="Create"><TargetWeight Index="0" LowerTolerance="0" UpperTolerance="0" UnitOfMeasureCode="KGM">0</TargetWeight></TargetWeights>` +
     `</Item>`
