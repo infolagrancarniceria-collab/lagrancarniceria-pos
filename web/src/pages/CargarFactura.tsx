@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, formatoCLP, type Producto, type Proveedor } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
@@ -43,6 +43,60 @@ function lineaVacia(id: number): LineaForm {
   };
 }
 
+// Borrador en localStorage para no perder lo tipeado si hay que salir a
+// atender la caja a mitad de cargar una factura — se guarda en cada cambio y
+// se borra recién al registrar la factura con éxito. Solo persiste lo que
+// realmente se tipeó (no "resultados"/"buscarProducto", que son del buscador
+// de productos, ni "siguienteId", que se recalcula al restaurar).
+const CLAVE_BORRADOR = "granCarniceria_borradorFactura_v1";
+
+interface BorradorFactura {
+  proveedorSeleccionado: Proveedor | null;
+  numeroFactura: string;
+  fecha: string;
+  lineas: Array<Pick<LineaForm, "id" | "producto" | "cantidad" | "costoUnitario" | "aplicaIvaCarne">>;
+}
+
+function borradorEstaVacio(b: BorradorFactura): boolean {
+  return (
+    !b.proveedorSeleccionado &&
+    !b.numeroFactura.trim() &&
+    b.lineas.every((l) => !l.producto && !l.cantidad && !l.costoUnitario)
+  );
+}
+
+function cargarBorrador(): BorradorFactura | null {
+  try {
+    const guardado = localStorage.getItem(CLAVE_BORRADOR);
+    if (!guardado) return null;
+    const borrador = JSON.parse(guardado) as BorradorFactura;
+    return borradorEstaVacio(borrador) ? null : borrador;
+  } catch {
+    return null;
+  }
+}
+
+function guardarBorrador(b: BorradorFactura) {
+  try {
+    if (borradorEstaVacio(b)) {
+      localStorage.removeItem(CLAVE_BORRADOR);
+    } else {
+      localStorage.setItem(CLAVE_BORRADOR, JSON.stringify(b));
+    }
+  } catch {
+    // Si falla (ej. modo privado sin storage) se pierde el borrador, pero no
+    // debe impedir seguir cargando la factura.
+  }
+}
+
+function borrarBorrador() {
+  try {
+    localStorage.removeItem(CLAVE_BORRADOR);
+  } catch {
+    // ver guardarBorrador
+  }
+}
+
 // Formulario manual para cargar una factura completa de una sola vez — a
 // pedido del usuario, como alternativa al asistente de IA cuando este no
 // identifica bien los productos de una factura pegada como texto. Mismo
@@ -52,14 +106,22 @@ export default function CargarFactura() {
   const { usuario } = useUsuario();
   const navigate = useNavigate();
 
+  const borrador = useMemo(() => cargarBorrador(), []);
+  const lineasIniciales = borrador
+    ? borrador.lineas.map((l) => ({ ...l, buscarProducto: "", resultados: [] as Producto[] }))
+    : [lineaVacia(1)];
+
   const [proveedores, setProveedores] = useState<Proveedor[]>([]);
   const [buscarProveedor, setBuscarProveedor] = useState("");
-  const [proveedorSeleccionado, setProveedorSeleccionado] = useState<Proveedor | null>(null);
+  const [proveedorSeleccionado, setProveedorSeleccionado] = useState<Proveedor | null>(
+    borrador?.proveedorSeleccionado ?? null
+  );
 
-  const [numeroFactura, setNumeroFactura] = useState("");
-  const [fecha, setFecha] = useState(hoy());
-  const [lineas, setLineas] = useState<LineaForm[]>([lineaVacia(1)]);
-  const [siguienteId, setSiguienteId] = useState(2);
+  const [numeroFactura, setNumeroFactura] = useState(borrador?.numeroFactura ?? "");
+  const [fecha, setFecha] = useState(borrador?.fecha ?? hoy());
+  const [lineas, setLineas] = useState<LineaForm[]>(lineasIniciales);
+  const [siguienteId, setSiguienteId] = useState(1 + Math.max(0, ...lineasIniciales.map((l) => l.id)));
+  const [borradorRestaurado] = useState(borrador != null);
 
   const [error, setError] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
@@ -67,6 +129,30 @@ export default function CargarFactura() {
   useEffect(() => {
     api.proveedores.listar().then(setProveedores).catch((e) => setError(e.message));
   }, []);
+
+  useEffect(() => {
+    guardarBorrador({
+      proveedorSeleccionado,
+      numeroFactura,
+      fecha,
+      lineas: lineas.map((l) => ({
+        id: l.id,
+        producto: l.producto,
+        cantidad: l.cantidad,
+        costoUnitario: l.costoUnitario,
+        aplicaIvaCarne: l.aplicaIvaCarne,
+      })),
+    });
+  }, [proveedorSeleccionado, numeroFactura, fecha, lineas]);
+
+  function descartarBorrador() {
+    borrarBorrador();
+    setProveedorSeleccionado(null);
+    setNumeroFactura("");
+    setFecha(hoy());
+    setLineas([lineaVacia(1)]);
+    setSiguienteId(2);
+  }
 
   const proveedoresFiltrados = buscarProveedor.trim()
     ? proveedores.filter((p) => p.nombre.toLowerCase().includes(buscarProveedor.trim().toLowerCase()))
@@ -154,6 +240,7 @@ export default function CargarFactura() {
         "Factura cargada",
         `${lineasValidas.length} línea(s) de ${proveedorSeleccionado.nombre} — ${formatoCLP(totalFactura)}.`
       );
+      borrarBorrador();
       navigate("/inventario/facturas");
     } catch (e) {
       setError((e as Error).message);
@@ -170,6 +257,14 @@ export default function CargarFactura() {
         alternativa al asistente de IA para cuando no identifica bien los productos.
       </p>
       {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
+      {borradorRestaurado && (
+        <p className="exito">
+          Se restauró el borrador que habías dejado sin terminar.{" "}
+          <button type="button" onClick={descartarBorrador}>
+            Descartar y empezar de nuevo
+          </button>
+        </p>
+      )}
 
       <form onSubmit={guardar} onKeyDown={manejarEnterComoTab} className="formulario">
         <label>
