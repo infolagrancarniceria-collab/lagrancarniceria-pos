@@ -812,6 +812,29 @@ cajaRouter.post("/ventas/desde-pedido-web/:pedidoId", async (req, res) => {
 // Cuadratura y Reportes la traten igual que cualquier otra — ver
 // confirmarVenta más abajo para cómo se descuenta el stock según el
 // origen de cada línea (sala de venta o una caja puntual de Cámara).
+// A diferencia de Punto de Venta (que resume su venta abierta solo al
+// recargar la pantalla) y de Caja Online (atada a un pedido web, así que
+// siempre se resuelve al mismo pedidoId), esta pantalla no tenía ninguna
+// forma de volver a encontrar una venta mayorista que ya estaba en curso:
+// si el cajero salía a atender la caja a mitad de armarla, perdía el
+// estado de React local y, al volver, lo único que podía hacer era tocar
+// "Iniciar venta mayorista" de nuevo — creando una venta nueva y dejando
+// la anterior (con sus líneas ya cargadas) abierta para siempre, sin
+// forma de recuperarla salvo cancelarla a mano desde el panel de "Cerrar
+// caja". Este endpoint permite que la pantalla busque esa venta antes de
+// mostrar el botón de "Iniciar".
+cajaRouter.get("/ventas/mayorista/abierta", async (req, res) => {
+  const usuarioId = Number(req.query.usuarioId);
+  if (!usuarioId) return res.status(400).json({ error: "Falta usuarioId" });
+
+  const venta = await prisma.venta.findFirst({
+    where: { estado: "abierta", canal: "mayorista", usuarioId },
+    include: { items: { include: { producto: true, usuarioAnulacion: true, cajaCamara: true } }, pagos: true, comuna: true },
+    orderBy: { id: "desc" },
+  });
+  res.json(venta);
+});
+
 const crearVentaMayoristaSchema = z.object({ usuarioId: z.number().int().positive() });
 
 cajaRouter.post("/ventas/mayorista", async (req, res) => {
@@ -827,6 +850,11 @@ cajaRouter.post("/ventas/mayorista", async (req, res) => {
   const sesion = await prisma.sesionCaja.findFirst({ where: { estado: "abierta" } });
   if (!sesion) return res.status(400).json({ error: "No hay una caja abierta — ábrela primero" });
 
+  // A diferencia de /ventas/desde-pedido-web/:pedidoId, este endpoint NO es
+  // idempotente — siempre crea una venta nueva. La pantalla (VentaMayorista.
+  // tsx) es la que debe revisar GET /ventas/mayorista/abierta ANTES de
+  // llamar a este endpoint, y solo mostrar el botón de "Iniciar" (que
+  // termina acá) cuando esa búsqueda no encontró ninguna en curso.
   const venta = await prisma.venta.create({
     data: { sesionCajaId: sesion.id, usuarioId, esAuxiliar: true, canal: "mayorista" },
     include: { items: { include: { producto: true, usuarioAnulacion: true, cajaCamara: true } }, pagos: true, comuna: true },

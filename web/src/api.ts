@@ -1515,6 +1515,8 @@ export const api = {
       post<Venta>("/api/caja/ventas", { usuarioId, auxiliar }),
     crearVentaDesdePedidoWeb: (pedidoId: number, usuarioId: number) =>
       post<Venta>(`/api/caja/ventas/desde-pedido-web/${pedidoId}`, { usuarioId }),
+    ventaMayoristaAbierta: (usuarioId: number) =>
+      get<Venta | null>(`/api/caja/ventas/mayorista/abierta?usuarioId=${usuarioId}`),
     crearVentaMayorista: (usuarioId: number) => post<Venta>("/api/caja/ventas/mayorista", { usuarioId }),
     agregarItemMayorista: (
       ventaId: number,
