@@ -51,6 +51,7 @@ balanzaRouter.post("/actualizar", async (_req, res) => {
     descripcion: p.descripcion,
     precio: p.precio,
     flagBalanza: p.flagBalanza,
+    duracion: p.duracion,
   }));
 
   const resultados = await actualizarBalanzas([config.ip1, config.ip2], config.puerto, productosParaBalanza);
