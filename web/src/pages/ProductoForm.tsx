@@ -793,8 +793,18 @@ export default function ProductoForm() {
         </label>
         {!form.esCombo && (
           <label>
-            Duración
-            <input value={form.duracion} onChange={(e) => actualizarCampo("duracion", e.target.value)} />
+            Duración (días)
+            <input
+              type="number"
+              min="1"
+              placeholder="ej. 120"
+              value={form.duracion}
+              onChange={(e) => actualizarCampo("duracion", e.target.value)}
+            />
+            <span className="ayuda">
+              Días hasta el vencimiento que se imprime en el ticket de la balanza. Si se deja vacío, la balanza
+              usa 5 días por defecto.
+            </span>
           </label>
         )}
         {!form.esCombo && (

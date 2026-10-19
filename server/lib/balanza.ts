@@ -10,6 +10,26 @@ export interface ProductoParaBalanza {
   descripcion: string;
   precio: number;
   flagBalanza: string;
+  // Días hasta el vencimiento, tal como se guardó en Producto.duracion (el
+  // campo es texto libre por historia — productos cargados antes de este
+  // campo, o con algo tipo "Ver envase", no tienen un número) — ver
+  // diasDesdeDuracion para cómo se interpreta.
+  duracion: string | null;
+}
+
+const DURACION_POR_DEFECTO_DIAS = 5;
+
+// Producto.duracion es texto libre, pero en la práctica el valor real que
+// hace falta para la balanza es un número de días — se intenta leerlo tal
+// cual (ej. "120"); si no es un número entero positivo (vacío, "Ver
+// envase", "120 días" con texto pegado, etc.) se usa el valor por defecto
+// en vez de adivinar mal un número a partir de texto libre.
+export function diasDesdeDuracion(duracion: string | null | undefined): number {
+  if (duracion == null) return DURACION_POR_DEFECTO_DIAS;
+  const texto = duracion.trim();
+  if (!/^\d+$/.test(texto)) return DURACION_POR_DEFECTO_DIAS;
+  const dias = Number(texto);
+  return dias > 0 ? dias : DURACION_POR_DEFECTO_DIAS;
 }
 
 function escaparXml(texto: string): string {
@@ -52,13 +72,20 @@ function construirItem(producto: ProductoParaBalanza, actionCode: "Add" | "Updat
   const nombre = escaparXml(producto.descripcion);
   const precio = Math.round(producto.precio);
   const actionPrecio = actionCode === "Add" ? "Create" : "Update";
+  // Antes esto quedaba fijo en "005" (5 días) para TODOS los productos, sin
+  // importar lo que se cargara en Producto.duracion — el campo se guardaba
+  // pero nunca se leía para armar este mensaje, así que cualquier valor
+  // puesto ahí (ej. "120") no tenía ningún efecto en lo que imprimía la
+  // balanza. Ver diasDesdeDuracion para el valor por defecto si no hay un
+  // número válido cargado.
+  const diasVencimiento = String(diasDesdeDuracion(producto.duracion)).padStart(3, "0");
 
   return (
     `<Item><PLU>${pluNumerico}</PLU><DepartmentID>0</DepartmentID>` +
     `<AlternativeItemIDs Action="Create"><AlternativeItemID>${alternativeItemId}</AlternativeItemID></AlternativeItemIDs>` +
     `<Descriptions Action="Create"><Description Type="ItemName">${nombre}</Description><Description ID="0" Type="ExtraText"></Description></Descriptions>` +
     `<ItemPrices Action="${actionPrecio}"><ItemPrice ValueTypeCode="BasePrice" Index="0" UnitOfMeasureCode="${unidad}" PriceOverrideFlag="false" DiscountFlag="false" Hidden="false">${precio}</ItemPrice></ItemPrices>` +
-    `<Dates Action="Create"><DateOffset Type="PackedDate" UnitOfOffset="day" IsPrintEnabled="true">0</DateOffset><DateOffset Type="SellBy" UnitOfOffset="day" IsPrintEnabled="true">005</DateOffset></Dates>` +
+    `<Dates Action="Create"><DateOffset Type="PackedDate" UnitOfOffset="day" IsPrintEnabled="true">0</DateOffset><DateOffset Type="SellBy" UnitOfOffset="day" IsPrintEnabled="true">${diasVencimiento}</DateOffset></Dates>` +
     `<LabelFormats Action="Create"><LabelFormatID Index="0">2</LabelFormatID></LabelFormats>` +
     `<TargetWeights Action="Create"><TargetWeight Index="0" LowerTolerance="0" UpperTolerance="0" UnitOfMeasureCode="KGM">0</TargetWeight></TargetWeights>` +
     `</Item>`
@@ -85,6 +112,7 @@ export interface DetalleEnvioItem {
   precioEnviado: number;
   unidad: "KGM" | "PCS" | null;
   incluido: boolean;
+  diasVencimientoEnviados: number;
 }
 
 // Detalle de qué se mandó realmente por cada producto — a pedido del
@@ -93,7 +121,9 @@ export interface DetalleEnvioItem {
 // último envío. La balanza puede responder "OK" en el protocolo (el
 // mensaje se recibió bien) sin que eso garantice que actualizó el precio
 // de un PLU puntual — este detalle ayuda a descartar que el problema sea
-// del lado del POS antes de sospechar de la balanza.
+// del lado del POS antes de sospechar de la balanza. diasVencimientoEnviados
+// sirve para lo mismo con la duración: confirmar qué número viajó de
+// verdad antes de sospechar de la balanza.
 export function detalleEnvio(productos: ProductoParaBalanza[]): DetalleEnvioItem[] {
   return productos.map((p) => {
     const unidad = unidadDeMedida(p.flagBalanza);
@@ -103,6 +133,7 @@ export function detalleEnvio(productos: ProductoParaBalanza[]): DetalleEnvioItem
       precioEnviado: Math.round(p.precio),
       unidad,
       incluido: unidad != null,
+      diasVencimientoEnviados: diasDesdeDuracion(p.duracion),
     };
   });
 }

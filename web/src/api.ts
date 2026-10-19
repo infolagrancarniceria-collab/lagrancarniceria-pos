@@ -855,6 +855,7 @@ export interface DetalleEnvioBalanza {
   precioEnviado: number;
   unidad: "KGM" | "PCS" | null;
   incluido: boolean;
+  diasVencimientoEnviados: number;
 }
 
 export interface ResultadoActualizarBalanza {

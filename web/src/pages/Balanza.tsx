@@ -155,13 +155,14 @@ export default function Balanza() {
                   <th>Producto</th>
                   <th>Precio enviado</th>
                   <th>Unidad</th>
+                  <th>Vencimiento enviado</th>
                   <th>Incluido</th>
                 </tr>
               </thead>
               <tbody>
                 {detalleFiltrado.length === 0 && (
                   <tr>
-                    <td colSpan={5}>Sin resultados.</td>
+                    <td colSpan={6}>Sin resultados.</td>
                   </tr>
                 )}
                 {detalleFiltrado.map((d) => (
@@ -170,6 +171,7 @@ export default function Balanza() {
                     <td>{d.descripcion}</td>
                     <td>${d.precioEnviado.toLocaleString("es-CL")}</td>
                     <td>{d.unidad === "KGM" ? "Por kilo" : d.unidad === "PCS" ? "Por unidad" : "—"}</td>
+                    <td>{d.diasVencimientoEnviados} días</td>
                     <td className={d.incluido ? "exito" : "error"}>{d.incluido ? "Sí" : "No se envió"}</td>
                   </tr>
                 ))}
