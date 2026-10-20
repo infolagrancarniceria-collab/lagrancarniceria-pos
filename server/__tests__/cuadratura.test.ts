@@ -73,3 +73,33 @@ describe("Resumen de sesión / cuadratura — pedido_web no se pierde del desglo
     expect(dia.totalPorMedio.pedido_web).toBe(8990);
   });
 });
+
+// A pedido del usuario, para ver en "Caja abierta" cuánto se vendió hoy en
+// Caja Online y Venta Mayorista sin salir de esa pantalla ni ir a Reportes
+// (que muestra lo mismo pero para un rango de fechas elegido a mano).
+describe("Resumen de sesión — desglose por canal (local/online/mayorista)", () => {
+  it("separa cantidadVentas/totalVentas por canal, y las tres suman el total exacto", async () => {
+    const { usuario, sesionCaja } = await crearFixturesBasicas();
+
+    await prisma.venta.create({
+      data: { sesionCajaId: sesionCaja.id, usuarioId: usuario.id, estado: "pagada", total: 1000 },
+    });
+    await prisma.venta.create({
+      data: { sesionCajaId: sesionCaja.id, usuarioId: usuario.id, estado: "pagada", total: 2000, canal: "online" },
+    });
+    await prisma.venta.create({
+      data: { sesionCajaId: sesionCaja.id, usuarioId: usuario.id, estado: "pagada", total: 3000, canal: "mayorista" },
+    });
+
+    const resumen = await api.get(`/api/caja/sesiones/${sesionCaja.id}/resumen`);
+    expect(resumen.status).toBe(200);
+    expect(resumen.body.cantidadVentas).toBe(3);
+    expect(resumen.body.totalVentas).toBe(6000);
+    expect(resumen.body.cantidadVentasLocal).toBe(1);
+    expect(resumen.body.totalVentasLocal).toBe(1000);
+    expect(resumen.body.cantidadVentasOnline).toBe(1);
+    expect(resumen.body.totalVentasOnline).toBe(2000);
+    expect(resumen.body.cantidadVentasMayorista).toBe(1);
+    expect(resumen.body.totalVentasMayorista).toBe(3000);
+  });
+});

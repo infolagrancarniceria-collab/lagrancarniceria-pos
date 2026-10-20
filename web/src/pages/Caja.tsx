@@ -131,6 +131,30 @@ export default function Caja() {
               <div>
                 <strong>Total vendido:</strong> {formatoCLP(resumen.totalVentas)}
               </div>
+            </div>
+
+            {/* Cuánto se vendió HOY en cada canal (no confundir con "Pedidos
+                web pendientes" / "Mayorista pendiente" de más abajo, que es
+                plata todavía por cobrar, no lo vendido) — a pedido del
+                usuario, para verlo de un vistazo sin salir de esta pantalla. */}
+            <div className="resumen-canales">
+              <div className="resumen-canal resumen-canal-online">
+                <span className="resumen-canal-etiqueta">🌐 Caja Online hoy</span>
+                <span className="resumen-canal-monto">{formatoCLP(resumen.totalVentasOnline)}</span>
+                <p className="ayuda" style={{ margin: 0 }}>
+                  {resumen.cantidadVentasOnline} venta{resumen.cantidadVentasOnline === 1 ? "" : "s"}
+                </p>
+              </div>
+              <div className="resumen-canal resumen-canal-mayorista">
+                <span className="resumen-canal-etiqueta">🧮 Venta Mayorista hoy</span>
+                <span className="resumen-canal-monto">{formatoCLP(resumen.totalVentasMayorista)}</span>
+                <p className="ayuda" style={{ margin: 0 }}>
+                  {resumen.cantidadVentasMayorista} venta{resumen.cantidadVentasMayorista === 1 ? "" : "s"}
+                </p>
+              </div>
+            </div>
+
+            <div className="fila-inline">
               <div>
                 <strong>Efectivo:</strong> {formatoCLP(resumen.totalPorMedio.efectivo ?? 0)}
               </div>

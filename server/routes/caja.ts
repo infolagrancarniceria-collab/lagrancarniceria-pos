@@ -199,6 +199,25 @@ async function calcularResumenSesion(sesionId: number) {
     }
   }
 
+  // Separado por canal (ver Venta.canal) — mismo criterio que el reporte de
+  // Ventas (ver calcularReporteVentas en reportes.ts): "local" agrupa el
+  // canal por defecto más cualquier valor viejo/no usado, para que las tres
+  // cifras siempre sumen el total exacto. A pedido del usuario, para ver de
+  // un vistazo cuánto se vendió hoy en Caja Online y en Venta Mayorista sin
+  // salir de "Caja abierta" — totalPorMedio.pedido_web/mayorista de abajo es
+  // otra cosa (lo que quedó pendiente de cobro), no cuánto se vendió.
+  const ventasOnline = ventas.filter((v) => v.canal === "online");
+  const cantidadVentasOnline = ventasOnline.length;
+  const totalVentasOnline = ventasOnline.reduce((s, v) => s + v.total, 0);
+
+  const ventasMayorista = ventas.filter((v) => v.canal === "mayorista");
+  const cantidadVentasMayorista = ventasMayorista.length;
+  const totalVentasMayorista = ventasMayorista.reduce((s, v) => s + v.total, 0);
+
+  const ventasLocal = ventas.filter((v) => v.canal !== "online" && v.canal !== "mayorista");
+  const cantidadVentasLocal = ventasLocal.length;
+  const totalVentasLocal = ventasLocal.reduce((s, v) => s + v.total, 0);
+
   // Créditos/transferencias/pedidos web de OTRAS sesiones que se cobraron o
   // confirmaron durante esta — esa plata entra a la caja hoy, aunque la
   // venta original haya sido de otro día. Se suma al medio real con el que
@@ -241,6 +260,12 @@ async function calcularResumenSesion(sesionId: number) {
   return {
     cantidadVentas: ventas.length,
     totalVentas,
+    cantidadVentasLocal,
+    totalVentasLocal,
+    cantidadVentasOnline,
+    totalVentasOnline,
+    cantidadVentasMayorista,
+    totalVentasMayorista,
     totalPorMedio,
     totalCobrosCredito,
     totalCobrosTransferencia,
