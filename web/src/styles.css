@@ -661,6 +661,50 @@ select {
   border: 1px solid var(--color-exito);
 }
 
+/* Ventas por canal en "Caja abierta" — a pedido del usuario, para ver de un
+   vistazo cuánto se vendió hoy en Caja Online y Venta Mayorista sin salir
+   de la pantalla ni tener que abrir Reportes. Mismo acento azul que ya usa
+   Caja Online en el resto de la app (.caja-online-banda) y verde de
+   "éxito" para Mayorista, solo para distinguirlas entre sí de un vistazo. */
+.resumen-canales {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 0.75rem 0 1.25rem;
+}
+.resumen-canal {
+  border-radius: 10px;
+  padding: 0.6rem 1.1rem;
+  min-width: 200px;
+}
+.resumen-canal-online {
+  background: var(--color-online-fondo);
+  border: 1px solid var(--color-online-borde);
+}
+.resumen-canal-mayorista {
+  background: var(--color-exito-fondo);
+  border: 1px solid var(--color-exito);
+}
+.resumen-canal-etiqueta {
+  font-family: var(--fuente-titulos);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.85rem;
+  display: block;
+}
+.resumen-canal-online .resumen-canal-etiqueta {
+  color: var(--color-online);
+}
+.resumen-canal-mayorista .resumen-canal-etiqueta {
+  color: var(--color-exito);
+}
+.resumen-canal-monto {
+  font-size: 1.5rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
 /* Aviso emergente del vuelto en efectivo — antes un window.alert() del
    navegador sin estilo; ahora un mismo lenguaje visual que el Total
    (número grande, destacado), pero en verde para que se lea como un

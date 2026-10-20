@@ -763,6 +763,12 @@ export interface ResumenSesion {
   sesion: SesionCaja;
   cantidadVentas: number;
   totalVentas: number;
+  cantidadVentasLocal: number;
+  totalVentasLocal: number;
+  cantidadVentasOnline: number;
+  totalVentasOnline: number;
+  cantidadVentasMayorista: number;
+  totalVentasMayorista: number;
   totalPorMedio: Record<string, number>;
   totalCobrosCredito: number;
   totalCobrosTransferencia: number;
