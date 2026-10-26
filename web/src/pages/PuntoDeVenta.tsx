@@ -19,6 +19,7 @@ import { useEscanerCodigoBarras } from "../hooks/useEscanerCodigoBarras";
 import { TecladoNumerico } from "../components/TecladoNumerico";
 import ModalConfirmarClave from "../components/ModalConfirmarClave";
 import ModalRetiroCaja from "../components/ModalRetiroCaja";
+import ModalAbonarCredito from "../components/ModalAbonarCredito";
 import SelectorCategoria from "../components/SelectorCategoria";
 import SelectorCliente from "../components/SelectorCliente";
 import { ValeVenta } from "../components/ValeVenta";
@@ -394,6 +395,10 @@ export default function PuntoDeVenta() {
   // usuario, para no tener que salir a la pantalla Caja mientras se está
   // vendiendo (ver también Caja.tsx, que tiene el mismo botón).
   const [movimientoTipo, setMovimientoTipo] = useState<"retiro" | "ingreso" | null>(null);
+  // Abonar crédito de un cliente — acceso rápido a pedido del usuario, para
+  // cobrar una deuda que ya tenía de antes sin armar una venta nueva ni
+  // salir a "Créditos pendientes". No depende de la venta activa.
+  const [mostrarAbonarCredito, setMostrarAbonarCredito] = useState(false);
 
   async function confirmarMovimientoCaja(monto: number, motivo: string, usuarioId: number, clave: string) {
     if (!venta || !movimientoTipo) return;
@@ -982,6 +987,9 @@ export default function PuntoDeVenta() {
         <button type="button" onClick={() => setMovimientoTipo("ingreso")}>
           Ingreso de caja
         </button>
+        <button type="button" onClick={() => setMostrarAbonarCredito(true)}>
+          💰 Abonar crédito
+        </button>
         <button type="button" title="Si la pantalla quedó pegada" onClick={reiniciarPantalla}>
           ⟳ Reiniciar pantalla
         </button>
@@ -989,6 +997,9 @@ export default function PuntoDeVenta() {
       </div>
       {movimientoTipo && (
         <ModalRetiroCaja tipo={movimientoTipo} onConfirmar={confirmarMovimientoCaja} onCancelar={() => setMovimientoTipo(null)} />
+      )}
+      {mostrarAbonarCredito && usuario && (
+        <ModalAbonarCredito usuarioId={usuario.id} onCerrar={() => setMostrarAbonarCredito(false)} />
       )}
       {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
       {mensaje && <p className="exito">{mensaje}</p>}

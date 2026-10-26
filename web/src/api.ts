@@ -1559,8 +1559,13 @@ export const api = {
       post<Venta>(`/api/caja/ventas/${ventaId}/confirmar`, { usuarioId }),
     cancelarVenta: (ventaId: number, data: { clave: string; usuarioId: number; motivo?: string }) =>
       post<Venta>(`/api/caja/ventas/${ventaId}/cancelar`, data),
-    creditosPendientes: (medio?: "credito" | "transferencia" | "pedido_web" | "mayorista") =>
-      get<PagoVenta[]>(`/api/caja/creditos-pendientes${medio ? `?medio=${medio}` : ""}`),
+    creditosPendientes: (medio?: "credito" | "transferencia" | "pedido_web" | "mayorista", clienteId?: number) => {
+      const qs = new URLSearchParams();
+      if (medio) qs.set("medio", medio);
+      if (clienteId) qs.set("clienteId", String(clienteId));
+      const query = qs.toString();
+      return get<PagoVenta[]>(`/api/caja/creditos-pendientes${query ? `?${query}` : ""}`);
+    },
     cobrarCredito: (pagoId: number, data: { medioCobro: MedioCobro; usuarioId: number }) =>
       post<PagoVenta>(`/api/caja/creditos/${pagoId}/cobrar`, data),
     condonarCredito: (pagoId: number, data: { usuarioId: number; motivo: string; clave: string }) =>
