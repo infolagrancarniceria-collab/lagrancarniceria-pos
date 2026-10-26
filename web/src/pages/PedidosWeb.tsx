@@ -682,7 +682,13 @@ export default function PedidosWeb() {
               </div>
             )}
 
-            {p.ventaGeneradaId && (
+            {p.ventaGeneradaId && p.ventaGeneradaEstado === "abierta" && (
+              <p className="ayuda">
+                Pistoleo en curso — venta #{p.ventaGeneradaId} todavía sin confirmar. Usa "Continuar pistoleando" para
+                seguir donde quedó.
+              </p>
+            )}
+            {p.ventaGeneradaId && p.ventaGeneradaEstado !== "abierta" && (
               <p className="exito">
                 Atendido — venta #{p.ventaGeneradaId} (revisa el cobro en "Pedidos online pendientes de pago" si
                 todavía no se ha pagado).
@@ -965,9 +971,9 @@ export default function PedidosWeb() {
                   Agregar regalo
                 </button>
               )}
-              {p.estado !== "anulado" && !p.ventaGeneradaId && (
+              {p.estado !== "anulado" && (!p.ventaGeneradaId || p.ventaGeneradaEstado === "abierta") && (
                 <Link to={`/caja-online/${p.id}`} className="boton boton-primario">
-                  Ir a pistolear
+                  {p.ventaGeneradaId ? "Continuar pistoleando" : "Ir a pistolear"}
                 </Link>
               )}
               <button type="button" onClick={() => setPedidoParaImprimir(p)}>
