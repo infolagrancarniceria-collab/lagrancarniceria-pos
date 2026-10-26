@@ -17,7 +17,12 @@ async function validarUsuario(usuarioId: number) {
 
 const CON_RELACIONES = {
   regalos: { include: { producto: true, agregadoPor: true } },
-  ventaGenerada: { select: { id: true } },
+  // "estado" además del id — sin esto, Pedidos web no podía distinguir una
+  // venta ya CONFIRMADA de una que solo quedó abierta a medio pistolear, y
+  // escondía el botón "Ir a pistolear" en los dos casos por igual. Eso
+  // dejaba sin forma de volver a un pedido que se interrumpió a medio
+  // escanear (ver PedidosWeb.tsx).
+  ventaGenerada: { select: { id: true, estado: true } },
 } satisfies Prisma.PedidoWebInclude;
 
 type PedidoWebCompleto = Prisma.PedidoWebGetPayload<{ include: typeof CON_RELACIONES }>;
@@ -30,7 +35,12 @@ function serializar(p: PedidoWebCompleto) {
   } catch {
     items = [];
   }
-  return { ...resto, items, ventaGeneradaId: ventaGenerada?.id ?? null };
+  return {
+    ...resto,
+    items,
+    ventaGeneradaId: ventaGenerada?.id ?? null,
+    ventaGeneradaEstado: ventaGenerada?.estado ?? null,
+  };
 }
 
 pedidosWebRouter.get("/", async (req, res) => {

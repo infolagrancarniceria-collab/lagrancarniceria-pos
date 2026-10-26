@@ -144,6 +144,10 @@ export interface PedidoWeb {
   // Id de la venta creada en Caja al enviar este pedido ("Enviar a Caja"),
   // o null si todavía no se ha enviado — ver Venta.origenPedidoWebId.
   ventaGeneradaId: number | null;
+  // Estado de esa venta ("abierta" mientras se sigue pistoleando, "pagada"
+  // una vez confirmada) — null si no hay ninguna todavía. Distingue un
+  // pedido realmente atendido de uno a medio pistolear (ver PedidosWeb.tsx).
+  ventaGeneradaEstado: "abierta" | "pagada" | "anulada" | null;
   sincronizadoEn: string;
 }
 
