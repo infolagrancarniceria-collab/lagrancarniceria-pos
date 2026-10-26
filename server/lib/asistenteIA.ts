@@ -346,10 +346,10 @@ export const herramientas: Anthropic.Tool[] = [
       properties: {
         categoria: { type: "string" },
         monto: { type: "number", description: "Mayor a 0" },
-        descripcion: { type: "string", description: "Opcional" },
+        descripcion: { type: "string", description: "Nombre del gasto — obligatorio, no una nota opcional (ej. 'Sueldo Juan', 'Cuenta de luz octubre')" },
         resumen: { type: "string" },
       },
-      required: ["categoria", "monto", "resumen"],
+      required: ["categoria", "monto", "descripcion", "resumen"],
     },
   },
   {

@@ -44,10 +44,15 @@ gastosRouter.get("/reporte", async (req, res) => {
   res.json(await calcularReporteGastos(req.query.desde, req.query.hasta));
 });
 
+// descripcion pasó a ser obligatorio (el nombre del gasto, no una nota
+// opcional) — a pedido del usuario, para no terminar con una lista de
+// gastos que solo dice la categoría y nada de qué fue en concreto. Queda
+// igual de nullable en la base de datos: los gastos ya cargados antes de
+// este cambio no se tocan.
 const crearGastoSchema = z.object({
   fecha: z.string().trim().optional(),
   categoria: z.string().trim().min(1, "Falta la categoría"),
-  descripcion: z.string().trim().optional().nullable(),
+  descripcion: z.string().trim().min(1, "Falta el nombre del gasto"),
   monto: z.number().positive("El monto debe ser mayor a 0"),
   usuarioId: z.number().int().positive(),
 });
