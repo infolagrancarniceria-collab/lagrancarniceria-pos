@@ -6,7 +6,22 @@ import { TecladoNumerico } from "../components/TecladoNumerico";
 import { mostrarToast } from "../lib/toast";
 import ModalAlerta from "../components/ModalAlerta";
 
-const CATEGORIAS_SUGERIDAS = ["Sueldos", "Luz", "Agua", "Arriendo", "Gas", "Insumos de aseo", "Otros"];
+const CATEGORIAS_SUGERIDAS = [
+  "Sueldos",
+  "Luz",
+  "Agua",
+  "Arriendo",
+  "Gas",
+  "Insumos de aseo",
+  "Mantención equipos",
+  "Transporte / combustible",
+  "Insumos de producción",
+  "Internet / teléfono",
+  "Seguros",
+  "Patentes / permisos",
+  "Publicidad",
+  "Otros",
+];
 
 function fechaHace(dias: number): string {
   const d = new Date();
@@ -51,6 +66,10 @@ export default function Gastos() {
       setError("Falta la categoría");
       return;
     }
+    if (!descripcion.trim()) {
+      setError("Falta el nombre del gasto");
+      return;
+    }
     const montoNum = Number(monto);
     if (!montoNum || montoNum <= 0) {
       setError("El monto debe ser mayor a 0");
@@ -60,12 +79,12 @@ export default function Gastos() {
     try {
       await api.gastos.crear({
         categoria: categoria.trim(),
-        descripcion: descripcion.trim() || null,
+        descripcion: descripcion.trim(),
         monto: montoNum,
         usuarioId: usuario.id,
       });
       setMensaje("Gasto registrado");
-      mostrarToast("Gasto registrado", `${categoria.trim()}: ${formatoCLP(montoNum)}.`);
+      mostrarToast("Gasto registrado", `${descripcion.trim()} (${categoria.trim()}): ${formatoCLP(montoNum)}.`);
       setCategoria("");
       setDescripcion("");
       setMonto("");
@@ -76,6 +95,15 @@ export default function Gastos() {
       setGuardando(false);
     }
   }
+
+  // A pedido del usuario: ver al costado, mientras se tipea, cuánto se ha
+  // gastado ya en la categoría elegida durante el período visible (no hace
+  // falta pedir nada al servidor — "gastos" ya tiene cargado ese rango).
+  const totalCategoriaActual = categoria.trim()
+    ? gastos
+        .filter((g) => g.categoria.toLowerCase() === categoria.trim().toLowerCase())
+        .reduce((s, g) => s + g.monto, 0)
+    : null;
 
   async function eliminar(id: number) {
     const confirmado = window.confirm("¿Eliminar este gasto?");
@@ -138,9 +166,16 @@ export default function Gastos() {
         </div>
       )}
 
-      <div className="tarjeta">
-        <h2>Registrar gasto</h2>
-        <form onSubmit={registrar} onKeyDown={manejarEnterComoTab} className="fila-inline">
+      <div className="tarjeta fila-inline" style={{ alignItems: "flex-start" }}>
+        <form onSubmit={registrar} onKeyDown={manejarEnterComoTab} className="fila-inline" style={{ flex: 1 }}>
+          <h2 style={{ width: "100%" }}>Registrar gasto</h2>
+          <input
+            type="text"
+            placeholder="Nombre del gasto (ej. Sueldo Juan, cuenta de luz octubre)"
+            value={descripcion}
+            onChange={(e) => setDescripcion(e.target.value)}
+            style={{ minWidth: "260px" }}
+          />
           <input
             type="text"
             list="categorias-gasto"
@@ -153,18 +188,19 @@ export default function Gastos() {
               <option key={c} value={c} />
             ))}
           </datalist>
-          <input
-            type="text"
-            placeholder="Descripción (opcional)"
-            value={descripcion}
-            onChange={(e) => setDescripcion(e.target.value)}
-          />
           <input type="number" min="1" placeholder="Monto" value={monto} onChange={(e) => setMonto(e.target.value)} />
           <TecladoNumerico valor={monto} onCambiar={setMonto} />
           <button type="submit" className="boton boton-primario" disabled={guardando}>
             {guardando ? "Guardando..." : "Registrar"}
           </button>
         </form>
+        {totalCategoriaActual != null && (
+          <div className="tarjeta tarjeta-mini">
+            <strong>{categoria.trim()}</strong>
+            <p style={{ fontSize: "1.2rem", margin: "0.25rem 0" }}>{formatoCLP(totalCategoriaActual)}</p>
+            <p className="ayuda">ya gastado en esta categoría, {desde} a {hasta}</p>
+          </div>
+        )}
       </div>
 
       <table className="tabla">

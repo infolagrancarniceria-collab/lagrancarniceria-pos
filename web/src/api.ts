@@ -1684,7 +1684,7 @@ export const api = {
       const query = qs.toString();
       return get<ReporteGastos>(`/api/gastos/reporte${query ? `?${query}` : ""}`);
     },
-    crear: (data: { fecha?: string; categoria: string; descripcion?: string | null; monto: number; usuarioId: number }) =>
+    crear: (data: { fecha?: string; categoria: string; descripcion: string; monto: number; usuarioId: number }) =>
       post<Gasto>("/api/gastos", data),
     eliminar: (id: number) => del<void>(`/api/gastos/${id}`),
   },

@@ -108,7 +108,7 @@ async function ejecutarPropuesta(accion: PropuestaAsistente["accion"], usuarioId
       await api.gastos.crear({
         categoria: String(d.categoria),
         monto: Number(d.monto),
-        descripcion: d.descripcion != null ? String(d.descripcion) : null,
+        descripcion: String(d.descripcion),
         usuarioId,
       });
       return;
