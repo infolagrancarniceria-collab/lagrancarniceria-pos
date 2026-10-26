@@ -152,11 +152,24 @@ export default function Inventario() {
               </td>
             </tr>
           )}
-          {grupos.map(([raiz, filas]) => (
+          {grupos.map(([raiz, filas]) => {
+            // Se separan los kilos de las unidades en vez de sumarlos juntos
+            // en un solo total — mezclar "3 kg" con "5 un." en el mismo
+            // número no diría nada real (a pedido del usuario: totalizar por
+            // productos, kilos o unidades, cada uno aparte).
+            const subtotalKg = filas
+              .filter((p) => p.flagBalanza === "PESABLE")
+              .reduce((s, p) => s + p.stockActual, 0);
+            const subtotalUnidades = filas
+              .filter((p) => p.flagBalanza !== "PESABLE")
+              .reduce((s, p) => s + p.stockActual, 0);
+            return (
             <Fragment key={raiz}>
               <tr className="fila-total">
                 <td colSpan={5}>
-                  {raiz} ({filas.length})
+                  {raiz} — {filas.length} producto{filas.length === 1 ? "" : "s"}
+                  {subtotalKg > 0 && ` · ${subtotalKg.toLocaleString("es-CL")} kg`}
+                  {subtotalUnidades > 0 && ` · ${subtotalUnidades.toLocaleString("es-CL")} un.`}
                 </td>
               </tr>
               {filas.map((p) => (
@@ -174,7 +187,8 @@ export default function Inventario() {
                 </tr>
               ))}
             </Fragment>
-          ))}
+            );
+          })}
         </tbody>
       </table>
     </div>
