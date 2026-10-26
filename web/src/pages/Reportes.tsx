@@ -1,5 +1,13 @@
 import { useEffect, useState } from "react";
-import { api, formatoCLP, type ReporteDespachos, type ReporteInventario, type ReportePrecios, type ReporteVentas } from "../api";
+import {
+  api,
+  formatoCLP,
+  type ReporteDespachos,
+  type ReporteInventario,
+  type ReportePrecios,
+  type ReporteUtilidad,
+  type ReporteVentas,
+} from "../api";
 import { GraficoBarras, GraficoLinea, GraficoTorta } from "../components/Graficos";
 import ModalAlerta from "../components/ModalAlerta";
 
@@ -78,6 +86,7 @@ export default function Reportes() {
   const [reporteVentas, setReporteVentas] = useState<ReporteVentas | null>(null);
   const [reporteVentasAnterior, setReporteVentasAnterior] = useState<ReporteVentas | null>(null);
   const [reporteDespachos, setReporteDespachos] = useState<ReporteDespachos | null>(null);
+  const [reporteUtilidad, setReporteUtilidad] = useState<ReporteUtilidad | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(false);
 
@@ -91,13 +100,15 @@ export default function Reportes() {
       api.reportes.ventas(d, h),
       api.reportes.ventas(anterior.desde, anterior.hasta),
       api.reportes.despachos(d, h),
+      api.reportes.utilidad(d, h),
     ])
-      .then(([inv, prec, ventas, ventasAnterior, despachos]) => {
+      .then(([inv, prec, ventas, ventasAnterior, despachos, utilidad]) => {
         setReporteInventario(inv);
         setReportePrecios(prec);
         setReporteVentas(ventas);
         setReporteVentasAnterior(ventasAnterior);
         setReporteDespachos(despachos);
+        setReporteUtilidad(utilidad);
       })
       .catch((e) => setError(e.message))
       .finally(() => setCargando(false));
@@ -218,7 +229,63 @@ export default function Reportes() {
                 <p className="ayuda">en el período — ver pestaña Precios para el detalle</p>
               </div>
             )}
+            {reporteUtilidad && (
+              <div className="tarjeta tarjeta-mini">
+                <strong>Utilidad aproximada</strong>
+                <p style={{ fontSize: "1.4rem", margin: "0.25rem 0" }}>
+                  <span className={reporteUtilidad.utilidadReal < 0 ? "error" : "exito"}>
+                    {formatoCLP(reporteUtilidad.utilidadReal)}
+                  </span>
+                </p>
+                <p className="ayuda">
+                  real (ventas − costo mercadería − gastos) · simple (sin costo):{" "}
+                  {formatoCLP(reporteUtilidad.utilidadSimple)}
+                </p>
+              </div>
+            )}
           </div>
+
+          {reporteUtilidad && (
+            <>
+              <h3>Utilidad aproximada — no es contabilidad real</h3>
+              <p className="ayuda">
+                "Simple" solo resta los gastos generales. "Real" además resta el costo de la mercadería vendida —
+                más cercana a la ganancia real, pero depende de que el costo de cada producto esté bien cargado (ver
+                "Costo" en la ficha de cada producto). Se muestran las dos para comparar, a pedido tuyo.
+              </p>
+              <table className="tabla">
+                <thead>
+                  <tr>
+                    <th>Ventas</th>
+                    <th>Costo mercadería</th>
+                    <th>Gastos</th>
+                    <th>Utilidad simple</th>
+                    <th>Utilidad real</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>{formatoCLP(reporteUtilidad.totalVentas)}</td>
+                    <td>{formatoCLP(reporteUtilidad.costoMercaderia)}</td>
+                    <td>{formatoCLP(reporteUtilidad.totalGastos)}</td>
+                    <td className={reporteUtilidad.utilidadSimple < 0 ? "error" : "exito"}>
+                      <strong>{formatoCLP(reporteUtilidad.utilidadSimple)}</strong>
+                    </td>
+                    <td className={reporteUtilidad.utilidadReal < 0 ? "error" : "exito"}>
+                      <strong>{formatoCLP(reporteUtilidad.utilidadReal)}</strong>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+              {reporteUtilidad.ventasSinCostoConocido > 0 && (
+                <p className="ayuda">
+                  {formatoCLP(reporteUtilidad.ventasSinCostoConocido)} en ventas de productos sin ningún costo
+                  cargado (ni compra real ni costo de referencia) — no restan nada de "Costo mercadería", así que la
+                  utilidad real de este período es, en realidad, algo menor a la que se muestra.
+                </p>
+              )}
+            </>
+          )}
 
           {reporteVentas && reporteVentas.porCategoria.length > 0 && (
             <>

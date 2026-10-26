@@ -132,14 +132,15 @@ productosRouter.get("/proximo-plu", async (_req, res) => {
   res.json({ plu: await calcularProximoPlu() });
 });
 
-// Compartido entre la pantalla "Mejor margen" y el reporte de márgenes del
-// Asistente (ver calcularReporteMargenes más abajo): productos activos (de
-// una categoría o de todo el catálogo) con su costo efectivo resuelto —
-// último costo real de compra si existe, o el costo de referencia manual
-// como respaldo (ver calcularCostoEfectivo). Productos sin ningún costo
-// conocido quedan en `total` pero no en `conCosto`, para no calcular un
-// margen inventado.
-async function productosConCostoEfectivo(categoriaId?: number) {
+// Compartido entre la pantalla "Mejor margen", el reporte de márgenes del
+// Asistente (ver calcularReporteMargenes más abajo) y el reporte de
+// utilidad aproximada (ver calcularReporteUtilidad en reportes.ts):
+// productos activos (de una categoría o de todo el catálogo) con su costo
+// efectivo resuelto — último costo real de compra si existe, o el costo de
+// referencia manual como respaldo (ver calcularCostoEfectivo). Productos
+// sin ningún costo conocido quedan en `total` pero no en `conCosto`, para
+// no calcular un margen (ni una utilidad) inventada.
+export async function productosConCostoEfectivo(categoriaId?: number) {
   let categoriaIds: number[] | undefined;
   if (categoriaId) {
     categoriaIds = await obtenerIdsCategoriaYDescendientes(categoriaId);

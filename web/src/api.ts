@@ -498,6 +498,22 @@ export interface ReporteDespachos {
   porComuna: { comuna: string; cantidadDespachos: number; totalCostoEnvio: number; totalVentas: number }[];
 }
 
+// Utilidad APROXIMADA, no contabilidad real — ver calcularReporteUtilidad en
+// el servidor. utilidadSimple ignora el costo de la mercadería vendida;
+// utilidadReal lo resta, pero depende de que el costo de cada producto esté
+// bien cargado (ventasSinCostoConocido son los ingresos de productos sin
+// ningún costo conocido, que por eso no restan nada de costoMercaderia).
+export interface ReporteUtilidad {
+  desde: string;
+  hasta: string;
+  totalVentas: number;
+  totalGastos: number;
+  costoMercaderia: number;
+  ventasSinCostoConocido: number;
+  utilidadSimple: number;
+  utilidadReal: number;
+}
+
 export interface Proveedor {
   id: number;
   nombre: string;
@@ -1472,6 +1488,13 @@ export const api = {
       if (hasta) qs.set("hasta", hasta);
       const query = qs.toString();
       return get<ReporteDespachos>(`/api/reportes/despachos${query ? `?${query}` : ""}`);
+    },
+    utilidad: (desde?: string, hasta?: string) => {
+      const qs = new URLSearchParams();
+      if (desde) qs.set("desde", desde);
+      if (hasta) qs.set("hasta", hasta);
+      const query = qs.toString();
+      return get<ReporteUtilidad>(`/api/reportes/utilidad${query ? `?${query}` : ""}`);
     },
   },
   caja: {
