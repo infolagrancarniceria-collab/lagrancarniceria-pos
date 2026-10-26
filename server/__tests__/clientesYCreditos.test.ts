@@ -98,6 +98,25 @@ describe("Créditos — dar de baja (condonar)", () => {
   });
 });
 
+// A pedido del usuario — acceso rápido en Punto de Venta para cobrar la
+// deuda de UN cliente puntual, sin tener que traer todos los pendientes de
+// todo el mundo y filtrarlos a mano.
+describe("GET /api/caja/creditos-pendientes?clienteId=", () => {
+  it("devuelve solo los créditos pendientes de ese cliente", async () => {
+    const { usuario, productoCarniceria } = await crearFixturesBasicas();
+    const clienteA = await prisma.cliente.create({ data: { nombre: "Cliente A" } });
+    const clienteB = await prisma.cliente.create({ data: { nombre: "Cliente B" } });
+    const { pagoId: pagoA } = await crearVentaACredito(usuario.id, productoCarniceria.id, clienteA.id);
+    await crearVentaACredito(usuario.id, productoCarniceria.id, clienteB.id);
+
+    const res = await api.get(`/api/caja/creditos-pendientes?clienteId=${clienteA.id}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0].id).toBe(pagoA);
+  });
+});
+
 describe("Clientes — editar y eliminar", () => {
   it("edita el nombre, teléfono y RUT de un cliente", async () => {
     const cliente = await prisma.cliente.create({ data: { nombre: "Nombre viejo" } });

@@ -1907,13 +1907,21 @@ cajaRouter.get("/creditos-pendientes", async (req, res) => {
     req.query.medio === "mayorista"
       ? req.query.medio
       : undefined;
+  // clienteId — a pedido del usuario, para el botón rápido de "Abonar
+  // crédito" en Punto de Venta: encontrar la deuda de UN cliente puntual
+  // sin tener que traer toda la lista y filtrarla a mano.
+  const clienteId = req.query.clienteId ? Number(req.query.clienteId) : undefined;
   // Sin filtro, "pedido_web" y "mayorista" quedan afuera a propósito — esta
   // misma lista también alimenta Créditos pendientes, que no debería
   // mezclarse con pedidos online ni ventas mayoristas (ver Pedidos Online
   // pendientes de pago y Mayoristas pendientes de pago, que sí piden su
   // medio explícito).
   const creditos = await prisma.pagoVenta.findMany({
-    where: { medio: medio ?? { in: ["credito", "transferencia"] }, cobrado: false },
+    where: {
+      medio: medio ?? { in: ["credito", "transferencia"] },
+      cobrado: false,
+      ...(clienteId ? { clienteId } : {}),
+    },
     include: { venta: true, cliente: true },
     orderBy: { venta: { fecha: "asc" } },
   });
