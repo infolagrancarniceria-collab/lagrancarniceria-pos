@@ -18,9 +18,16 @@ inventarioRouter.get("/stock", async (req, res) => {
   const soloBajoStock = req.query.bajo === "true";
   const categoriaId = req.query.categoriaId ? Number(req.query.categoriaId) : undefined;
   const categoriaIds = categoriaId ? await obtenerIdsCategoriaYDescendientes(categoriaId) : undefined;
+  const buscar = typeof req.query.buscar === "string" ? req.query.buscar.trim() : "";
 
   const productos = await prisma.producto.findMany({
-    where: { activo: true, ...(categoriaIds ? { categoriaId: { in: categoriaIds } } : {}) },
+    where: {
+      activo: true,
+      ...(categoriaIds ? { categoriaId: { in: categoriaIds } } : {}),
+      ...(buscar
+        ? { OR: [{ plu: { contains: buscar } }, { descripcion: { contains: buscar } }] }
+        : {}),
+    },
     include: { categoria: true },
     orderBy: { descripcion: "asc" },
   });

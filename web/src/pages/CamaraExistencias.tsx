@@ -71,6 +71,11 @@ export default function CamaraExistencias() {
 
   const [desde, setDesde] = useState("");
   const [hasta, setHasta] = useState("");
+  // Filtros sobre lo ya cargado (no vuelven a pedir al servidor) — a pedido
+  // del usuario, para ubicar rápido un producto puntual o aislar una sola
+  // familia en un catálogo largo, en vez de tener que leer toda la tabla.
+  const [buscarProducto, setBuscarProducto] = useState("");
+  const [familiaFiltro, setFamiliaFiltro] = useState<FamiliaCamara | "">("");
 
   const [corrigiendoId, setCorrigiendoId] = useState<number | null>(null);
   const [formCorreccion, setFormCorreccion] = useState<FormularioCorreccion | null>(null);
@@ -127,9 +132,15 @@ export default function CamaraExistencias() {
     cargar({ desde: "", hasta: "" });
   }
 
+  const productosFiltrados = (existencias?.porProducto ?? []).filter((g) => {
+    if (familiaFiltro && g.familia !== familiaFiltro) return false;
+    if (buscarProducto.trim() && !g.producto.toLowerCase().includes(buscarProducto.trim().toLowerCase())) return false;
+    return true;
+  });
+
   // Agrupa por familia con subtotal, igual que ya lo mostraba el sistema
   // que usaba el papá del usuario.
-  const familias = [...new Set(existencias?.porProducto.map((g) => g.familia) ?? [])];
+  const familias = [...new Set(productosFiltrados.map((g) => g.familia))];
 
   const buscarProductoCorreccion = formCorreccion?.buscarProducto ?? "";
   useEffect(() => {
@@ -389,6 +400,35 @@ export default function CamaraExistencias() {
       )}
 
       <h2>Cajas disponibles por producto</h2>
+      <div className="filtros">
+        <input
+          type="text"
+          placeholder="Buscar producto..."
+          value={buscarProducto}
+          onChange={(e) => setBuscarProducto(e.target.value)}
+          style={{ minWidth: "220px" }}
+        />
+        <select value={familiaFiltro} onChange={(e) => setFamiliaFiltro(e.target.value as FamiliaCamara | "")}>
+          <option value="">Todas las familias</option>
+          {FAMILIAS_CAMARA.map((f) => (
+            <option key={f} value={f}>
+              {f}
+            </option>
+          ))}
+        </select>
+        {(buscarProducto || familiaFiltro) && (
+          <button
+            type="button"
+            className="boton"
+            onClick={() => {
+              setBuscarProducto("");
+              setFamiliaFiltro("");
+            }}
+          >
+            Quitar filtros
+          </button>
+        )}
+      </div>
       <table className="tabla">
         <thead>
           <tr>
@@ -403,13 +443,17 @@ export default function CamaraExistencias() {
           </tr>
         </thead>
         <tbody>
-          {existencias?.porProducto.length === 0 && (
+          {productosFiltrados.length === 0 && (
             <tr>
-              <td colSpan={8}>No hay cajas disponibles en cámara.</td>
+              <td colSpan={8}>
+                {existencias?.porProducto.length === 0
+                  ? "No hay cajas disponibles en cámara."
+                  : "Ningún producto calza con el filtro."}
+              </td>
             </tr>
           )}
           {familias.map((familia) => {
-            const filas = existencias?.porProducto.filter((g) => g.familia === familia) ?? [];
+            const filas = productosFiltrados.filter((g) => g.familia === familia);
             const subtotalCajas = filas.reduce((s, g) => s + g.cajas, 0);
             const subtotalKilos = filas.reduce((s, g) => s + g.kilos, 0);
             const subtotalValorCosto = filas.reduce((s, g) => s + g.valorCosto, 0);

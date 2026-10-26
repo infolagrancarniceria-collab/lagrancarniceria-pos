@@ -1403,10 +1403,11 @@ export const api = {
     sincronizar: () => post<{ nuevos: number }>("/api/pedidos-web/sincronizar", {}),
   },
   inventario: {
-    stock: (soloBajo = false, categoriaId?: number) => {
+    stock: (soloBajo = false, categoriaId?: number, buscar?: string) => {
       const qs = new URLSearchParams();
       if (soloBajo) qs.set("bajo", "true");
       if (categoriaId) qs.set("categoriaId", String(categoriaId));
+      if (buscar) qs.set("buscar", buscar);
       const query = qs.toString();
       return get<ProductoConStock[]>(`/api/inventario/stock${query ? `?${query}` : ""}`);
     },

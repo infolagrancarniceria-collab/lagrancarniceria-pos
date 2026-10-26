@@ -1,9 +1,35 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, type Categoria, type ProductoConStock } from "../api";
 import SelectorCategoria from "../components/SelectorCategoria";
 import ModalAlerta from "../components/ModalAlerta";
 
+// Agrupa por categoría RAÍZ (nivel 1 — ej. Vacuno/Cerdo/Pollo/Abarrotes), no
+// la subcategoría directa del producto, que puede ser de nivel 2/3 y daría
+// demasiados grupos para revisar de un vistazo — mismo criterio que ya usa
+// el reporte de Ventas (ver categoriaRaizNombre en reportes.ts).
+function construirResolverRaiz(categorias: Categoria[]): (categoriaId: number) => string {
+  const porId = new Map(categorias.map((c) => [c.id, c]));
+  const cache = new Map<number, string>();
+  return (categoriaId: number) => {
+    const cacheada = cache.get(categoriaId);
+    if (cacheada) return cacheada;
+    let actual = porId.get(categoriaId);
+    while (actual?.padreId != null) {
+      actual = porId.get(actual.padreId);
+    }
+    const nombre = actual?.nombre ?? "Sin categoría";
+    cache.set(categoriaId, nombre);
+    return nombre;
+  };
+}
+
+// Pantalla rediseñada a pedido del usuario — antes era una sola lista plana
+// sin forma de ubicar un producto rápido ni de ver de un vistazo cuánto hay
+// por rubro. Pensada en particular para apoyar una revisión física de las
+// cámaras de frío: agrupar por familia/categoría y poder buscar por nombre
+// o PLU hace mucho más rápido ir comparando el sistema contra lo que hay
+// realmente en el mesón y en cámara.
 export default function Inventario() {
   const [productos, setProductos] = useState<ProductoConStock[]>([]);
   const [categorias, setCategorias] = useState<Categoria[]>([]);
@@ -13,6 +39,7 @@ export default function Inventario() {
     () => new URLSearchParams(window.location.search).get("bajo") === "true"
   );
   const [categoriaId, setCategoriaId] = useState<number | "">("");
+  const [buscar, setBuscar] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(false);
 
@@ -22,12 +49,28 @@ export default function Inventario() {
 
   useEffect(() => {
     setCargando(true);
-    api.inventario
-      .stock(soloBajoStock, categoriaId || undefined)
-      .then(setProductos)
-      .catch((e) => setError(e.message))
-      .finally(() => setCargando(false));
-  }, [soloBajoStock, categoriaId]);
+    const timeout = setTimeout(() => {
+      api.inventario
+        .stock(soloBajoStock, categoriaId || undefined, buscar.trim() || undefined)
+        .then(setProductos)
+        .catch((e) => setError(e.message))
+        .finally(() => setCargando(false));
+    }, 250);
+    return () => clearTimeout(timeout);
+  }, [soloBajoStock, categoriaId, buscar]);
+
+  const resolverRaiz = useMemo(() => construirResolverRaiz(categorias), [categorias]);
+
+  const grupos = useMemo(() => {
+    const porRaiz = new Map<string, ProductoConStock[]>();
+    for (const p of productos) {
+      const raiz = resolverRaiz(p.categoriaId);
+      const actual = porRaiz.get(raiz) ?? [];
+      actual.push(p);
+      porRaiz.set(raiz, actual);
+    }
+    return Array.from(porRaiz.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [productos, resolverRaiz]);
 
   return (
     <div>
@@ -55,12 +98,22 @@ export default function Inventario() {
           <Link to="/proveedores" className="boton">
             Proveedores
           </Link>
+          <Link to="/camara/existencias" className="boton">
+            Existencias de cámara
+          </Link>
         </div>
       </div>
 
       {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
 
       <div className="filtros">
+        <input
+          type="text"
+          placeholder="Buscar por PLU o nombre..."
+          value={buscar}
+          onChange={(e) => setBuscar(e.target.value)}
+          style={{ minWidth: "220px" }}
+        />
         <SelectorCategoria
           categorias={categorias}
           value={categoriaId}
@@ -72,6 +125,12 @@ export default function Inventario() {
           Mostrar solo productos con stock bajo
         </label>
       </div>
+      <p className="ayuda">
+        Para revisar las cámaras de frío contra lo que hay físicamente, usa{" "}
+        <Link to="/camara/existencias">Existencias de cámara</Link> (agrupado por familia) — si una caja lleva mucho
+        sin salida, ahí mismo avisa para no dejarla sin revisar. Esta pantalla es el stock que se vende en el mesón
+        (Producto.stockActual), no el de cámara.
+      </p>
 
       {cargando && <p>Cargando...</p>}
 
@@ -86,24 +145,50 @@ export default function Inventario() {
           </tr>
         </thead>
         <tbody>
-          {productos.map((p) => (
-            <tr key={p.id} className={p.bajoStock ? "fila-error" : ""}>
-              <td>
-                <Link to={`/productos/${p.id}`}>{p.plu}</Link>
-              </td>
-              <td>{p.descripcion}</td>
-              <td>{p.categoria.nombre}</td>
-              <td>{p.stockActual}</td>
-              <td>{p.umbralStockBajo ?? "—"}</td>
-            </tr>
-          ))}
-          {productos.length === 0 && !cargando && (
+          {grupos.length === 0 && !cargando && (
             <tr>
               <td colSpan={5}>
-                {soloBajoStock ? "No hay productos con stock bajo." : "No hay productos registrados."}
+                {soloBajoStock ? "No hay productos con stock bajo." : "No se encontraron productos."}
               </td>
             </tr>
           )}
+          {grupos.map(([raiz, filas]) => {
+            // Se separan los kilos de las unidades en vez de sumarlos juntos
+            // en un solo total — mezclar "3 kg" con "5 un." en el mismo
+            // número no diría nada real (a pedido del usuario: totalizar por
+            // productos, kilos o unidades, cada uno aparte).
+            const subtotalKg = filas
+              .filter((p) => p.flagBalanza === "PESABLE")
+              .reduce((s, p) => s + p.stockActual, 0);
+            const subtotalUnidades = filas
+              .filter((p) => p.flagBalanza !== "PESABLE")
+              .reduce((s, p) => s + p.stockActual, 0);
+            return (
+            <Fragment key={raiz}>
+              <tr className="fila-total">
+                <td colSpan={5}>
+                  {raiz} — {filas.length} producto{filas.length === 1 ? "" : "s"}
+                  {subtotalKg > 0 && ` · ${subtotalKg.toLocaleString("es-CL")} kg`}
+                  {subtotalUnidades > 0 && ` · ${subtotalUnidades.toLocaleString("es-CL")} un.`}
+                </td>
+              </tr>
+              {filas.map((p) => (
+                <tr key={p.id} className={p.bajoStock ? "fila-error" : ""}>
+                  <td>
+                    <Link to={`/productos/${p.id}`}>{p.plu}</Link>
+                  </td>
+                  <td>{p.descripcion}</td>
+                  <td>{p.categoria.nombre}</td>
+                  <td>
+                    {p.stockActual} {p.flagBalanza === "PESABLE" ? "kg" : "un"}
+                    {p.bajoStock && " (stock bajo)"}
+                  </td>
+                  <td>{p.umbralStockBajo ?? "—"}</td>
+                </tr>
+              ))}
+            </Fragment>
+            );
+          })}
         </tbody>
       </table>
     </div>
