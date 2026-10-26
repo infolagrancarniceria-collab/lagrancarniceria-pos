@@ -81,16 +81,16 @@ export default function Reportes() {
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(false);
 
-  function cargar() {
+  function cargarRango(d: string, h: string) {
     setError(null);
     setCargando(true);
-    const anterior = periodoAnterior(desde, hasta);
+    const anterior = periodoAnterior(d, h);
     Promise.all([
-      api.reportes.inventario(desde, hasta),
-      api.reportes.precios(desde, hasta),
-      api.reportes.ventas(desde, hasta),
+      api.reportes.inventario(d, h),
+      api.reportes.precios(d, h),
+      api.reportes.ventas(d, h),
       api.reportes.ventas(anterior.desde, anterior.hasta),
-      api.reportes.despachos(desde, hasta),
+      api.reportes.despachos(d, h),
     ])
       .then(([inv, prec, ventas, ventasAnterior, despachos]) => {
         setReporteInventario(inv);
@@ -103,6 +103,40 @@ export default function Reportes() {
       .finally(() => setCargando(false));
   }
 
+  function cargar() {
+    cargarRango(desde, hasta);
+  }
+
+  // Presets rápidos — a pedido del usuario, para no tener que ir a tipear
+  // la fecha de hoy (o calcular a mano el lunes de esta semana) cada vez que
+  // solo quiere ver "cómo vamos hoy" o comparar unos días entre sí.
+  function aplicarPreset(d: string, h: string) {
+    setDesde(d);
+    setHasta(h);
+    cargarRango(d, h);
+  }
+
+  function inicioSemana(): string {
+    const ahora = new Date();
+    const diaSemana = ahora.getDay(); // 0 = domingo
+    const diasDesdeLunes = diaSemana === 0 ? 6 : diaSemana - 1;
+    const lunes = new Date(ahora);
+    lunes.setDate(ahora.getDate() - diasDesdeLunes);
+    return lunes.toISOString().slice(0, 10);
+  }
+
+  function inicioMes(): string {
+    const ahora = new Date();
+    return new Date(ahora.getFullYear(), ahora.getMonth(), 1).toISOString().slice(0, 10);
+  }
+
+  const PRESETS: { etiqueta: string; rango: () => [string, string] }[] = [
+    { etiqueta: "Hoy", rango: () => [hoy(), hoy()] },
+    { etiqueta: "Ayer", rango: () => [fechaHace(1), fechaHace(1)] },
+    { etiqueta: "Esta semana", rango: () => [inicioSemana(), hoy()] },
+    { etiqueta: "Este mes", rango: () => [inicioMes(), hoy()] },
+  ];
+
   useEffect(cargar, []);
 
   return (
@@ -110,6 +144,13 @@ export default function Reportes() {
       <h1>Reportes</h1>
       {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
 
+      <div className="fila-inline">
+        {PRESETS.map((p) => (
+          <button key={p.etiqueta} type="button" className="boton-chico" onClick={() => aplicarPreset(...p.rango())}>
+            {p.etiqueta}
+          </button>
+        ))}
+      </div>
       <div className="fila-inline">
         <label>
           Desde
