@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { prisma } from "../db";
+import { productosConCostoEfectivo } from "./productos";
 
 export const reportesRouter = Router();
 
@@ -295,4 +296,59 @@ export async function calcularReporteDespachos(desdeTexto?: unknown, hastaTexto?
 reportesRouter.get("/despachos", async (req, res) => {
   const query = req.query as Record<string, unknown>;
   res.json(await calcularReporteDespachos(query.desde, query.hasta));
+});
+
+// Utilidad APROXIMADA (a pedido del usuario) — no es contabilidad real:
+// - utilidadSimple = ventas - gastos generales. Fácil de confiar, pero
+//   ignora el costo de la mercadería vendida, así que no es la ganancia
+//   real del negocio.
+// - utilidadReal = ventas - costo de mercadería vendida - gastos. Más
+//   cercana a la ganancia real, pero depende de que el costo de cada
+//   producto esté bien cargado — ver productosConCostoEfectivo: cuando no
+//   hay ninguna compra registrada, usa el costo de referencia manual, y si
+//   tampoco hay eso, el producto queda afuera del cálculo (ventasSinCosto
+//   suma esos ingresos aparte, para que no se pierdan en silencio).
+// El usuario pidió mostrar ambas para comparar, en vez de elegir una sola.
+export async function calcularReporteUtilidad(desdeTexto?: unknown, hastaTexto?: unknown) {
+  const { desde, hasta } = rangoFechasDesdeTexto(desdeTexto, hastaTexto);
+
+  const ventasEnRango = await prisma.venta.findMany({ where: { estado: "pagada", fecha: { gte: desde, lte: hasta } } });
+  const totalVentas = ventasEnRango.reduce((s, v) => s + v.total, 0);
+
+  const gastosEnRango = await prisma.gasto.findMany({ where: { fecha: { gte: desde, lte: hasta } } });
+  const totalGastos = gastosEnRango.reduce((s, g) => s + g.monto, 0);
+
+  const items = await prisma.itemVenta.findMany({
+    where: { anulado: false, venta: { estado: "pagada", fecha: { gte: desde, lte: hasta } } },
+    select: { productoId: true, cantidad: true, subtotal: true },
+  });
+
+  const { conCosto } = await productosConCostoEfectivo();
+  const costoPorProducto = new Map(conCosto.map((p) => [p.id, p.costoEfectivo]));
+
+  let costoMercaderia = 0;
+  let ventasSinCostoConocido = 0;
+  for (const item of items) {
+    const costo = costoPorProducto.get(item.productoId);
+    if (costo == null) {
+      ventasSinCostoConocido += item.subtotal;
+      continue;
+    }
+    costoMercaderia += costo * item.cantidad;
+  }
+
+  return {
+    desde: desde.toISOString(),
+    hasta: hasta.toISOString(),
+    totalVentas,
+    totalGastos,
+    costoMercaderia,
+    ventasSinCostoConocido,
+    utilidadSimple: totalVentas - totalGastos,
+    utilidadReal: totalVentas - costoMercaderia - totalGastos,
+  };
+}
+
+reportesRouter.get("/utilidad", async (req, res) => {
+  res.json(await calcularReporteUtilidad(req.query.desde, req.query.hasta));
 });
