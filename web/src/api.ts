@@ -1482,13 +1482,6 @@ export const api = {
       const query = qs.toString();
       return get<MovimientoInventario[]>(`/api/inventario/movimientos${query ? `?${query}` : ""}`);
     },
-    entradaFactura: (data: {
-      proveedorId: number;
-      numeroFactura: string;
-      fecha?: string;
-      usuarioId: number;
-      lineas: { productoId: number; cantidad: number; costoUnitario: number }[];
-    }) => post<{ movimientos: MovimientoInventario[] }>("/api/inventario/entrada-factura", data),
     facturas: (params: { desde?: string; hasta?: string } = {}) => {
       const qs = new URLSearchParams();
       if (params.desde) qs.set("desde", params.desde);

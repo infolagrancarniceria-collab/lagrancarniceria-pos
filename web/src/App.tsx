@@ -15,7 +15,6 @@ import Inventario from "./pages/Inventario";
 import RegistrarEntrada from "./pages/RegistrarEntrada";
 import RegistrarSalida from "./pages/RegistrarSalida";
 import MovimientosInventario from "./pages/MovimientosInventario";
-import CargarFactura from "./pages/CargarFactura";
 import Facturas from "./pages/Facturas";
 import Proveedores from "./pages/Proveedores";
 import Reportes from "./pages/Reportes";
@@ -91,7 +90,6 @@ export default function App() {
             <Route path="/inventario/entrada" element={<RegistrarEntrada />} />
             <Route path="/inventario/salida" element={<RegistrarSalida />} />
             <Route path="/inventario/movimientos" element={<MovimientosInventario />} />
-            <Route path="/inventario/factura" element={<CargarFactura />} />
             <Route path="/inventario/facturas" element={<Facturas />} />
             <Route path="/inventario/revisiones" element={<Revisiones />} />
             <Route path="/proveedores" element={<Proveedores />} />
