@@ -512,6 +512,7 @@ export interface ReporteUtilidad {
   hasta: string;
   totalVentas: number;
   totalGastos: number;
+  gastosDetalle: { id: number; categoria: string; descripcion: string | null; monto: number; fecha: string }[];
   costoMercaderia: number;
   ventasSinCostoConocido: number;
   utilidadSimple: number;
@@ -582,6 +583,19 @@ export interface ReporteInventario {
   entradasTotal: number;
   salidasPorMotivo: Record<string, number>;
   topMerma: { productoId: number; plu: string; descripcion: string; cantidad: number }[];
+  comprasTotal: number;
+  comprasDetalle: {
+    id: number;
+    fecha: string;
+    productoId: number;
+    plu: string;
+    descripcion: string;
+    proveedor: string | null;
+    numeroFactura: string | null;
+    cantidad: number;
+    costoUnitario: number | null;
+    subtotal: number;
+  }[];
 }
 
 export interface ReportePrecios {
@@ -609,6 +623,7 @@ export interface ReporteVentas {
   totalVentasLocal: number;
   cantidadVentasOnline: number;
   totalVentasOnline: number;
+  ventasOnlineDetalle: { id: number; fecha: string; total: number; cantidadItems: number }[];
   cantidadVentasMayorista: number;
   totalVentasMayorista: number;
   masVendidosPorCantidad: { productoId: number; plu: string; descripcion: string; cantidad: number; ingreso: number }[];

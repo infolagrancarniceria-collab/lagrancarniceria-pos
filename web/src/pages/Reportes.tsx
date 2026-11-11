@@ -229,6 +229,26 @@ export default function Reportes() {
                 <p className="ayuda">en el período — ver pestaña Precios para el detalle</p>
               </div>
             )}
+            {reporteInventario && (
+              <div className="tarjeta tarjeta-mini">
+                <strong>Compras</strong>
+                <p style={{ fontSize: "1.4rem", margin: "0.25rem 0" }}>{formatoCLP(reporteInventario.comprasTotal)}</p>
+                <p className="ayuda">
+                  {reporteInventario.comprasDetalle.length} línea{reporteInventario.comprasDetalle.length === 1 ? "" : "s"} de
+                  factura
+                </p>
+              </div>
+            )}
+            {reporteUtilidad && (
+              <div className="tarjeta tarjeta-mini">
+                <strong>Gastos</strong>
+                <p style={{ fontSize: "1.4rem", margin: "0.25rem 0" }}>{formatoCLP(reporteUtilidad.totalGastos)}</p>
+                <p className="ayuda">
+                  {reporteUtilidad.gastosDetalle.length} gasto{reporteUtilidad.gastosDetalle.length === 1 ? "" : "s"} en el
+                  período
+                </p>
+              </div>
+            )}
             {reporteUtilidad && (
               <div className="tarjeta tarjeta-mini">
                 <strong>Utilidad aproximada</strong>
@@ -284,6 +304,33 @@ export default function Reportes() {
                   utilidad real de este período es, en realidad, algo menor a la que se muestra.
                 </p>
               )}
+
+              <h3>Detalle de gastos del período</h3>
+              <table className="tabla">
+                <thead>
+                  <tr>
+                    <th>Fecha</th>
+                    <th>Categoría</th>
+                    <th>Nombre del gasto</th>
+                    <th>Monto</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {reporteUtilidad.gastosDetalle.map((g) => (
+                    <tr key={g.id}>
+                      <td>{new Date(g.fecha).toLocaleDateString("es-CL")}</td>
+                      <td>{g.categoria}</td>
+                      <td>{g.descripcion ?? "—"}</td>
+                      <td>{formatoCLP(g.monto)}</td>
+                    </tr>
+                  ))}
+                  {reporteUtilidad.gastosDetalle.length === 0 && (
+                    <tr>
+                      <td colSpan={4}>No hubo gastos en este período.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </>
           )}
 
@@ -360,6 +407,32 @@ export default function Reportes() {
               )}
             </tbody>
           </table>
+
+          {reporteVentas.ventasOnlineDetalle.length > 0 && (
+            <>
+              <h3>Detalle de ventas por internet</h3>
+              <table className="tabla">
+                <thead>
+                  <tr>
+                    <th>N° venta</th>
+                    <th>Fecha</th>
+                    <th>Productos</th>
+                    <th>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {reporteVentas.ventasOnlineDetalle.map((v) => (
+                    <tr key={v.id}>
+                      <td>{v.id}</td>
+                      <td>{new Date(v.fecha).toLocaleString("es-CL")}</td>
+                      <td>{v.cantidadItems}</td>
+                      <td>{formatoCLP(v.total)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
 
           <h3>Más vendidos por cantidad</h3>
           <GraficoBarras
@@ -481,6 +554,9 @@ export default function Reportes() {
             <div>
               <strong>Ajustes:</strong> {reporteInventario.salidasPorMotivo.ajuste ?? 0}
             </div>
+            <div>
+              <strong>Compras:</strong> {formatoCLP(reporteInventario.comprasTotal)}
+            </div>
           </div>
 
           <h3>Salidas por motivo</h3>
@@ -489,6 +565,41 @@ export default function Reportes() {
               .filter(([, cantidad]) => cantidad > 0)
               .map(([motivo, cantidad]) => ({ etiqueta: etiquetasMotivo[motivo] ?? motivo, valor: cantidad }))}
           />
+
+          <h3>Detalle de compras del período</h3>
+          <table className="tabla">
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>PLU</th>
+                <th>Descripción</th>
+                <th>Proveedor</th>
+                <th>N° factura</th>
+                <th>Cantidad</th>
+                <th>Costo unitario</th>
+                <th>Subtotal</th>
+              </tr>
+            </thead>
+            <tbody>
+              {reporteInventario.comprasDetalle.map((c) => (
+                <tr key={c.id}>
+                  <td>{new Date(c.fecha).toLocaleDateString("es-CL")}</td>
+                  <td>{c.plu}</td>
+                  <td>{c.descripcion}</td>
+                  <td>{c.proveedor ?? "—"}</td>
+                  <td>{c.numeroFactura ?? "—"}</td>
+                  <td>{c.cantidad}</td>
+                  <td>{c.costoUnitario != null ? formatoCLP(c.costoUnitario) : "—"}</td>
+                  <td>{formatoCLP(c.subtotal)}</td>
+                </tr>
+              ))}
+              {reporteInventario.comprasDetalle.length === 0 && (
+                <tr>
+                  <td colSpan={8}>No hubo compras registradas en este período.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
 
           <h3>Productos con más merma en el período</h3>
           <table className="tabla">

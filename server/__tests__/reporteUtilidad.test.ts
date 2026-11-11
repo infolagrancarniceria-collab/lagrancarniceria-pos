@@ -28,12 +28,19 @@ describe("GET /api/reportes/utilidad", () => {
     await prisma.itemVenta.create({
       data: { ventaId: venta.id, productoId: productoCarniceria.id, cantidad: 1, precioUnitario: 10000, subtotal: 10000 },
     });
-    await prisma.gasto.create({ data: { categoria: "Luz", monto: 2000, usuarioId: usuario.id } });
+    const gasto = await prisma.gasto.create({
+      data: { categoria: "Luz", descripcion: "Cuenta de luz", monto: 2000, usuarioId: usuario.id },
+    });
 
     const res = await api.get(`/api/reportes/utilidad?desde=${hoy()}&hasta=${hoy()}`);
     expect(res.status).toBe(200);
     expect(res.body.totalVentas).toBeGreaterThanOrEqual(10000);
     expect(res.body.totalGastos).toBeGreaterThanOrEqual(2000);
+    const lineaGasto = res.body.gastosDetalle.find((g: { id: number }) => g.id === gasto.id);
+    expect(lineaGasto).toBeDefined();
+    expect(lineaGasto.categoria).toBe("Luz");
+    expect(lineaGasto.descripcion).toBe("Cuenta de luz");
+    expect(lineaGasto.monto).toBe(2000);
     expect(res.body.costoMercaderia).toBeGreaterThanOrEqual(5000);
     expect(res.body.utilidadSimple).toBe(res.body.totalVentas - res.body.totalGastos);
     expect(res.body.utilidadReal).toBe(res.body.totalVentas - res.body.costoMercaderia - res.body.totalGastos);
