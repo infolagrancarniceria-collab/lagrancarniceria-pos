@@ -1,23 +1,32 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, formatoCLP, type Producto, type Proveedor } from "../api";
+import { api, calcularMargen, formatoCLP, type ProductoConUltimoCosto, type Proveedor } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 import { mostrarToast } from "../lib/toast";
 import ModalAlerta from "../components/ModalAlerta";
 import ParMargen from "../components/ParMargen";
 
+// "actual" (default — no tocar nada), "sugerido" (mismo % de recargo que ya
+// tenía con el costo anterior, aplicado al costo nuevo) u "otro" (precio
+// libre) — a pedido del usuario, para decidir el precio de venta ahí mismo
+// al cargar la factura, en vez de tener que ir aparte a "Cambiar precio"
+// después de ver que el costo subió.
+type PrecioElegido = "actual" | "sugerido" | "otro";
+
 interface LineaForm {
   id: number;
-  producto: Producto | null;
+  producto: ProductoConUltimoCosto | null;
   buscarProducto: string;
-  resultados: Producto[];
+  resultados: ProductoConUltimoCosto[];
   cantidad: string;
   costoUnitario: string;
   // Precargado con Producto.aplicaIvaCarne al elegir el producto, pero se
   // puede destildar por línea si ese producto puntual no lleva el impuesto
   // (ver ProductoForm.tsx — se marca a mano por producto, no se adivina).
   aplicaIvaCarne: boolean;
+  precioElegido: PrecioElegido;
+  precioOtro: string;
 }
 
 // Impuestos de la factura, para poder comparar el total contra el papel
@@ -26,6 +35,28 @@ interface LineaForm {
 // ningún lado.
 const TASA_IVA = 0.19;
 const TASA_IVA_CARNE = 0.05;
+
+// Mismo % de recargo que el producto ya tenía (precio actual vs. el costo
+// que tenía ANTES de esta factura — ver ProductoConUltimoCosto.costoEfectivo),
+// aplicado al costo nuevo que se está cargando. Si no hay costo anterior
+// conocido (producto nunca comprado, sin costo de referencia), no hay
+// ningún % de qué partir, así que no se sugiere nada en vez de adivinar uno.
+function calcularPrecioSugerido(producto: ProductoConUltimoCosto, costoNuevo: number | null): number | null {
+  if (!costoNuevo || costoNuevo <= 0) return null;
+  const margenActual = calcularMargen(producto.precio, producto.costoEfectivo);
+  if (margenActual == null) return null;
+  return Math.max(1, Math.round(costoNuevo * (1 + margenActual / 100) * (1 + TASA_IVA)));
+}
+
+// Mismo criterio en pantalla (tabla) y al guardar — evita que los dos
+// lugares calculen el precio final cada uno por su lado y puedan quedar
+// desincronizados.
+function precioFinalDeLinea(l: LineaForm): number | null {
+  if (!l.producto) return null;
+  if (l.precioElegido === "sugerido") return calcularPrecioSugerido(l.producto, Number(l.costoUnitario) || null);
+  if (l.precioElegido === "otro") return Number(l.precioOtro) || null;
+  return l.producto.precio;
+}
 
 function hoy(): string {
   return new Date().toISOString().slice(0, 10);
@@ -40,6 +71,8 @@ function lineaVacia(id: number): LineaForm {
     cantidad: "",
     costoUnitario: "",
     aplicaIvaCarne: false,
+    precioElegido: "actual",
+    precioOtro: "",
   };
 }
 
@@ -54,7 +87,9 @@ interface BorradorFactura {
   proveedorSeleccionado: Proveedor | null;
   numeroFactura: string;
   fecha: string;
-  lineas: Array<Pick<LineaForm, "id" | "producto" | "cantidad" | "costoUnitario" | "aplicaIvaCarne">>;
+  lineas: Array<
+    Pick<LineaForm, "id" | "producto" | "cantidad" | "costoUnitario" | "aplicaIvaCarne" | "precioElegido" | "precioOtro">
+  >;
 }
 
 function borradorEstaVacio(b: BorradorFactura): boolean {
@@ -108,7 +143,16 @@ export default function CargarFactura() {
 
   const borrador = useMemo(() => cargarBorrador(), []);
   const lineasIniciales = borrador
-    ? borrador.lineas.map((l) => ({ ...l, buscarProducto: "", resultados: [] as Producto[] }))
+    ? borrador.lineas.map((l) => ({
+        ...l,
+        buscarProducto: "",
+        resultados: [] as ProductoConUltimoCosto[],
+        // Un borrador guardado antes de que existiera esta elección de
+        // precio no trae estos dos campos — se completan con el valor por
+        // defecto en vez de quedar undefined.
+        precioElegido: l.precioElegido ?? "actual",
+        precioOtro: l.precioOtro ?? "",
+      }))
     : [lineaVacia(1)];
 
   const [proveedores, setProveedores] = useState<Proveedor[]>([]);
@@ -141,6 +185,8 @@ export default function CargarFactura() {
         cantidad: l.cantidad,
         costoUnitario: l.costoUnitario,
         aplicaIvaCarne: l.aplicaIvaCarne,
+        precioElegido: l.precioElegido,
+        precioOtro: l.precioOtro,
       })),
     });
   }, [proveedorSeleccionado, numeroFactura, fecha, lineas]);
@@ -169,7 +215,7 @@ export default function CargarFactura() {
       return;
     }
     api.productos
-      .listar({ buscar: texto })
+      .listarConCosto({ buscar: texto })
       .then((resultados) => actualizarLinea(id, { resultados }))
       .catch((e) => setError(e.message));
   }
@@ -221,6 +267,10 @@ export default function CargarFactura() {
         setError(`Falta el costo unitario de "${l.producto!.descripcion}"`);
         return;
       }
+      if (l.precioElegido === "otro" && (!Number(l.precioOtro) || Number(l.precioOtro) <= 0)) {
+        setError(`Falta el precio nuevo de "${l.producto!.descripcion}"`);
+        return;
+      }
     }
 
     setGuardando(true);
@@ -236,10 +286,41 @@ export default function CargarFactura() {
           costoUnitario: Number(l.costoUnitario),
         })),
       });
+
+      // La factura ya quedó registrada — los cambios de precio van aparte
+      // (mismo endpoint que "Cambiar precio", así quedan en el historial de
+      // precios) y no deben hacer parecer que la factura falló si alguno de
+      // ellos no se pudo aplicar.
+      const cambiosPrecio = lineasValidas.filter((l) => {
+        if (l.precioElegido === "actual") return false;
+        const nuevo = precioFinalDeLinea(l);
+        return nuevo != null && nuevo !== l.producto!.precio;
+      });
+      const fallidos: string[] = [];
+      for (const l of cambiosPrecio) {
+        try {
+          await api.precios.cambiarIndividual({
+            productoId: l.producto!.id,
+            precioNuevo: precioFinalDeLinea(l)!,
+            usuarioId: usuario.id,
+          });
+        } catch (e) {
+          fallidos.push(`${l.producto!.descripcion} (${(e as Error).message})`);
+        }
+      }
+
       mostrarToast(
         "Factura cargada",
-        `${lineasValidas.length} línea(s) de ${proveedorSeleccionado.nombre} — ${formatoCLP(totalFactura)}.`
+        `${lineasValidas.length} línea(s) de ${proveedorSeleccionado.nombre} — ${formatoCLP(totalFactura)}.` +
+          (cambiosPrecio.length > 0 ? ` ${cambiosPrecio.length - fallidos.length} precio(s) actualizados.` : "")
       );
+      // window.alert en vez de setError: la factura YA quedó guardada (no
+      // tiene sentido impedir seguir), pero navigate() desmonta esta
+      // pantalla de inmediato y con ella cualquier error en pantalla — así
+      // se alcanza a ver antes de salir, en vez de perderse en silencio.
+      if (fallidos.length > 0) {
+        window.alert(`La factura se cargó bien, pero no se pudo actualizar el precio de: ${fallidos.join("; ")}`);
+      }
       borrarBorrador();
       navigate("/inventario/facturas");
     } catch (e) {
@@ -326,6 +407,7 @@ export default function CargarFactura() {
                 <th>Costo unitario</th>
                 <th>Subtotal</th>
                 <th>IVA carne (5%)</th>
+                <th>Precio de venta</th>
                 <th>Margen</th>
                 <th></th>
               </tr>
@@ -337,6 +419,8 @@ export default function CargarFactura() {
                 // registrada) — es lo que realmente importa al decidir si el
                 // precio de venta sigue teniendo sentido con este costo nuevo.
                 const costoTipeado = Number(l.costoUnitario) || null;
+                const precioSugerido = l.producto ? calcularPrecioSugerido(l.producto, costoTipeado) : null;
+                const precioFinal = precioFinalDeLinea(l);
                 return (
                   <tr key={l.id}>
                     <td>
@@ -361,6 +445,8 @@ export default function CargarFactura() {
                                     buscarProducto: "",
                                     resultados: [],
                                     aplicaIvaCarne: p.aplicaIvaCarne,
+                                    precioElegido: "actual",
+                                    precioOtro: "",
                                   })
                                 }
                               >
@@ -370,7 +456,6 @@ export default function CargarFactura() {
                           </div>
                         )}
                       </div>
-                      {l.producto && <p className="ayuda">Precio de venta: {formatoCLP(l.producto.precio)}</p>}
                     </td>
                     <td>
                       <input
@@ -402,7 +487,39 @@ export default function CargarFactura() {
                         />
                       )}
                     </td>
-                    <td>{l.producto ? <ParMargen precio={l.producto.precio} costo={costoTipeado} /> : <span className="ayuda">—</span>}</td>
+                    <td>
+                      {l.producto && (
+                        <>
+                          <select
+                            value={l.precioElegido}
+                            onChange={(e) => actualizarLinea(l.id, { precioElegido: e.target.value as PrecioElegido })}
+                          >
+                            <option value="actual">Mantener {formatoCLP(l.producto.precio)}</option>
+                            {precioSugerido != null && (
+                              <option value="sugerido">Sugerido {formatoCLP(precioSugerido)} (mismo % recargo)</option>
+                            )}
+                            <option value="otro">Otro precio...</option>
+                          </select>
+                          {l.precioElegido === "otro" && (
+                            <input
+                              type="number"
+                              min="1"
+                              className="input-chico"
+                              placeholder="Nuevo precio"
+                              value={l.precioOtro}
+                              onChange={(e) => actualizarLinea(l.id, { precioOtro: e.target.value })}
+                            />
+                          )}
+                        </>
+                      )}
+                    </td>
+                    <td>
+                      {l.producto ? (
+                        <ParMargen precio={precioFinal ?? l.producto.precio} costo={costoTipeado} />
+                      ) : (
+                        <span className="ayuda">—</span>
+                      )}
+                    </td>
                     <td>
                       <button type="button" className="boton-quitar-item" title="Quitar línea" onClick={() => quitarLinea(l.id)}>
                         ✕
