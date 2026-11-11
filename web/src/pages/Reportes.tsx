@@ -67,15 +67,29 @@ function Comparacion({ actual, anterior }: { actual: number; anterior: number })
   );
 }
 
-type Pestana = "resumen" | "ventas" | "despachos" | "inventario" | "precios";
+type Pestana = "resumen" | "ventas" | "comparar" | "despachos" | "inventario" | "precios";
 
 const PESTANAS: { id: Pestana; etiqueta: string }[] = [
   { id: "resumen", etiqueta: "Resumen" },
   { id: "ventas", etiqueta: "Ventas" },
+  { id: "comparar", etiqueta: "Comparar fechas" },
   { id: "despachos", etiqueta: "Despachos" },
   { id: "inventario", etiqueta: "Inventario" },
   { id: "precios", etiqueta: "Precios" },
 ];
+
+// Datos de un período para la pestaña "Comparar fechas" — los mismos tres
+// reportes que ya se usan en el resto de la pantalla, pero para un rango
+// elegido a mano (no necesariamente el de arriba ni "el período anterior").
+interface DatosPeriodo {
+  ventas: ReporteVentas;
+  inventario: ReporteInventario;
+  utilidad: ReporteUtilidad;
+}
+
+function ticketPromedio(d: DatosPeriodo): number {
+  return d.ventas.cantidadVentas > 0 ? d.ventas.totalVentas / d.ventas.cantidadVentas : 0;
+}
 
 export default function Reportes() {
   const [desde, setDesde] = useState(fechaHace(30));
@@ -89,6 +103,53 @@ export default function Reportes() {
   const [reporteUtilidad, setReporteUtilidad] = useState<ReporteUtilidad | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(false);
+
+  // "Comparar fechas" (ítem 5 del pedido del usuario) — dos rangos elegidos
+  // a mano, independientes del filtro de arriba (que compara contra "el
+  // mismo largo de días justo antes" nomás). Arrancan en el mes pasado (A)
+  // vs el mes en curso (B) — un punto de partida razonable, se puede
+  // cambiar antes de comparar.
+  const [compDesdeA, setCompDesdeA] = useState(() => {
+    const inicio = inicioMes();
+    const mesAnterior = new Date(inicio);
+    mesAnterior.setMonth(mesAnterior.getMonth() - 1);
+    return mesAnterior.toISOString().slice(0, 10);
+  });
+  const [compHastaA, setCompHastaA] = useState(() => {
+    const finMesAnterior = new Date(inicioMes());
+    finMesAnterior.setDate(finMesAnterior.getDate() - 1);
+    return finMesAnterior.toISOString().slice(0, 10);
+  });
+  const [compDesdeB, setCompDesdeB] = useState(inicioMes);
+  const [compHastaB, setCompHastaB] = useState(hoy);
+  const [compA, setCompA] = useState<DatosPeriodo | null>(null);
+  const [compB, setCompB] = useState<DatosPeriodo | null>(null);
+  const [comparando, setComparando] = useState(false);
+  const [categoriaAbierta, setCategoriaAbierta] = useState<string | null>(null);
+
+  function cargarDatosPeriodo(d: string, h: string): Promise<DatosPeriodo> {
+    return Promise.all([api.reportes.ventas(d, h), api.reportes.inventario(d, h), api.reportes.utilidad(d, h)]).then(
+      ([ventas, inventario, utilidad]) => ({ ventas, inventario, utilidad })
+    );
+  }
+
+  function cargarComparacion() {
+    setComparando(true);
+    setError(null);
+    Promise.all([cargarDatosPeriodo(compDesdeA, compHastaA), cargarDatosPeriodo(compDesdeB, compHastaB)])
+      .then(([a, b]) => {
+        setCompA(a);
+        setCompB(b);
+      })
+      .catch((e) => setError(e.message))
+      .finally(() => setComparando(false));
+  }
+
+  useEffect(() => {
+    if (pestana === "comparar" && !compA && !compB) cargarComparacion();
+    // Solo la primera vez que se abre la pestaña — después, solo con el botón "Comparar".
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pestana]);
 
   function cargarRango(d: string, h: string) {
     setError(null);
@@ -491,6 +552,243 @@ export default function Reportes() {
               )}
             </tbody>
           </table>
+
+          <h3>Menos vendidos</h3>
+          <p className="ayuda">Entre los que sí tuvieron alguna venta en el período — no incluye los que no se vendieron nada.</p>
+          <table className="tabla">
+            <thead>
+              <tr>
+                <th>PLU</th>
+                <th>Descripción</th>
+                <th>Cantidad vendida</th>
+                <th>Ingreso</th>
+              </tr>
+            </thead>
+            <tbody>
+              {reporteVentas.menosVendidosPorCantidad.map((p) => (
+                <tr key={p.productoId}>
+                  <td>{p.plu}</td>
+                  <td>{p.descripcion}</td>
+                  <td>{p.cantidad}</td>
+                  <td>{formatoCLP(p.ingreso)}</td>
+                </tr>
+              ))}
+              {reporteVentas.menosVendidosPorCantidad.length === 0 && (
+                <tr>
+                  <td colSpan={4}>No hubo ventas en este período.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </section>
+      )}
+
+      {pestana === "comparar" && (
+        <section className="tarjeta">
+          <h2>Comparar fechas</h2>
+          <p className="ayuda">
+            Elige dos rangos de fecha independientes (no tienen que ser del mismo largo) para comparar ventas,
+            compras, gastos y utilidad entre ellos — distinto al resto de la pantalla, que siempre compara contra "el
+            período justo anterior".
+          </p>
+
+          <div className="fila-inline" style={{ alignItems: "flex-end", flexWrap: "wrap", gap: "1.5rem" }}>
+            <div>
+              <strong className="ayuda">Período A</strong>
+              <div className="fila-inline">
+                <label>
+                  Desde
+                  <input type="date" value={compDesdeA} onChange={(e) => setCompDesdeA(e.target.value)} />
+                </label>
+                <label>
+                  Hasta
+                  <input type="date" value={compHastaA} onChange={(e) => setCompHastaA(e.target.value)} />
+                </label>
+              </div>
+            </div>
+            <strong style={{ fontSize: "1.3rem" }}>vs</strong>
+            <div>
+              <strong className="ayuda">Período B</strong>
+              <div className="fila-inline">
+                <label>
+                  Desde
+                  <input type="date" value={compDesdeB} onChange={(e) => setCompDesdeB(e.target.value)} />
+                </label>
+                <label>
+                  Hasta
+                  <input type="date" value={compHastaB} onChange={(e) => setCompHastaB(e.target.value)} />
+                </label>
+              </div>
+            </div>
+            <button type="button" className="boton boton-primario" onClick={cargarComparacion} disabled={comparando}>
+              {comparando ? "Comparando..." : "Comparar"}
+            </button>
+          </div>
+
+          {comparando && !compA && <p>Cargando...</p>}
+
+          {compA && compB && (
+            <>
+              <h3>Resumen comparado</h3>
+              <table className="tabla">
+                <thead>
+                  <tr>
+                    <th>Indicador</th>
+                    <th>Período A</th>
+                    <th>Período B</th>
+                    <th>Variación</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Ventas totales</td>
+                    <td>{formatoCLP(compA.ventas.totalVentas)}</td>
+                    <td>{formatoCLP(compB.ventas.totalVentas)}</td>
+                    <td><Comparacion actual={compB.ventas.totalVentas} anterior={compA.ventas.totalVentas} /></td>
+                  </tr>
+                  <tr>
+                    <td>Cantidad de ventas</td>
+                    <td>{compA.ventas.cantidadVentas}</td>
+                    <td>{compB.ventas.cantidadVentas}</td>
+                    <td><Comparacion actual={compB.ventas.cantidadVentas} anterior={compA.ventas.cantidadVentas} /></td>
+                  </tr>
+                  <tr>
+                    <td>Ticket promedio</td>
+                    <td>{formatoCLP(ticketPromedio(compA))}</td>
+                    <td>{formatoCLP(ticketPromedio(compB))}</td>
+                    <td><Comparacion actual={ticketPromedio(compB)} anterior={ticketPromedio(compA)} /></td>
+                  </tr>
+                  <tr>
+                    <td>Compras</td>
+                    <td>{formatoCLP(compA.inventario.comprasTotal)}</td>
+                    <td>{formatoCLP(compB.inventario.comprasTotal)}</td>
+                    <td><Comparacion actual={compB.inventario.comprasTotal} anterior={compA.inventario.comprasTotal} /></td>
+                  </tr>
+                  <tr>
+                    <td>Gastos</td>
+                    <td>{formatoCLP(compA.utilidad.totalGastos)}</td>
+                    <td>{formatoCLP(compB.utilidad.totalGastos)}</td>
+                    <td><Comparacion actual={compB.utilidad.totalGastos} anterior={compA.utilidad.totalGastos} /></td>
+                  </tr>
+                  <tr>
+                    <td>Utilidad simple (ventas − gastos)</td>
+                    <td>{formatoCLP(compA.utilidad.utilidadSimple)}</td>
+                    <td>{formatoCLP(compB.utilidad.utilidadSimple)}</td>
+                    <td><Comparacion actual={compB.utilidad.utilidadSimple} anterior={compA.utilidad.utilidadSimple} /></td>
+                  </tr>
+                  <tr>
+                    <td>Utilidad real (− costo mercadería)</td>
+                    <td>{formatoCLP(compA.utilidad.utilidadReal)}</td>
+                    <td>{formatoCLP(compB.utilidad.utilidadReal)}</td>
+                    <td><Comparacion actual={compB.utilidad.utilidadReal} anterior={compA.utilidad.utilidadReal} /></td>
+                  </tr>
+                </tbody>
+              </table>
+
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "1.5rem" }}>
+                <div>
+                  <h3>Más vendidos (Período B)</h3>
+                  <table className="tabla">
+                    <thead>
+                      <tr><th>Producto</th><th>Cantidad</th><th>Ingreso</th></tr>
+                    </thead>
+                    <tbody>
+                      {compB.ventas.masVendidosPorIngreso.slice(0, 5).map((p) => (
+                        <tr key={p.productoId}>
+                          <td>{p.descripcion}</td>
+                          <td>{p.cantidad}</td>
+                          <td>{formatoCLP(p.ingreso)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div>
+                  <h3>Menos vendidos (Período B)</h3>
+                  <table className="tabla">
+                    <thead>
+                      <tr><th>Producto</th><th>Cantidad</th><th>Ingreso</th></tr>
+                    </thead>
+                    <tbody>
+                      {compB.ventas.menosVendidosPorCantidad.slice(0, 5).map((p) => (
+                        <tr key={p.productoId}>
+                          <td>{p.descripcion}</td>
+                          <td>{p.cantidad}</td>
+                          <td>{formatoCLP(p.ingreso)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <h3>Ventas por categoría</h3>
+              <p className="ayuda">Haz clic en una categoría para ver su detalle completo y comparar los dos períodos.</p>
+              <div className="lista-categorias-comparar">
+                {compB.ventas.porCategoria.map((catB) => {
+                  const catA = compA.ventas.porCategoria.find((c) => c.categoria === catB.categoria);
+                  const abierta = categoriaAbierta === catB.categoria;
+                  const porcentajeDelTotal =
+                    compB.ventas.totalVentas > 0 ? (catB.ingreso / compB.ventas.totalVentas) * 100 : 0;
+                  return (
+                    <div key={catB.categoria} className="tarjeta" style={{ marginBottom: "0.75rem" }}>
+                      <button
+                        type="button"
+                        onClick={() => setCategoriaAbierta(abierta ? null : catB.categoria)}
+                        className="fila-inline"
+                        style={{ width: "100%", justifyContent: "space-between", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+                      >
+                        <strong>{abierta ? "▼" : "▶"} {catB.categoria}</strong>
+                        <span className="ayuda">
+                          {formatoCLP(catB.ingreso)} (B) · {catA ? formatoCLP(catA.ingreso) : "$0"} (A)
+                        </span>
+                      </button>
+                      {abierta && (
+                        <div style={{ marginTop: "1rem" }}>
+                          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: "1rem" }}>
+                            <div className="tarjeta tarjeta-mini">
+                              <span className="ayuda">Ingreso</span>
+                              <p style={{ fontSize: "1.2rem", margin: "0.25rem 0" }}>{formatoCLP(catB.ingreso)}</p>
+                              <Comparacion actual={catB.ingreso} anterior={catA?.ingreso ?? 0} />
+                            </div>
+                            <div className="tarjeta tarjeta-mini">
+                              <span className="ayuda">Cantidad vendida</span>
+                              <p style={{ fontSize: "1.2rem", margin: "0.25rem 0" }}>{catB.cantidad.toLocaleString("es-CL")}</p>
+                              <Comparacion actual={catB.cantidad} anterior={catA?.cantidad ?? 0} />
+                            </div>
+                            <div className="tarjeta tarjeta-mini">
+                              <span className="ayuda">% del total vendido (B)</span>
+                              <p style={{ fontSize: "1.2rem", margin: "0.25rem 0" }}>{porcentajeDelTotal.toFixed(1)}%</p>
+                            </div>
+                          </div>
+                          <table className="tabla" style={{ marginTop: "1rem" }}>
+                            <thead>
+                              <tr><th>Producto</th><th>Cantidad</th><th>Ingreso</th></tr>
+                            </thead>
+                            <tbody>
+                              {catB.masVendidos.map((p) => (
+                                <tr key={p.productoId}>
+                                  <td>{p.descripcion}</td>
+                                  <td>{p.cantidad}</td>
+                                  <td>{formatoCLP(p.ingreso)}</td>
+                                </tr>
+                              ))}
+                              {catB.masVendidos.length === 0 && (
+                                <tr>
+                                  <td colSpan={3}>Sin ventas de esta categoría en el período B.</td>
+                                </tr>
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                {compB.ventas.porCategoria.length === 0 && <p className="ayuda">No hubo ventas por categoría en el período B.</p>}
+              </div>
+            </>
+          )}
         </section>
       )}
 
