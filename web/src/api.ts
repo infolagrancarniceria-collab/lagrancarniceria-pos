@@ -559,6 +559,18 @@ export interface MovimientoInventario {
   fecha: string;
 }
 
+export interface ReinicioInventario {
+  id: number;
+  alcance: "global" | "categoria";
+  categoriaId: number | null;
+  categoria: Categoria | null;
+  motivo: string;
+  usuarioAutorizoId: number;
+  usuarioAutorizo?: Usuario;
+  cantidadProductosAfectados: number;
+  fecha: string;
+}
+
 export interface LineaFactura {
   producto: string;
   plu: string;
@@ -1459,6 +1471,18 @@ export const api = {
       const query = qs.toString();
       return get<ProductoConStock[]>(`/api/inventario/stock${query ? `?${query}` : ""}`);
     },
+    reiniciarPreview: (alcance: "global" | "categoria", categoriaId?: number) => {
+      const qs = new URLSearchParams({ alcance });
+      if (categoriaId) qs.set("categoriaId", String(categoriaId));
+      return get<{ cantidadProductos: number }>(`/api/inventario/reiniciar/preview?${qs.toString()}`);
+    },
+    reiniciar: (data: {
+      alcance: "global" | "categoria";
+      categoriaId?: number;
+      motivo: string;
+      usuarioId: number;
+      clave: string;
+    }) => post<ReinicioInventario>("/api/inventario/reiniciar", data),
     entrada: (data: {
       productoId: number;
       cantidad: number;
