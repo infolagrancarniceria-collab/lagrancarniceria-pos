@@ -45,6 +45,10 @@ export default function Gastos() {
   const [categoria, setCategoria] = useState("");
   const [descripcion, setDescripcion] = useState("");
   const [monto, setMonto] = useState("");
+  // Antes el gasto siempre quedaba con la fecha de "ahora" — a pedido del
+  // usuario, para poder cargar un gasto de un día anterior (ej. se olvidó
+  // registrarlo al tiro) con su fecha real, no la del día en que se tipea.
+  const [fechaGasto, setFechaGasto] = useState(hoy());
   const [guardando, setGuardando] = useState(false);
 
   function cargar() {
@@ -81,6 +85,7 @@ export default function Gastos() {
         categoria: categoria.trim(),
         descripcion: descripcion.trim(),
         monto: montoNum,
+        fecha: fechaGasto,
         usuarioId: usuario.id,
       });
       setMensaje("Gasto registrado");
@@ -88,6 +93,7 @@ export default function Gastos() {
       setCategoria("");
       setDescripcion("");
       setMonto("");
+      setFechaGasto(hoy());
       cargar();
     } catch (e) {
       setError((e as Error).message);
@@ -189,6 +195,13 @@ export default function Gastos() {
             ))}
           </datalist>
           <input type="number" min="1" placeholder="Monto" value={monto} onChange={(e) => setMonto(e.target.value)} />
+          <input
+            type="date"
+            value={fechaGasto}
+            onChange={(e) => setFechaGasto(e.target.value)}
+            title="Fecha del gasto"
+            max={hoy()}
+          />
           <TecladoNumerico valor={monto} onCambiar={setMonto} />
           <button type="submit" className="boton boton-primario" disabled={guardando}>
             {guardando ? "Guardando..." : "Registrar"}
