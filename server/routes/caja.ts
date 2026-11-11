@@ -257,6 +257,24 @@ async function calcularResumenSesion(sesionId: number) {
   const totalRetiros = retiros.reduce((s, r) => s + r.monto, 0);
   const totalIngresos = ingresos.reduce((s, r) => s + r.monto, 0);
 
+  // Correcciones auditadas al efectivo/tarjeta calculados (ver modelo
+  // AjusteCuadratura) — no tocan ningún pago ni venta real, solo corrigen
+  // el total que se reporta y, en el caso de "efectivo", el efectivo
+  // esperado de más abajo. "tarjeta" no toca el efectivo esperado (una
+  // venta con tarjeta nunca puso plata física en el cajón).
+  const ajustes = await prisma.ajusteCuadratura.findMany({
+    where: { sesionCajaId: sesionId },
+    include: { usuarioAutorizo: true },
+    orderBy: { fecha: "asc" },
+  });
+  function netoAjustes(medio: string): number {
+    return ajustes
+      .filter((a) => a.medio === medio)
+      .reduce((s, a) => s + (a.direccion === "resta" ? -a.monto : a.monto), 0);
+  }
+  const totalAjustesEfectivo = netoAjustes("efectivo");
+  const totalAjustesTarjeta = netoAjustes("tarjeta");
+
   return {
     cantidadVentas: ventas.length,
     totalVentas,
@@ -275,6 +293,9 @@ async function calcularResumenSesion(sesionId: number) {
     totalRetiros,
     ingresos,
     totalIngresos,
+    ajustes,
+    totalAjustesEfectivo,
+    totalAjustesTarjeta,
   };
 }
 
@@ -285,7 +306,11 @@ cajaRouter.get("/sesiones/:id/resumen", async (req, res) => {
 
   const resumen = await calcularResumenSesion(id);
   const efectivoEsperado =
-    sesion.fondoFijoInicial + resumen.totalPorMedio.efectivo - resumen.totalRetiros + resumen.totalIngresos;
+    sesion.fondoFijoInicial +
+    resumen.totalPorMedio.efectivo +
+    resumen.totalAjustesEfectivo -
+    resumen.totalRetiros +
+    resumen.totalIngresos;
 
   res.json({
     sesion,
@@ -316,7 +341,11 @@ cajaRouter.get("/cuadratura", async (req, res) => {
     sesiones.map(async (sesion) => {
       const resumen = await calcularResumenSesion(sesion.id);
       const efectivoEsperado =
-        sesion.fondoFijoInicial + resumen.totalPorMedio.efectivo - resumen.totalRetiros + resumen.totalIngresos;
+        sesion.fondoFijoInicial +
+        resumen.totalPorMedio.efectivo +
+        resumen.totalAjustesEfectivo -
+        resumen.totalRetiros +
+        resumen.totalIngresos;
       return {
         sesion,
         ...resumen,
@@ -340,6 +369,8 @@ cajaRouter.get("/cuadratura", async (req, res) => {
       },
       totalRetiros: acc.totalRetiros + dia.totalRetiros,
       totalIngresos: acc.totalIngresos + dia.totalIngresos,
+      totalAjustesEfectivo: acc.totalAjustesEfectivo + dia.totalAjustesEfectivo,
+      totalAjustesTarjeta: acc.totalAjustesTarjeta + dia.totalAjustesTarjeta,
       efectivoEsperado: acc.efectivoEsperado + dia.efectivoEsperado,
       efectivoContado: acc.efectivoContado + (dia.sesion.efectivoContado ?? 0),
     }),
@@ -349,6 +380,8 @@ cajaRouter.get("/cuadratura", async (req, res) => {
       totalPorMedio: { efectivo: 0, tarjeta: 0, credito: 0, transferencia: 0, pedido_web: 0, mayorista: 0 },
       totalRetiros: 0,
       totalIngresos: 0,
+      totalAjustesEfectivo: 0,
+      totalAjustesTarjeta: 0,
       efectivoEsperado: 0,
       efectivoContado: 0,
     }
@@ -407,6 +440,57 @@ cajaRouter.post("/sesiones/:id/retiros", async (req, res) => {
   res.status(201).json(retiro);
 });
 
+// --- Ajuste de cuadratura (corrección de efectivo/tarjeta) ---
+//
+// A pedido del usuario: para cuando se detecta que el efectivo o la
+// tarjeta de un día quedaron mal (ej. un pago se registró con el medio
+// equivocado) y hace falta corregir la cuadratura de ese día sin pisar
+// ninguna venta ni pago real. A diferencia de retiros/ingresos, SÍ se
+// permite sobre una sesión ya cerrada — corregir "lo de ayer" es
+// justamente el caso de uso, no solo la caja del día en curso.
+const ajusteCuadraturaSchema = z.object({
+  medio: z.enum(["efectivo", "tarjeta"]),
+  direccion: z.enum(["suma", "resta"]),
+  monto: z.number().positive("El monto debe ser mayor a 0"),
+  motivo: z.string().trim().min(1, "Falta el motivo"),
+  usuarioId: z.number().int().positive(),
+  clave: z.string().trim().min(1, "Falta la clave de supervisor"),
+});
+
+cajaRouter.post("/sesiones/:id/ajustes-cuadratura", async (req, res) => {
+  const sesionId = Number(req.params.id);
+  const parsed = ajusteCuadraturaSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0].message });
+  }
+  const { medio, direccion, monto, motivo, usuarioId, clave } = parsed.data;
+
+  const usuario = await validarUsuario(usuarioId);
+  if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
+
+  const sesion = await prisma.sesionCaja.findUnique({ where: { id: sesionId } });
+  if (!sesion) return res.status(404).json({ error: "Sesión no encontrada" });
+
+  const claveSupervisor = await prisma.claveSupervisor.findFirst();
+  if (!claveSupervisor) {
+    return res.status(403).json({ error: "Clave de supervisor incorrecta" });
+  }
+  const resultadoClave = verificarClaveConLimite(req.ip ?? "desconocido", clave, claveSupervisor.hashClave);
+  if (resultadoClave.bloqueado) {
+    return res.status(429).json({ error: `Demasiados intentos fallidos — espera ${resultadoClave.segundosRestantes} segundos e intenta de nuevo` });
+  }
+  if (!resultadoClave.valida) {
+    return res.status(403).json({ error: "Clave de supervisor incorrecta" });
+  }
+
+  const ajuste = await prisma.ajusteCuadratura.create({
+    data: { sesionCajaId: sesionId, medio, direccion, monto, motivo: motivo.trim(), usuarioAutorizoId: usuarioId },
+    include: { usuarioAutorizo: true },
+  });
+
+  res.status(201).json(ajuste);
+});
+
 const cerrarSesionSchema = z.object({
   efectivoContado: z.number().min(0, "El efectivo contado no puede ser negativo"),
   usuarioId: z.number().int().positive(),
@@ -461,7 +545,11 @@ cajaRouter.post("/sesiones/:id/cerrar", async (req, res) => {
   const sesionActualizada = await prisma.sesionCaja.findUnique({ where: { id } });
   const resumen = await calcularResumenSesion(id);
   const efectivoEsperado =
-    sesionActualizada!.fondoFijoInicial + resumen.totalPorMedio.efectivo - resumen.totalRetiros + resumen.totalIngresos;
+    sesionActualizada!.fondoFijoInicial +
+    resumen.totalPorMedio.efectivo +
+    resumen.totalAjustesEfectivo -
+    resumen.totalRetiros +
+    resumen.totalIngresos;
 
   res.json({
     sesion: sesionActualizada,
@@ -582,9 +670,17 @@ cajaRouter.post("/sesiones/:id/dividir", async (req, res) => {
   const resumenAnterior = await calcularResumenSesion(sesionAnterior.id);
   const resumenActual = await calcularResumenSesion(id);
   const efectivoEsperadoAnterior =
-    sesionAnterior.fondoFijoInicial + resumenAnterior.totalPorMedio.efectivo - resumenAnterior.totalRetiros + resumenAnterior.totalIngresos;
+    sesionAnterior.fondoFijoInicial +
+    resumenAnterior.totalPorMedio.efectivo +
+    resumenAnterior.totalAjustesEfectivo -
+    resumenAnterior.totalRetiros +
+    resumenAnterior.totalIngresos;
   const efectivoEsperadoActual =
-    sesionActual!.fondoFijoInicial + resumenActual.totalPorMedio.efectivo - resumenActual.totalRetiros + resumenActual.totalIngresos;
+    sesionActual!.fondoFijoInicial +
+    resumenActual.totalPorMedio.efectivo +
+    resumenActual.totalAjustesEfectivo -
+    resumenActual.totalRetiros +
+    resumenActual.totalIngresos;
 
   res.json({
     sesionAnterior: {

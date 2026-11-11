@@ -779,6 +779,18 @@ export interface RetiroCaja {
   fecha: string;
 }
 
+export interface AjusteCuadratura {
+  id: number;
+  sesionCajaId: number;
+  medio: "efectivo" | "tarjeta";
+  direccion: "suma" | "resta";
+  monto: number;
+  motivo: string;
+  usuarioAutorizoId: number;
+  usuarioAutorizo?: Usuario;
+  fecha: string;
+}
+
 export interface ResumenSesion {
   sesion: SesionCaja;
   cantidadVentas: number;
@@ -798,6 +810,9 @@ export interface ResumenSesion {
   totalRetiros: number;
   ingresos: RetiroCaja[];
   totalIngresos: number;
+  ajustes: AjusteCuadratura[];
+  totalAjustesEfectivo: number;
+  totalAjustesTarjeta: number;
   efectivoEsperado: number;
   diferencia: number | null;
 }
@@ -810,6 +825,8 @@ export interface Cuadratura {
     totalPorMedio: Record<string, number>;
     totalRetiros: number;
     totalIngresos: number;
+    totalAjustesEfectivo: number;
+    totalAjustesTarjeta: number;
     efectivoEsperado: number;
     efectivoContado: number;
   };
@@ -1528,6 +1545,17 @@ export const api = {
       sesionId: number,
       data: { tipo: "retiro" | "ingreso"; monto: number; motivo: string; usuarioId: number; clave: string }
     ) => post<RetiroCaja>(`/api/caja/sesiones/${sesionId}/retiros`, data),
+    registrarAjusteCuadratura: (
+      sesionId: number,
+      data: {
+        medio: "efectivo" | "tarjeta";
+        direccion: "suma" | "resta";
+        monto: number;
+        motivo: string;
+        usuarioId: number;
+        clave: string;
+      }
+    ) => post<AjusteCuadratura>(`/api/caja/sesiones/${sesionId}/ajustes-cuadratura`, data),
     cuadratura: (desde: string, hasta: string) =>
       get<Cuadratura>(`/api/caja/cuadratura?desde=${desde}&hasta=${hasta}`),
     ventaAbierta: () => get<Venta | null>("/api/caja/ventas/abierta"),
