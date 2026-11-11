@@ -126,6 +126,14 @@ export async function calcularReporteVentas(desdeTexto?: unknown, hastaTexto?: u
   const masVendidosPorIngreso = Array.from(porProducto.values())
     .sort((a, b) => b.ingreso - a.ingreso)
     .slice(0, 10);
+  // "Menos vendidos" (nuevo, ítem 5 del pedido del usuario) — entre los que
+  // SÍ tuvieron alguna venta en el período (cantidad > 0): un producto sin
+  // ninguna venta no es "el menos vendido", es un caso distinto (nunca se
+  // vendió), que este reporte no intenta cubrir.
+  const menosVendidosPorCantidad = Array.from(porProducto.values())
+    .filter((p) => p.cantidad > 0)
+    .sort((a, b) => a.cantidad - b.cantidad)
+    .slice(0, 10);
 
   // Ventas por categoría (agrupadas por la categoría RAÍZ, nivel 1 — ej.
   // Vacuno/Cerdo/Pollo — no la subcategoría directa del producto, que puede
@@ -149,14 +157,40 @@ export async function calcularReporteVentas(desdeTexto?: unknown, hastaTexto?: u
   }
 
   const porCategoriaMapa = new Map<string, { categoria: string; cantidad: number; ingreso: number }>();
+  // Top productos DENTRO de cada categoría (ítem 5 del pedido del usuario:
+  // poder hacer clic en una categoría, ej. "Vacuno", y ver su detalle) — el
+  // ranking global (masVendidosPorCantidad/Ingreso) no sirve para esto
+  // porque un producto fuerte en una categoría chica puede no entrar nunca
+  // al top 10 general.
+  const productosPorCategoriaMapa = new Map<string, Map<number, { productoId: number; plu: string; descripcion: string; cantidad: number; ingreso: number }>>();
   for (const i of items) {
     const nombre = categoriaRaizNombre(i.producto.categoriaId);
     const actual = porCategoriaMapa.get(nombre) ?? { categoria: nombre, cantidad: 0, ingreso: 0 };
     actual.cantidad += i.cantidad;
     actual.ingreso += i.subtotal;
     porCategoriaMapa.set(nombre, actual);
+
+    const productosDeCategoria = productosPorCategoriaMapa.get(nombre) ?? new Map();
+    const productoActual = productosDeCategoria.get(i.productoId) ?? {
+      productoId: i.productoId,
+      plu: i.producto.plu,
+      descripcion: i.producto.descripcion,
+      cantidad: 0,
+      ingreso: 0,
+    };
+    productoActual.cantidad += i.cantidad;
+    productoActual.ingreso += i.subtotal;
+    productosDeCategoria.set(i.productoId, productoActual);
+    productosPorCategoriaMapa.set(nombre, productosDeCategoria);
   }
-  const porCategoria = Array.from(porCategoriaMapa.values()).sort((a, b) => b.ingreso - a.ingreso);
+  const porCategoria = Array.from(porCategoriaMapa.values())
+    .map((c) => ({
+      ...c,
+      masVendidos: Array.from(productosPorCategoriaMapa.get(c.categoria)?.values() ?? [])
+        .sort((a, b) => b.ingreso - a.ingreso)
+        .slice(0, 5),
+    }))
+    .sort((a, b) => b.ingreso - a.ingreso);
 
   // Evolución diaria — a pedido del usuario, para graficar cómo se mueven
   // las ventas día a día en el rango elegido (no solo el total acumulado).
@@ -186,6 +220,7 @@ export async function calcularReporteVentas(desdeTexto?: unknown, hastaTexto?: u
     totalVentasMayorista,
     masVendidosPorCantidad,
     masVendidosPorIngreso,
+    menosVendidosPorCantidad,
     porCategoria,
     porDia,
   };
