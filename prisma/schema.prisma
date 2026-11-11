@@ -39,24 +39,25 @@ model Usuario {
   cambiosPrecio         HistorialPrecio[]
   movimientosInventario MovimientoInventario[]
 
-  itemsCharcuteriaCreados          ItemCharcuteria[]
-  preciosTransferenciaCreados      PrecioTransferencia[]
+  itemsCharcuteriaCreados           ItemCharcuteria[]
+  preciosTransferenciaCreados       PrecioTransferencia[]
   transferenciasInternasResponsable TransferenciaInterna[]
-  movimientosCharcuteria           MovimientoCharcuteria[]
-  recetasCreadas                   Receta[]
-  lotesProduccionResponsable       LoteProduccion[]        @relation("LotesProduccionResponsable")
-  cambiosVencimientoLote           LoteVencimientoCambio[]
-  envasadosResponsable             Envasado[]
+  movimientosCharcuteria            MovimientoCharcuteria[]
+  recetasCreadas                    Receta[]
+  lotesProduccionResponsable        LoteProduccion[]        @relation("LotesProduccionResponsable")
+  cambiosVencimientoLote            LoteVencimientoCambio[]
+  envasadosResponsable              Envasado[]
 
-  sesionesAbiertas           SesionCaja[] @relation("SesionesAbiertasPorUsuario")
-  sesionesCerradas           SesionCaja[] @relation("SesionesCerradasPorUsuario")
-  sesionesFondoAutorizado    SesionCaja[] @relation("SesionesFondoAutorizadoPorUsuario")
-  ventas                     Venta[]
-  ventasAnuladas             Venta[]      @relation("VentasAnuladasPorUsuario")
-  itemsAnulados              ItemVenta[]  @relation("ItemsAnuladosPorUsuario")
-  cobrosDeCreditoRegistrados PagoVenta[]  @relation("CobrosDeCreditoRegistradosPorUsuario")
-  gastos                     Gasto[]
-  retirosCajaAutorizados     RetiroCaja[]
+  sesionesAbiertas             SesionCaja[]       @relation("SesionesAbiertasPorUsuario")
+  sesionesCerradas             SesionCaja[]       @relation("SesionesCerradasPorUsuario")
+  sesionesFondoAutorizado      SesionCaja[]       @relation("SesionesFondoAutorizadoPorUsuario")
+  ventas                       Venta[]
+  ventasAnuladas               Venta[]            @relation("VentasAnuladasPorUsuario")
+  itemsAnulados                ItemVenta[]        @relation("ItemsAnuladosPorUsuario")
+  cobrosDeCreditoRegistrados   PagoVenta[]        @relation("CobrosDeCreditoRegistradosPorUsuario")
+  gastos                       Gasto[]
+  retirosCajaAutorizados       RetiroCaja[]
+  ajustesCuadraturaAutorizados AjusteCuadratura[]
 
   cajasCamaraCreadas          CajaCamara[]
   lotesCamaraCreados          LoteCamara[]
@@ -66,9 +67,9 @@ model Usuario {
   sesionesCamaraFinalizadas   SesionInventarioCamara[]  @relation("SesionesCamaraFinalizadasPorUsuario")
   escaneosCamara              EscaneoInventarioCamara[]
   salidasMayoristaRegistradas SalidaMayorista[]
-  salidasMayoristaAnuladas    SalidaMayorista[] @relation("SalidasMayoristasAnuladasPorUsuario")
-  pedidosWebAtendidos         PedidoWeb[]       @relation("PedidosWebAtendidosPorUsuario")
-  pedidosWebAnulados          PedidoWeb[]       @relation("PedidosWebAnuladosPorUsuario")
+  salidasMayoristaAnuladas    SalidaMayorista[]         @relation("SalidasMayoristasAnuladasPorUsuario")
+  pedidosWebAtendidos         PedidoWeb[]               @relation("PedidosWebAtendidosPorUsuario")
+  pedidosWebAnulados          PedidoWeb[]               @relation("PedidosWebAnuladosPorUsuario")
   regalosPedidoWebAgregados   PedidoWebRegalo[]
 }
 
@@ -280,7 +281,7 @@ model Producto {
   // Si este producto ES el espejo vendible de un SKU de charcutería, apunta
   // de vuelta al ItemCharcuteria que lo generó (null para el resto del
   // catálogo, que es carnicería normal).
-  espejoDeItemCharcuteria ItemCharcuteria?
+  espejoDeItemCharcuteria  ItemCharcuteria?
   // Materia prima de carnicería transferida hacia charcutería (este
   // producto como origen de la transferencia).
   transferenciasComoOrigen TransferenciaInterna[]
@@ -445,10 +446,10 @@ model ConfiguracionSyncWeb {
 // "Enviar" una vez que se abre. "ultimoResumenPreparadoFecha" (YYYY-MM-DD,
 // hora local) evita que se vuelva a abrir más de una vez el mismo día.
 model ConfiguracionWhatsapp {
-  id                         Int      @id @default(autoincrement())
-  numeroDueno                String?
+  id                          Int      @id @default(autoincrement())
+  numeroDueno                 String?
   ultimoResumenPreparadoFecha String?
-  actualizadoEn              DateTime @updatedAt
+  actualizadoEn               DateTime @updatedAt
 }
 
 // Solo puede haber una sesión de caja "abierta" a la vez (una sola persona
@@ -478,9 +479,40 @@ model SesionCaja {
   efectivoContado Float?
   fechaCierre     DateTime?
 
-  ventas          Venta[]
-  cobrosDeCredito PagoVenta[] @relation("CobrosDeCredito")
-  retiros         RetiroCaja[]
+  ventas            Venta[]
+  cobrosDeCredito   PagoVenta[]        @relation("CobrosDeCredito")
+  retiros           RetiroCaja[]
+  ajustesCuadratura AjusteCuadratura[]
+}
+
+// Corrección auditada a lo que la cuadratura calculó para un día — a
+// pedido del usuario, para cuando se detecta que el efectivo o la tarjeta
+// de un día quedaron mal (ej. un pago se registró con el medio
+// equivocado) y hace falta corregirlo sin pisar las ventas reales ni el
+// historial de pagos. No modifica ningún pago ni venta: es un monto con
+// motivo aparte, igual que RetiroCaja, que se suma/resta al calcular el
+// resumen de esa sesión (ver calcularResumenSesion). Puede registrarse
+// sobre una sesión ya cerrada — corregir "lo de ayer" es justo el caso de
+// uso, no solo la caja del día en curso.
+model AjusteCuadratura {
+  id Int @id @default(autoincrement())
+
+  sesionCajaId Int
+  sesionCaja   SesionCaja @relation(fields: [sesionCajaId], references: [id])
+
+  // "efectivo" | "tarjeta" — sobre cuál de los dos totales corrige.
+  medio String
+
+  // "suma" | "resta" — mismo patrón que RetiroCaja.tipo (retiro/ingreso):
+  // el monto siempre se guarda positivo, el signo lo da este campo.
+  direccion String
+  monto     Float
+  motivo    String
+
+  usuarioAutorizoId Int
+  usuarioAutorizo   Usuario @relation(fields: [usuarioAutorizoId], references: [id])
+
+  fecha DateTime @default(now())
 }
 
 // Plata que sale o entra físicamente en la caja durante el turno sin ser
@@ -707,8 +739,8 @@ model PagoVenta {
   // cobró después — puede pasar en una sesión de caja distinta a la de la
   // venta original (el cliente vuelve otro día, o la transferencia se
   // confirma más tarde).
-  clienteId Int?
-  cliente   Cliente? @relation(fields: [clienteId], references: [id])
+  clienteId         Int?
+  cliente           Cliente?    @relation(fields: [clienteId], references: [id])
   // Copia del nombre del cliente al momento de este pago (mismo criterio
   // que ItemVenta.precioUnitario) — así el vale impreso y el historial no
   // dependen de que el registro de Cliente siga existiendo o no haya
@@ -1002,10 +1034,10 @@ model CajaCamara {
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
 
-  movimientos       MovimientoCamara[]
-  esperados         InventarioCamaraEsperado[]
-  escaneos          EscaneoInventarioCamara[]
-  salidasMayoristas SalidaMayorista[]
+  movimientos         MovimientoCamara[]
+  esperados           InventarioCamaraEsperado[]
+  escaneos            EscaneoInventarioCamara[]
+  salidasMayoristas   SalidaMayorista[]
   itemsVentaMayorista ItemVenta[]
 }
 
@@ -1247,16 +1279,16 @@ model ItemCharcuteria {
   creadoPorId   Int
   creadoPor     Usuario  @relation(fields: [creadoPorId], references: [id])
 
-  recetas               Receta[]
-  recetaIngredientes    RecetaIngrediente[]
-  preciosTransferencia  PrecioTransferencia[]
+  recetas                 Receta[]
+  recetaIngredientes      RecetaIngrediente[]
+  preciosTransferencia    PrecioTransferencia[]
   transferenciasRecibidas TransferenciaInterna[]
-  movimientos           MovimientoCharcuteria[]
-  loteInsumosConsumidos LoteInsumoConsumido[]
-  envasadosComoSku      Envasado[]             @relation("SkuEnvasado")
-  envasadosComoEnvase   Envasado[]             @relation("EnvaseUsadoEnEnvasado")
-  envasadosComoEtiqueta Envasado[]             @relation("EtiquetaUsadaEnEnvasado")
-  stockPorLote          StockLoteSku[]         @relation("SkuStock")
+  movimientos             MovimientoCharcuteria[]
+  loteInsumosConsumidos   LoteInsumoConsumido[]
+  envasadosComoSku        Envasado[]              @relation("SkuEnvasado")
+  envasadosComoEnvase     Envasado[]              @relation("EnvaseUsadoEnEnvasado")
+  envasadosComoEtiqueta   Envasado[]              @relation("EtiquetaUsadaEnEnvasado")
+  stockPorLote            StockLoteSku[]          @relation("SkuStock")
 }
 
 // Ledger de movimientos de materia_prima/insumo/envase_etiqueta — mismo
@@ -1398,8 +1430,8 @@ model LoteProduccion {
   responsableId    Int
   responsable      Usuario  @relation("LotesProduccionResponsable", fields: [responsableId], references: [id])
 
-  pesoEntradaKg Float?
-  pesoSalidaKg  Float?
+  pesoEntradaKg    Float?
+  pesoSalidaKg     Float?
   // Calculados en el server a partir de los pesos reales — nunca editables
   // a mano directo.
   mermaEsperadaPct Float? // copiado de receta.rendimientoEsperadoPct al crear el lote
@@ -1421,7 +1453,7 @@ model LoteProduccion {
   // Costo total calculado (materia prima a precio de transferencia +
   // insumos + mano de obra imputada + envases/etiquetas + otrosCostosManuales)
   // — se recalcula en el server, nunca editable a mano directo.
-  costoTotal Float?
+  costoTotal          Float?
 
   creadoEn      DateTime @default(now())
   actualizadoEn DateTime @updatedAt
@@ -1489,7 +1521,7 @@ model Envasado {
   pesoNetoPorUnidadG        Int
   pesoRealTotalUsadoG       Int
   // = pesoRealTotalUsadoG - (cantidadUnidadesGeneradas * pesoNetoPorUnidadG) — calculado en el server.
-  diferenciaPesoG Int
+  diferenciaPesoG           Int
 
   envaseItemId      Int?
   envaseItem        ItemCharcuteria? @relation("EnvaseUsadoEnEnvasado", fields: [envaseItemId], references: [id])

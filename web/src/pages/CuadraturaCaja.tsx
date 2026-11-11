@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { api, formatoCLP, type Cuadratura } from "../api";
 import ModalAlerta from "../components/ModalAlerta";
+import ModalAjusteCuadratura from "../components/ModalAjusteCuadratura";
+import { mostrarToast } from "../lib/toast";
 import { imprimirCuadraturaCaja } from "../lib/imprimir";
 
 function hoy(): string {
@@ -24,15 +26,35 @@ export default function CuadraturaCaja() {
   const [datos, setDatos] = useState<Cuadratura | null>(null);
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Corregir efectivo/tarjeta de un día puntual — a pedido del usuario, ver
+  // ModalAjusteCuadratura.
+  const [corrigiendoSesionId, setCorrigiendoSesionId] = useState<number | null>(null);
 
-  useEffect(() => {
+  function cargar() {
     setCargando(true);
     api.caja
       .cuadratura(desde, hasta)
       .then(setDatos)
       .catch((e) => setError(e.message))
       .finally(() => setCargando(false));
-  }, [desde, hasta]);
+  }
+
+  useEffect(cargar, [desde, hasta]);
+
+  async function confirmarAjuste(
+    medio: "efectivo" | "tarjeta",
+    direccion: "suma" | "resta",
+    monto: number,
+    motivo: string,
+    usuarioId: number,
+    clave: string
+  ) {
+    if (corrigiendoSesionId == null) return;
+    await api.caja.registrarAjusteCuadratura(corrigiendoSesionId, { medio, direccion, monto, motivo, usuarioId, clave });
+    mostrarToast("Corrección registrada", `${medio === "efectivo" ? "Efectivo" : "Tarjeta"}: ${motivo}.`);
+    setCorrigiendoSesionId(null);
+    cargar();
+  }
 
   async function imprimir() {
     try {
@@ -85,6 +107,13 @@ export default function CuadraturaCaja() {
                 Abrió {dia.sesion.usuarioApertura?.nombre ?? "—"}
                 {dia.sesion.usuarioCierre ? `, cerró ${dia.sesion.usuarioCierre.nombre}` : ""}
               </p>
+              <button
+                type="button"
+                className="boton-chico no-imprimir"
+                onClick={() => setCorrigiendoSesionId(dia.sesion.id)}
+              >
+                Corregir efectivo/tarjeta de este día
+              </button>
               <table className="tabla">
                 <tbody>
                   <tr>
@@ -133,6 +162,17 @@ export default function CuadraturaCaja() {
                     <tr key={`ingreso-${r.id}`}>
                       <td>Ingreso — {r.motivo}</td>
                       <td>+{formatoCLP(r.monto)}</td>
+                    </tr>
+                  ))}
+                  {dia.ajustes.map((a) => (
+                    <tr key={`ajuste-${a.id}`}>
+                      <td>
+                        Corrección {a.medio === "efectivo" ? "efectivo" : "tarjeta"} — {a.motivo}
+                      </td>
+                      <td>
+                        {a.direccion === "resta" ? "−" : "+"}
+                        {formatoCLP(a.monto)}
+                      </td>
                     </tr>
                   ))}
                   <tr>
@@ -211,6 +251,18 @@ export default function CuadraturaCaja() {
                     <td>Ingresos</td>
                     <td>+{formatoCLP(datos.totalGeneral.totalIngresos)}</td>
                   </tr>
+                  {datos.totalGeneral.totalAjustesEfectivo !== 0 && (
+                    <tr>
+                      <td>Correcciones a efectivo</td>
+                      <td>{formatoCLP(datos.totalGeneral.totalAjustesEfectivo)}</td>
+                    </tr>
+                  )}
+                  {datos.totalGeneral.totalAjustesTarjeta !== 0 && (
+                    <tr>
+                      <td>Correcciones a tarjeta</td>
+                      <td>{formatoCLP(datos.totalGeneral.totalAjustesTarjeta)}</td>
+                    </tr>
+                  )}
                   <tr>
                     <td>
                       <strong>Efectivo esperado</strong>
@@ -228,6 +280,16 @@ export default function CuadraturaCaja() {
             </section>
           )}
         </div>
+      )}
+
+      {corrigiendoSesionId != null && (
+        <ModalAjusteCuadratura
+          fechaSesion={formatoFechaHora(
+            datos?.dias.find((d) => d.sesion.id === corrigiendoSesionId)?.sesion.fechaApertura ?? new Date().toISOString()
+          )}
+          onConfirmar={confirmarAjuste}
+          onCancelar={() => setCorrigiendoSesionId(null)}
+        />
       )}
     </div>
   );
