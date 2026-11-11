@@ -75,6 +75,27 @@ export async function calcularReporteVentas(desdeTexto?: unknown, hastaTexto?: u
   const cantidadVentasOnline = ventasOnline.length;
   const totalVentasOnline = ventasOnline.reduce((s, v) => s + v.total, 0);
 
+  // Detalle de ventas por internet (ítem 5 del pedido del usuario) — a
+  // diferencia de las cifras de arriba (solo el total), esto lista cada
+  // venta de Caja Online por separado para poder revisarlas una por una en
+  // el rango de fechas elegido.
+  const itemsPorVentaOnline = await prisma.itemVenta.findMany({
+    where: { anulado: false, venta: { estado: "pagada", canal: "online", fecha: { gte: desde, lte: hasta } } },
+    select: { ventaId: true },
+  });
+  const cantidadItemsPorVenta = new Map<number, number>();
+  for (const i of itemsPorVentaOnline) {
+    cantidadItemsPorVenta.set(i.ventaId, (cantidadItemsPorVenta.get(i.ventaId) ?? 0) + 1);
+  }
+  const ventasOnlineDetalle = ventasOnline
+    .map((v) => ({
+      id: v.id,
+      fecha: v.fecha.toISOString(),
+      total: v.total,
+      cantidadItems: cantidadItemsPorVenta.get(v.id) ?? 0,
+    }))
+    .sort((a, b) => b.fecha.localeCompare(a.fecha));
+
   const ventasMayorista = ventasEnRango.filter((v) => v.canal === "mayorista");
   const cantidadVentasMayorista = ventasMayorista.length;
   const totalVentasMayorista = ventasMayorista.reduce((s, v) => s + v.total, 0);
@@ -160,6 +181,7 @@ export async function calcularReporteVentas(desdeTexto?: unknown, hastaTexto?: u
     totalVentasLocal,
     cantidadVentasOnline,
     totalVentasOnline,
+    ventasOnlineDetalle,
     cantidadVentasMayorista,
     totalVentasMayorista,
     masVendidosPorCantidad,
@@ -169,12 +191,13 @@ export async function calcularReporteVentas(desdeTexto?: unknown, hastaTexto?: u
   };
 }
 
-reportesRouter.get("/inventario", async (req, res) => {
-  const { desde, hasta } = rangoFechas(req.query as Record<string, unknown>);
+export async function calcularReporteInventario(desdeTexto?: unknown, hastaTexto?: unknown) {
+  const { desde, hasta } = rangoFechasDesdeTexto(desdeTexto, hastaTexto);
 
   const movimientos = await prisma.movimientoInventario.findMany({
     where: { fecha: { gte: desde, lte: hasta } },
-    include: { producto: true },
+    include: { producto: true, proveedor: true },
+    orderBy: { fecha: "desc" },
   });
 
   const entradasTotal = movimientos
@@ -205,13 +228,40 @@ reportesRouter.get("/inventario", async (req, res) => {
     .sort((a, b) => b.cantidad - a.cantidad)
     .slice(0, 10);
 
-  res.json({
+  // Compras (ítem 5 del pedido del usuario): una "compra" es una entrada de
+  // inventario con motivo "compra" — ver Cargar factura en Inventario. El
+  // costo siempre se guarda por unidad (costoUnitario), así que el total en
+  // $ de cada línea es cantidad × costoUnitario; una entrada sin costo
+  // cargado (ej. ajuste manual, no factura real) no suma al total.
+  const comprasMovimientos = movimientos.filter((m) => m.tipo === "entrada" && m.motivo === "compra");
+  const comprasDetalle = comprasMovimientos.map((m) => ({
+    id: m.id,
+    fecha: m.fecha.toISOString(),
+    productoId: m.productoId,
+    plu: m.producto.plu,
+    descripcion: m.producto.descripcion,
+    proveedor: m.proveedor?.nombre ?? null,
+    numeroFactura: m.numeroFactura,
+    cantidad: m.cantidad,
+    costoUnitario: m.costoUnitario,
+    subtotal: (m.costoUnitario ?? 0) * m.cantidad,
+  }));
+  const comprasTotal = comprasDetalle.reduce((s, c) => s + c.subtotal, 0);
+
+  return {
     desde: desde.toISOString(),
     hasta: hasta.toISOString(),
     entradasTotal,
     salidasPorMotivo,
     topMerma,
-  });
+    comprasTotal,
+    comprasDetalle,
+  };
+}
+
+reportesRouter.get("/inventario", async (req, res) => {
+  const query = req.query as Record<string, unknown>;
+  res.json(await calcularReporteInventario(query.desde, query.hasta));
 });
 
 reportesRouter.get("/precios", async (req, res) => {
@@ -315,8 +365,18 @@ export async function calcularReporteUtilidad(desdeTexto?: unknown, hastaTexto?:
   const ventasEnRango = await prisma.venta.findMany({ where: { estado: "pagada", fecha: { gte: desde, lte: hasta } } });
   const totalVentas = ventasEnRango.reduce((s, v) => s + v.total, 0);
 
-  const gastosEnRango = await prisma.gasto.findMany({ where: { fecha: { gte: desde, lte: hasta } } });
+  const gastosEnRango = await prisma.gasto.findMany({ where: { fecha: { gte: desde, lte: hasta } }, orderBy: { fecha: "desc" } });
   const totalGastos = gastosEnRango.reduce((s, g) => s + g.monto, 0);
+  // Detalle de gastos (ítem 5 del pedido del usuario) — para poder ver cada
+  // gasto del período por separado, no solo el total descontado de la
+  // utilidad.
+  const gastosDetalle = gastosEnRango.map((g) => ({
+    id: g.id,
+    categoria: g.categoria,
+    descripcion: g.descripcion,
+    monto: g.monto,
+    fecha: g.fecha.toISOString(),
+  }));
 
   const items = await prisma.itemVenta.findMany({
     where: { anulado: false, venta: { estado: "pagada", fecha: { gte: desde, lte: hasta } } },
@@ -342,6 +402,7 @@ export async function calcularReporteUtilidad(desdeTexto?: unknown, hastaTexto?:
     hasta: hasta.toISOString(),
     totalVentas,
     totalGastos,
+    gastosDetalle,
     costoMercaderia,
     ventasSinCostoConocido,
     utilidadSimple: totalVentas - totalGastos,
