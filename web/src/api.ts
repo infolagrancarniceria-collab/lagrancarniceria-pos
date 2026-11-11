@@ -586,6 +586,7 @@ export interface ReporteInventario {
   comprasTotal: number;
   comprasDetalle: {
     id: number;
+    fuente: "factura" | "camara";
     fecha: string;
     productoId: number;
     plu: string;

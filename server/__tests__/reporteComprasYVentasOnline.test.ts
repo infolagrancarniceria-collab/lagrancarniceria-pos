@@ -57,6 +57,39 @@ describe("Detalle de compras en /api/reportes/inventario", () => {
   });
 });
 
+describe("Detalle de compras — también incluye lotes de Ingreso a cámara", () => {
+  it("un lote de cámara aparece en comprasDetalle con fuente camara y suma a comprasTotal", async () => {
+    const { usuario, productoCarniceria } = await crearFixturesBasicas();
+    const proveedor = await prisma.proveedor.create({ data: { nombre: `Proveedor Cámara ${Date.now()}` } });
+
+    const lote = await prisma.loteCamara.create({
+      data: {
+        productoId: productoCarniceria.id,
+        familiaNombre: "Vacuno",
+        procedencia: "Nacional",
+        cantidadCajas: 3,
+        pesoTotalKg: 45,
+        costoNetoKg: 6000,
+        totalNeto: 270000,
+        proveedorId: proveedor.id,
+        numeroFactura: "CAM-5678",
+        creadoPorId: usuario.id,
+      },
+    });
+
+    const res = await api.get(`/api/reportes/inventario?desde=${hoy()}&hasta=${hoy()}`);
+    expect(res.status).toBe(200);
+    expect(res.body.comprasTotal).toBeGreaterThanOrEqual(270000);
+    const linea = res.body.comprasDetalle.find((c: { id: number; fuente: string }) => c.id === lote.id && c.fuente === "camara");
+    expect(linea).toBeDefined();
+    expect(linea.proveedor).toBe(proveedor.nombre);
+    expect(linea.numeroFactura).toBe("CAM-5678");
+    expect(linea.cantidad).toBe(45);
+    expect(linea.costoUnitario).toBe(6000);
+    expect(linea.subtotal).toBe(270000);
+  });
+});
+
 describe("Detalle de ventas por internet en /api/reportes/ventas", () => {
   it("una venta pagada con canal online aparece en ventasOnlineDetalle con su cantidad de items", async () => {
     const { usuario, productoCarniceria, sesionCaja } = await crearFixturesBasicas();

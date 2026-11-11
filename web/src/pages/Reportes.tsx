@@ -567,10 +567,15 @@ export default function Reportes() {
           />
 
           <h3>Detalle de compras del período</h3>
+          <p className="ayuda">
+            Incluye lo cargado por "Cargar factura" (histórico, esa pantalla ya no existe) y lo ingresado por
+            "Ingreso a cámara" (actual).
+          </p>
           <table className="tabla">
             <thead>
               <tr>
                 <th>Fecha</th>
+                <th>Origen</th>
                 <th>PLU</th>
                 <th>Descripción</th>
                 <th>Proveedor</th>
@@ -582,20 +587,23 @@ export default function Reportes() {
             </thead>
             <tbody>
               {reporteInventario.comprasDetalle.map((c) => (
-                <tr key={c.id}>
+                <tr key={`${c.fuente}-${c.id}`}>
                   <td>{new Date(c.fecha).toLocaleDateString("es-CL")}</td>
+                  <td>{c.fuente === "camara" ? "Cámara" : "Factura"}</td>
                   <td>{c.plu}</td>
                   <td>{c.descripcion}</td>
                   <td>{c.proveedor ?? "—"}</td>
                   <td>{c.numeroFactura ?? "—"}</td>
-                  <td>{c.cantidad}</td>
+                  <td>
+                    {c.cantidad} {c.fuente === "camara" ? "kg" : ""}
+                  </td>
                   <td>{c.costoUnitario != null ? formatoCLP(c.costoUnitario) : "—"}</td>
                   <td>{formatoCLP(c.subtotal)}</td>
                 </tr>
               ))}
               {reporteInventario.comprasDetalle.length === 0 && (
                 <tr>
-                  <td colSpan={8}>No hubo compras registradas en este período.</td>
+                  <td colSpan={9}>No hubo compras registradas en este período.</td>
                 </tr>
               )}
             </tbody>
