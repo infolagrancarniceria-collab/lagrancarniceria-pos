@@ -3,14 +3,18 @@ import { Link } from "react-router-dom";
 import { api, type Categoria, type ProductoConStock } from "../api";
 import SelectorCategoria from "../components/SelectorCategoria";
 import ModalAlerta from "../components/ModalAlerta";
+import ModalReiniciarInventario from "../components/ModalReiniciarInventario";
+import { mostrarToast } from "../lib/toast";
 
 // Agrupa por categoría RAÍZ (nivel 1 — ej. Vacuno/Cerdo/Pollo/Abarrotes), no
 // la subcategoría directa del producto, que puede ser de nivel 2/3 y daría
 // demasiados grupos para revisar de un vistazo — mismo criterio que ya usa
-// el reporte de Ventas (ver categoriaRaizNombre en reportes.ts).
-function construirResolverRaiz(categorias: Categoria[]): (categoriaId: number) => string {
+// el reporte de Ventas (ver categoriaRaizNombre en reportes.ts). Devuelve
+// también el id de la raíz (no solo el nombre) para poder reiniciar el
+// stock de esa categoría puntual (ver api.inventario.reiniciar).
+function construirResolverRaiz(categorias: Categoria[]): (categoriaId: number) => { id: number; nombre: string } {
   const porId = new Map(categorias.map((c) => [c.id, c]));
-  const cache = new Map<number, string>();
+  const cache = new Map<number, { id: number; nombre: string }>();
   return (categoriaId: number) => {
     const cacheada = cache.get(categoriaId);
     if (cacheada) return cacheada;
@@ -18,11 +22,13 @@ function construirResolverRaiz(categorias: Categoria[]): (categoriaId: number) =
     while (actual?.padreId != null) {
       actual = porId.get(actual.padreId);
     }
-    const nombre = actual?.nombre ?? "Sin categoría";
-    cache.set(categoriaId, nombre);
-    return nombre;
+    const resultado = actual ? { id: actual.id, nombre: actual.nombre } : { id: categoriaId, nombre: "Sin categoría" };
+    cache.set(categoriaId, resultado);
+    return resultado;
   };
 }
+
+type Reinicio = { alcance: "global" } | { alcance: "categoria"; categoriaId: number; nombre: string };
 
 // Pantalla rediseñada a pedido del usuario — antes era una sola lista plana
 // sin forma de ubicar un producto rápido ni de ver de un vistazo cuánto hay
@@ -42,32 +48,54 @@ export default function Inventario() {
   const [buscar, setBuscar] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [cargando, setCargando] = useState(false);
+  // Reinicio de stock (ver ModalReiniciarInventario) — null cuando no hay
+  // ningún reinicio en curso.
+  const [reiniciando, setReiniciando] = useState<Reinicio | null>(null);
 
   useEffect(() => {
     api.categorias.listar().then(setCategorias).catch((e) => setError(e.message));
   }, []);
 
-  useEffect(() => {
+  function cargar() {
     setCargando(true);
-    const timeout = setTimeout(() => {
-      api.inventario
-        .stock(soloBajoStock, categoriaId || undefined, buscar.trim() || undefined)
-        .then(setProductos)
-        .catch((e) => setError(e.message))
-        .finally(() => setCargando(false));
-    }, 250);
+    api.inventario
+      .stock(soloBajoStock, categoriaId || undefined, buscar.trim() || undefined)
+      .then(setProductos)
+      .catch((e) => setError(e.message))
+      .finally(() => setCargando(false));
+  }
+
+  useEffect(() => {
+    const timeout = setTimeout(cargar, 250);
     return () => clearTimeout(timeout);
   }, [soloBajoStock, categoriaId, buscar]);
+
+  async function confirmarReinicio(motivo: string, usuarioId: number, clave: string) {
+    if (!reiniciando) return;
+    const resultado = await api.inventario.reiniciar({
+      alcance: reiniciando.alcance,
+      categoriaId: reiniciando.alcance === "categoria" ? reiniciando.categoriaId : undefined,
+      motivo,
+      usuarioId,
+      clave,
+    });
+    mostrarToast(
+      "Inventario reiniciado",
+      `${resultado.cantidadProductosAfectados} producto${resultado.cantidadProductosAfectados === 1 ? "" : "s"} a 0 — ${motivo}.`
+    );
+    setReiniciando(null);
+    cargar();
+  }
 
   const resolverRaiz = useMemo(() => construirResolverRaiz(categorias), [categorias]);
 
   const grupos = useMemo(() => {
-    const porRaiz = new Map<string, ProductoConStock[]>();
+    const porRaiz = new Map<string, { raizId: number; filas: ProductoConStock[] }>();
     for (const p of productos) {
       const raiz = resolverRaiz(p.categoriaId);
-      const actual = porRaiz.get(raiz) ?? [];
-      actual.push(p);
-      porRaiz.set(raiz, actual);
+      const actual = porRaiz.get(raiz.nombre) ?? { raizId: raiz.id, filas: [] };
+      actual.filas.push(p);
+      porRaiz.set(raiz.nombre, actual);
     }
     return Array.from(porRaiz.entries()).sort((a, b) => a[0].localeCompare(b[0]));
   }, [productos, resolverRaiz]);
@@ -101,6 +129,9 @@ export default function Inventario() {
           <Link to="/camara/existencias" className="boton">
             Existencias de cámara
           </Link>
+          <button type="button" className="boton boton-peligro" onClick={() => setReiniciando({ alcance: "global" })}>
+            ⟲ Reiniciar inventario
+          </button>
         </div>
       </div>
 
@@ -152,7 +183,7 @@ export default function Inventario() {
               </td>
             </tr>
           )}
-          {grupos.map(([raiz, filas]) => {
+          {grupos.map(([raiz, { raizId, filas }]) => {
             // Se separan los kilos de las unidades en vez de sumarlos juntos
             // en un solo total — mezclar "3 kg" con "5 un." en el mismo
             // número no diría nada real (a pedido del usuario: totalizar por
@@ -166,10 +197,19 @@ export default function Inventario() {
             return (
             <Fragment key={raiz}>
               <tr className="fila-total">
-                <td colSpan={5}>
+                <td colSpan={4}>
                   {raiz} — {filas.length} producto{filas.length === 1 ? "" : "s"}
                   {subtotalKg > 0 && ` · ${subtotalKg.toLocaleString("es-CL")} kg`}
                   {subtotalUnidades > 0 && ` · ${subtotalUnidades.toLocaleString("es-CL")} un.`}
+                </td>
+                <td style={{ textAlign: "right" }}>
+                  <button
+                    type="button"
+                    className="boton-chico"
+                    onClick={() => setReiniciando({ alcance: "categoria", categoriaId: raizId, nombre: raiz })}
+                  >
+                    ⟲ Reiniciar {raiz}
+                  </button>
                 </td>
               </tr>
               {filas.map((p) => (
@@ -191,6 +231,16 @@ export default function Inventario() {
           })}
         </tbody>
       </table>
+
+      {reiniciando && (
+        <ModalReiniciarInventario
+          alcance={reiniciando.alcance}
+          categoriaId={reiniciando.alcance === "categoria" ? reiniciando.categoriaId : undefined}
+          categoriaNombre={reiniciando.alcance === "categoria" ? reiniciando.nombre : undefined}
+          onConfirmar={confirmarReinicio}
+          onCancelar={() => setReiniciando(null)}
+        />
+      )}
     </div>
   );
 }

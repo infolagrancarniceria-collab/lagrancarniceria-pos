@@ -58,6 +58,7 @@ model Usuario {
   gastos                       Gasto[]
   retirosCajaAutorizados       RetiroCaja[]
   ajustesCuadraturaAutorizados AjusteCuadratura[]
+  reiniciosInventarioAutorizados ReinicioInventario[]
 
   cajasCamaraCreadas          CajaCamara[]
   lotesCamaraCreados          LoteCamara[]
@@ -100,6 +101,7 @@ model Categoria {
   hijos   Categoria[] @relation("CategoriaJerarquia")
 
   productos Producto[]
+  reiniciosInventario ReinicioInventario[]
 
   // Solo tiene sentido en una categoría raíz (nivel 1, ej. Pollo, Cerdo,
   // Vacuno) — el % que se suma al precio neto de Venta Mayorista al
@@ -511,6 +513,32 @@ model AjusteCuadratura {
 
   usuarioAutorizoId Int
   usuarioAutorizo   Usuario @relation(fields: [usuarioAutorizoId], references: [id])
+
+  fecha DateTime @default(now())
+}
+
+// Reinicio auditado de stock (ítem a pedido del usuario, para empezar una
+// cuadratura física de inventario desde 0) — lleva cada producto afectado a
+// stockActual=0 y deja un MovimientoInventario motivo "ajuste" por
+// producto (igual que un ajuste manual normal), así el historial de cada
+// producto no pierde rastro de por qué cambió. Esta fila es el registro del
+// EVENTO en sí (quién lo autorizó, con qué motivo, a cuántos productos
+// alcanzó) — "global" afecta todo el catálogo activo, "categoria" solo esa
+// categoría raíz y sus subcategorías (ver obtenerIdsCategoriaYDescendientes).
+model ReinicioInventario {
+  id Int @id @default(autoincrement())
+
+  alcance String // "global" | "categoria"
+
+  categoriaId Int?
+  categoria   Categoria? @relation(fields: [categoriaId], references: [id])
+
+  motivo String
+
+  usuarioAutorizoId Int
+  usuarioAutorizo   Usuario @relation(fields: [usuarioAutorizoId], references: [id])
+
+  cantidadProductosAfectados Int
 
   fecha DateTime @default(now())
 }

@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../db";
 import { obtenerIdsCategoriaYDescendientes } from "../lib/categorias";
+import { verificarClaveConLimite } from "../lib/clave";
 
 export const inventarioRouter = Router();
 
@@ -37,6 +38,107 @@ inventarioRouter.get("/stock", async (req, res) => {
   }));
 
   res.json(soloBajoStock ? conBandera.filter((p) => p.bajoStock) : conBandera);
+});
+
+// --- Reinicio de stock (auditado) ---
+//
+// A pedido del usuario, para empezar una cuadratura física de inventario
+// desde 0: lleva a 0 el stock de todos los productos activos ("global") o
+// solo los de una categoría raíz y sus subcategorías ("categoria"), con
+// motivo + clave de supervisor. Cada producto afectado queda con un
+// MovimientoInventario motivo "ajuste" (como un ajuste manual normal) para
+// no perder rastro de por qué cambió — un producto con stock ya en 0 no
+// genera movimiento (no hay nada que ajustar).
+
+inventarioRouter.get("/reiniciar/preview", async (req, res) => {
+  const alcance = req.query.alcance === "categoria" ? "categoria" : "global";
+  const categoriaId = req.query.categoriaId ? Number(req.query.categoriaId) : undefined;
+  if (alcance === "categoria" && !categoriaId) {
+    return res.status(400).json({ error: "Falta la categoría a reiniciar" });
+  }
+  const categoriaIds = alcance === "categoria" ? await obtenerIdsCategoriaYDescendientes(categoriaId!) : undefined;
+  const cantidadProductos = await prisma.producto.count({
+    where: {
+      activo: true,
+      stockActual: { not: 0 },
+      ...(categoriaIds ? { categoriaId: { in: categoriaIds } } : {}),
+    },
+  });
+  res.json({ cantidadProductos });
+});
+
+const reiniciarStockSchema = z.object({
+  alcance: z.enum(["global", "categoria"]),
+  categoriaId: z.number().int().positive().optional(),
+  motivo: z.string().trim().min(1, "Falta el motivo del reinicio"),
+  usuarioId: z.number().int().positive(),
+  clave: z.string().trim().min(1, "Falta la clave de supervisor"),
+});
+
+inventarioRouter.post("/reiniciar", async (req, res) => {
+  const parsed = reiniciarStockSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0].message });
+  }
+  const { alcance, categoriaId, motivo, usuarioId, clave } = parsed.data;
+
+  if (alcance === "categoria" && !categoriaId) {
+    return res.status(400).json({ error: "Falta la categoría a reiniciar" });
+  }
+
+  const usuario = await validarUsuario(usuarioId);
+  if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
+
+  const claveSupervisor = await prisma.claveSupervisor.findFirst();
+  if (!claveSupervisor) {
+    return res.status(403).json({ error: "Clave de supervisor incorrecta" });
+  }
+  const resultadoClave = verificarClaveConLimite(req.ip ?? "desconocido", clave, claveSupervisor.hashClave);
+  if (resultadoClave.bloqueado) {
+    return res
+      .status(429)
+      .json({ error: `Demasiados intentos fallidos — espera ${resultadoClave.segundosRestantes} segundos e intenta de nuevo` });
+  }
+  if (!resultadoClave.valida) {
+    return res.status(403).json({ error: "Clave de supervisor incorrecta" });
+  }
+
+  const categoriaIds = alcance === "categoria" ? await obtenerIdsCategoriaYDescendientes(categoriaId!) : undefined;
+
+  const productos = await prisma.producto.findMany({
+    where: {
+      activo: true,
+      stockActual: { not: 0 },
+      ...(categoriaIds ? { categoriaId: { in: categoriaIds } } : {}),
+    },
+  });
+
+  const reinicio = await prisma.$transaction(async (tx) => {
+    for (const producto of productos) {
+      await tx.producto.update({ where: { id: producto.id }, data: { stockActual: 0 } });
+      await tx.movimientoInventario.create({
+        data: {
+          productoId: producto.id,
+          usuarioId,
+          tipo: producto.stockActual > 0 ? "salida" : "entrada",
+          motivo: "ajuste",
+          cantidad: Math.abs(producto.stockActual),
+        },
+      });
+    }
+    return tx.reinicioInventario.create({
+      data: {
+        alcance,
+        categoriaId: alcance === "categoria" ? categoriaId : null,
+        motivo: motivo.trim(),
+        usuarioAutorizoId: usuarioId,
+        cantidadProductosAfectados: productos.length,
+      },
+      include: { usuarioAutorizo: true, categoria: true },
+    });
+  });
+
+  res.status(201).json(reinicio);
 });
 
 // --- Entrada de mercadería ---
