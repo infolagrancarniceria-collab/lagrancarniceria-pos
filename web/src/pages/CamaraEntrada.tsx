@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   api,
+  calcularMargen,
   formatoCLP,
   FAMILIAS_CAMARA,
   PROCEDENCIAS_VACUNO,
@@ -69,6 +70,67 @@ function lineaVacia(id: number): LineaForm {
   };
 }
 
+// Borrador en localStorage para no perder lo tipeado si hay que salir a
+// atender la caja a mitad de ingresar una factura a cámara — mismo patrón
+// que tenía "Cargar factura" (ver historial de CargarFactura.tsx, ahora
+// eliminada: todo ingreso de mercadería pasa por esta pantalla). Se guarda
+// en cada cambio y se borra recién al registrar la factura con éxito. No
+// persiste "resultados"/"buscarProducto" (del buscador) ni "info" (se
+// vuelve a pedir al restaurar, ver el useEffect más abajo).
+const CLAVE_BORRADOR = "granCarniceria_borradorCamaraEntrada_v1";
+
+type LineaBorrador = Pick<
+  LineaForm,
+  "id" | "familia" | "procedencia" | "producto" | "cantidadCajas" | "modoPeso" | "pesoValor" | "costoNetoKg" | "aplicaIvaCarne" | "precioNuevo" | "precioMayorNuevo"
+>;
+
+interface BorradorCamaraEntrada {
+  proveedorSeleccionado: Proveedor | null;
+  numeroFactura: string;
+  fecha: string;
+  lineas: LineaBorrador[];
+}
+
+function borradorEstaVacio(b: BorradorCamaraEntrada): boolean {
+  return (
+    !b.proveedorSeleccionado &&
+    !b.numeroFactura.trim() &&
+    b.lineas.every((l) => !l.producto && !l.pesoValor && !l.costoNetoKg)
+  );
+}
+
+function cargarBorrador(): BorradorCamaraEntrada | null {
+  try {
+    const guardado = localStorage.getItem(CLAVE_BORRADOR);
+    if (!guardado) return null;
+    const borrador = JSON.parse(guardado) as BorradorCamaraEntrada;
+    return borradorEstaVacio(borrador) ? null : borrador;
+  } catch {
+    return null;
+  }
+}
+
+function guardarBorrador(b: BorradorCamaraEntrada) {
+  try {
+    if (borradorEstaVacio(b)) {
+      localStorage.removeItem(CLAVE_BORRADOR);
+    } else {
+      localStorage.setItem(CLAVE_BORRADOR, JSON.stringify(b));
+    }
+  } catch {
+    // Si falla (ej. modo privado sin storage) se pierde el borrador, pero
+    // no debe impedir seguir ingresando la factura.
+  }
+}
+
+function borrarBorrador() {
+  try {
+    localStorage.removeItem(CLAVE_BORRADOR);
+  } catch {
+    // ver guardarBorrador
+  }
+}
+
 // Entrada de cámara directo desde la factura completa — a pedido del papá
 // del usuario, para no repetir proveedor/fecha/N° de factura por cada
 // producto: se cargan de una vez varias líneas (una por producto) bajo la
@@ -79,14 +141,22 @@ function lineaVacia(id: number): LineaForm {
 export default function CamaraEntrada() {
   const { usuario } = useUsuario();
 
+  const borrador = useMemo(() => cargarBorrador(), []);
+  const lineasIniciales: LineaForm[] = borrador
+    ? borrador.lineas.map((l) => ({ ...l, buscarProducto: "", resultados: [], info: null }))
+    : [lineaVacia(1)];
+
   const [proveedores, setProveedores] = useState<Proveedor[]>([]);
   const [buscarProveedor, setBuscarProveedor] = useState("");
-  const [proveedorSeleccionado, setProveedorSeleccionado] = useState<Proveedor | null>(null);
-  const [numeroFactura, setNumeroFactura] = useState("");
-  const [fecha, setFecha] = useState(hoy());
+  const [proveedorSeleccionado, setProveedorSeleccionado] = useState<Proveedor | null>(
+    borrador?.proveedorSeleccionado ?? null
+  );
+  const [numeroFactura, setNumeroFactura] = useState(borrador?.numeroFactura ?? "");
+  const [fecha, setFecha] = useState(borrador?.fecha ?? hoy());
 
-  const [lineas, setLineas] = useState<LineaForm[]>([lineaVacia(1)]);
-  const [siguienteId, setSiguienteId] = useState(2);
+  const [lineas, setLineas] = useState<LineaForm[]>(lineasIniciales);
+  const [siguienteId, setSiguienteId] = useState(1 + Math.max(0, ...lineasIniciales.map((l) => l.id)));
+  const [borradorRestaurado] = useState(borrador != null);
 
   const [error, setError] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
@@ -106,6 +176,54 @@ export default function CamaraEntrada() {
   useEffect(() => {
     api.proveedores.listar().then(setProveedores).catch((e) => setError(e.message));
   }, []);
+
+  // Re-pide el "info" (precio/margen/último costo) de cada línea restaurada
+  // del borrador que ya tenía un producto elegido — no se persiste junto al
+  // resto porque se vuelve a pedir solo, igual que al elegir el producto de
+  // una línea nueva (ver elegirProducto).
+  useEffect(() => {
+    if (!borrador) return;
+    for (const l of lineasIniciales) {
+      if (l.producto && !l.info) {
+        api.productos
+          .obtener(l.producto.id)
+          .then((info) => actualizarLinea(l.id, { info }))
+          .catch((e) => setError(e.message));
+      }
+    }
+    // Solo al montar — las líneas del borrador ya están en el estado inicial.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    guardarBorrador({
+      proveedorSeleccionado,
+      numeroFactura,
+      fecha,
+      lineas: lineas.map((l) => ({
+        id: l.id,
+        familia: l.familia,
+        procedencia: l.procedencia,
+        producto: l.producto,
+        cantidadCajas: l.cantidadCajas,
+        modoPeso: l.modoPeso,
+        pesoValor: l.pesoValor,
+        costoNetoKg: l.costoNetoKg,
+        aplicaIvaCarne: l.aplicaIvaCarne,
+        precioNuevo: l.precioNuevo,
+        precioMayorNuevo: l.precioMayorNuevo,
+      })),
+    });
+  }, [proveedorSeleccionado, numeroFactura, fecha, lineas]);
+
+  function descartarBorrador() {
+    borrarBorrador();
+    setProveedorSeleccionado(null);
+    setNumeroFactura("");
+    setFecha(hoy());
+    setLineas([lineaVacia(1)]);
+    setSiguienteId(2);
+  }
 
   function verificarDuplicado(proveedorId: number, numeroFacturaTexto: string) {
     if (!proveedorId || !numeroFacturaTexto.trim()) return;
@@ -204,6 +322,7 @@ export default function CamaraEntrada() {
   const totalFacturaConImpuestos = totalFactura + iva + ivaCarne;
 
   function nuevaFactura() {
+    borrarBorrador();
     setCajasCreadas(null);
     setProveedorSeleccionado(null);
     setBuscarProveedor("");
@@ -276,6 +395,7 @@ export default function CamaraEntrada() {
         })),
         confirmarDuplicado: duplicadoConfirmado,
       });
+      borrarBorrador();
       setCajasCreadas(resultado.cajas);
       mostrarToast(
         "Factura ingresada a cámara",
@@ -368,6 +488,14 @@ export default function CamaraEntrada() {
         </Link>
       </div>
       {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
+      {borradorRestaurado && (
+        <p className="exito">
+          Se restauró el borrador que habías dejado sin terminar.{" "}
+          <button type="button" onClick={descartarBorrador}>
+            Descartar y empezar de nuevo
+          </button>
+        </p>
+      )}
 
       <form onSubmit={guardar} onKeyDown={manejarEnterComoTab} className="formulario">
         <label>
@@ -546,28 +674,52 @@ export default function CamaraEntrada() {
                     // última compra en cámara) cuando existe, para comparar.
                     const costoConHistorial = l.info!.ultimoCostoCamaraKg;
                     const costoEscrito = Number(l.costoNetoKg) || null;
+                    // Precio sugerido (a pedido del usuario, trasladado desde
+                    // "Cargar factura"): mismo % de recargo que ya tenía el
+                    // producto con el costo anterior, aplicado al costo
+                    // nuevo — para no tener que ir probando precios a mano
+                    // hasta que el margen mostrado se vea razonable.
+                    const margenActual = costoConHistorial != null ? calcularMargen(l.info!.precio, costoConHistorial) : null;
+                    const precioSugerido =
+                      costoEscrito != null && margenActual != null
+                        ? Math.max(1, Math.round(costoEscrito * (1 + margenActual / 100) * 1.19))
+                        : null;
                     return (
-                      <div className="fila-inline">
-                        {costoConHistorial != null && (
-                          <div>
-                            <p className="ayuda" style={{ margin: 0 }}>
-                              Margen actual (última compra en cámara, {formatoCLP(costoConHistorial)}/kg)
-                            </p>
-                            <ParMargen precio={l.info!.precio} costo={costoConHistorial} />
-                          </div>
-                        )}
-                        {costoEscrito != null && (
-                          <>
-                            {costoConHistorial != null && "→"}
+                      <>
+                        <div className="fila-inline">
+                          {costoConHistorial != null && (
                             <div>
                               <p className="ayuda" style={{ margin: 0 }}>
-                                Con el costo recién escrito ({formatoCLP(costoEscrito)}/kg)
+                                Margen actual (última compra en cámara, {formatoCLP(costoConHistorial)}/kg)
                               </p>
-                              <ParMargen precio={l.info!.precio} costo={costoEscrito} />
+                              <ParMargen precio={l.info!.precio} costo={costoConHistorial} />
                             </div>
-                          </>
+                          )}
+                          {costoEscrito != null && (
+                            <>
+                              {costoConHistorial != null && "→"}
+                              <div>
+                                <p className="ayuda" style={{ margin: 0 }}>
+                                  Con el costo recién escrito ({formatoCLP(costoEscrito)}/kg)
+                                </p>
+                                <ParMargen precio={l.info!.precio} costo={costoEscrito} />
+                              </div>
+                            </>
+                          )}
+                        </div>
+                        {precioSugerido != null && (
+                          <p className="ayuda" style={{ margin: "4px 0 0 0" }}>
+                            Precio sugerido (mismo % de recargo que antes): <strong>{formatoCLP(precioSugerido)}</strong>{" "}
+                            <button
+                              type="button"
+                              className="boton-chico"
+                              onClick={() => actualizarLinea(l.id, { precioNuevo: String(precioSugerido) })}
+                            >
+                              Usar este precio
+                            </button>
+                          </p>
                         )}
-                      </div>
+                      </>
                     );
                   })()}
                   {/* Estos dos campos son para cambiar el precio de venta y el de
