@@ -866,8 +866,8 @@ export default function Reportes() {
 
           <h3>Detalle de compras del período</h3>
           <p className="ayuda">
-            Incluye lo cargado por "Cargar factura" (histórico, esa pantalla ya no existe) y lo ingresado por
-            "Ingreso a cámara" (actual).
+            Incluye lo cargado por "Cargar factura" (congelados y productos por unidad) y lo ingresado por
+            "Ingreso a cámara" (carne fresca por peso).
           </p>
           <table className="tabla">
             <thead>

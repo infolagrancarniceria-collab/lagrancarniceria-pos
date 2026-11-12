@@ -1,8 +1,9 @@
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../db";
-import { obtenerIdsCategoriaYDescendientes } from "../lib/categorias";
+import { obtenerCategoriaRaiz, obtenerIdsCategoriaYDescendientes } from "../lib/categorias";
 import { verificarClaveConLimite } from "../lib/clave";
+import { parsearFechaSoloDia } from "./reportes";
 
 export const inventarioRouter = Router();
 
@@ -234,11 +235,114 @@ inventarioRouter.post("/salida", async (req, res) => {
   res.json(productoActualizado);
 });
 
+// --- Cargar una factura completa (varias líneas de una vez) ---
+//
+// A pedido del usuario, como alternativa manual a pedirle al asistente de
+// IA que lea el texto de una factura — mismo resultado final (una entrada
+// de inventario por línea, motivo "compra", mismo proveedor y N° de
+// factura), pero en una sola transacción atómica en vez de N llamadas
+// sueltas al endpoint /entrada.
+//
+// Restringido a productos que NO se venden pesados (flagBalanza !==
+// "PESABLE", ej. productos con código de barras que vienen por unidad) o
+// que son de la categoría raíz "Congelados" — la carne fresca por peso
+// sigue entrando exclusivamente por Ingreso a cámara (ver
+// server/routes/camara.ts), que maneja lotes y vencimiento FEFO.
+//
+// También permite, por línea, actualizar de una vez el umbral de stock
+// bajo del producto — para dejarlo configurado mientras se carga la
+// mercadería, en vez de tener que ir aparte a la ficha del producto.
+
+const lineaFacturaSchema = z.object({
+  productoId: z.number().int().positive(),
+  cantidad: z.number().positive("La cantidad debe ser mayor a 0"),
+  costoUnitario: z.number().positive("El costo debe ser mayor a 0"),
+  umbralStockBajo: z.number().int().nonnegative().optional().nullable(),
+});
+
+const facturaSchema = z.object({
+  proveedorId: z.number().int().positive(),
+  numeroFactura: z.string().trim().min(1, "Falta el N° de factura"),
+  fecha: z.string().trim().optional(),
+  usuarioId: z.number().int().positive(),
+  lineas: z.array(lineaFacturaSchema).min(1, "Agrega al menos una línea"),
+});
+
+async function puedeCargarsePorFactura(producto: { flagBalanza: string; categoriaId: number }): Promise<boolean> {
+  if (producto.flagBalanza !== "PESABLE") return true;
+  const raiz = await obtenerCategoriaRaiz(producto.categoriaId);
+  return raiz.nombre === "Congelados";
+}
+
+inventarioRouter.post("/entrada-factura", async (req, res) => {
+  const parsed = facturaSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0].message });
+  }
+  const { proveedorId, numeroFactura, fecha, usuarioId, lineas } = parsed.data;
+
+  const usuario = await validarUsuario(usuarioId);
+  if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
+
+  const proveedor = await prisma.proveedor.findUnique({ where: { id: proveedorId } });
+  if (!proveedor) return res.status(400).json({ error: "El proveedor indicado no existe" });
+
+  const productos = await prisma.producto.findMany({ where: { id: { in: lineas.map((l) => l.productoId) } } });
+  if (productos.length !== new Set(lineas.map((l) => l.productoId)).size) {
+    return res.status(404).json({ error: "Uno de los productos indicados no existe" });
+  }
+  const productoPorId = new Map(productos.map((p) => [p.id, p]));
+
+  for (const linea of lineas) {
+    const producto = productoPorId.get(linea.productoId)!;
+    if (!(await puedeCargarsePorFactura(producto))) {
+      return res.status(400).json({
+        error: `"${producto.descripcion}" se vende por peso y no es de la categoría Congelados — esos productos se cargan por Ingreso a cámara`,
+      });
+    }
+  }
+
+  const fechaMovimientos = parsearFechaSoloDia(fecha) ?? new Date();
+
+  const movimientos = await prisma.$transaction(async (tx) => {
+    const creados = [];
+    for (const linea of lineas) {
+      await tx.producto.update({
+        where: { id: linea.productoId },
+        data: {
+          stockActual: { increment: linea.cantidad },
+          ...(linea.umbralStockBajo != null ? { umbralStockBajo: linea.umbralStockBajo } : {}),
+        },
+      });
+      const movimiento = await tx.movimientoInventario.create({
+        data: {
+          productoId: linea.productoId,
+          usuarioId,
+          tipo: "entrada",
+          motivo: "compra",
+          cantidad: linea.cantidad,
+          costoUnitario: linea.costoUnitario,
+          proveedorId,
+          numeroFactura,
+          fecha: fechaMovimientos,
+        },
+        include: { producto: true },
+      });
+      creados.push(movimiento);
+    }
+    return creados;
+  });
+
+  res.status(201).json({ movimientos });
+});
+
 // --- Reporte de facturas (movimientos de compra agrupados por proveedor + N° factura) ---
 //
-// Solo lectura, para ver lo cargado antes de retirar "Cargar factura" (ver
-// POST /entrada-factura, eliminado) — toda compra nueva entra por Ingreso a
-// cámara (ver server/routes/camara.ts).
+// Incluye lo cargado por "Cargar factura" (arriba) y, antes de que esa
+// pantalla quedara restringida a productos congelados/por unidad, también
+// lo que entraba ahí para carne fresca — esa carne fresca ahora entra por
+// Ingreso a cámara (ver server/routes/camara.ts) y se ve en el reporte de
+// compras junto a lo de factura (ver server/routes/reportes.ts).
 
 inventarioRouter.get("/facturas", async (req, res) => {
   const desde = typeof req.query.desde === "string" && req.query.desde ? new Date(req.query.desde) : undefined;
