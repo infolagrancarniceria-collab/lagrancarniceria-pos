@@ -825,6 +825,33 @@ export interface AjusteCuadratura {
   fecha: string;
 }
 
+export interface ArqueoCaja {
+  id: number;
+  sesionCajaId: number;
+  billetes1000: number;
+  billetes2000: number;
+  billetes5000: number;
+  billetes10000: number;
+  billetes20000: number;
+  monedas10: number;
+  monedas50: number;
+  monedas100: number;
+  monedas500: number;
+  fecha: string;
+}
+
+export interface DesgloseEfectivo {
+  billetes1000: number;
+  billetes2000: number;
+  billetes5000: number;
+  billetes10000: number;
+  billetes20000: number;
+  monedas10: number;
+  monedas50: number;
+  monedas100: number;
+  monedas500: number;
+}
+
 export interface ResumenSesion {
   sesion: SesionCaja;
   cantidadVentas: number;
@@ -847,6 +874,7 @@ export interface ResumenSesion {
   ajustes: AjusteCuadratura[];
   totalAjustesEfectivo: number;
   totalAjustesTarjeta: number;
+  arqueo: ArqueoCaja | null;
   efectivoEsperado: number;
   diferencia: number | null;
 }
@@ -1575,8 +1603,10 @@ export const api = {
       usuarioAutorizoId?: number;
     }) => post<SesionCaja>("/api/caja/sesiones", data),
     resumenSesion: (id: number) => get<ResumenSesion>(`/api/caja/sesiones/${id}/resumen`),
-    cerrarSesion: (id: number, data: { efectivoContado: number; usuarioId: number }) =>
-      post<ResumenSesion>(`/api/caja/sesiones/${id}/cerrar`, data),
+    cerrarSesion: (
+      id: number,
+      data: { efectivoContado: number; usuarioId: number; desgloseEfectivo?: DesgloseEfectivo }
+    ) => post<ResumenSesion>(`/api/caja/sesiones/${id}/cerrar`, data),
     ventasAbiertasDeSesion: (id: number) => get<Venta[]>(`/api/caja/sesiones/${id}/ventas-abiertas`),
     dividirSesion: (id: number, data: { corte: string; usuarioId: number; clave: string }) =>
       post<{ sesionAnterior: ResumenSesion; sesionActual: ResumenSesion }>(`/api/caja/sesiones/${id}/dividir`, data),
