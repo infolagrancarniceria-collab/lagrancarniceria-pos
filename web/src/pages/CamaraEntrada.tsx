@@ -72,11 +72,12 @@ function lineaVacia(id: number): LineaForm {
 
 // Borrador en localStorage para no perder lo tipeado si hay que salir a
 // atender la caja a mitad de ingresar una factura a cámara — mismo patrón
-// que tenía "Cargar factura" (ver historial de CargarFactura.tsx, ahora
-// eliminada: todo ingreso de mercadería pasa por esta pantalla). Se guarda
-// en cada cambio y se borra recién al registrar la factura con éxito. No
-// persiste "resultados"/"buscarProducto" (del buscador) ni "info" (se
-// vuelve a pedir al restaurar, ver el useEffect más abajo).
+// que usa CargarFactura.tsx para la carne fresca por peso; esta pantalla es
+// solo para eso, el resto (congelados, productos por unidad) entra por
+// Cargar factura. Se guarda en cada cambio y se borra recién al registrar la
+// factura con éxito. No persiste "resultados"/"buscarProducto" (del
+// buscador) ni "info" (se vuelve a pedir al restaurar, ver el useEffect más
+// abajo).
 const CLAVE_BORRADOR = "granCarniceria_borradorCamaraEntrada_v1";
 
 type LineaBorrador = Pick<
