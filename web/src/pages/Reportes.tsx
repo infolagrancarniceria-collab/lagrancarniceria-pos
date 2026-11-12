@@ -366,6 +366,22 @@ export default function Reportes() {
                 </p>
               )}
 
+              {reporteUtilidad.gastosDetalle.length > 0 && (
+                <>
+                  <h3>Gastos por categoría</h3>
+                  <GraficoBarras
+                    datos={Array.from(
+                      reporteUtilidad.gastosDetalle
+                        .reduce((mapa, g) => mapa.set(g.categoria, (mapa.get(g.categoria) ?? 0) + g.monto), new Map<string, number>())
+                        .entries()
+                    )
+                      .map(([etiqueta, valor]) => ({ etiqueta, valor }))
+                      .sort((a, b) => b.valor - a.valor)}
+                    formatoValor={formatoCLP}
+                  />
+                </>
+              )}
+
               <h3>Detalle de gastos del período</h3>
               <table className="tabla">
                 <thead>
@@ -685,9 +701,28 @@ export default function Reportes() {
                 </tbody>
               </table>
 
+              <h3>Ventas, compras, gastos y utilidad — A vs B</h3>
+              <GraficoBarras
+                datos={[
+                  { etiqueta: "Ventas (A)", valor: compA.ventas.totalVentas },
+                  { etiqueta: "Ventas (B)", valor: compB.ventas.totalVentas },
+                  { etiqueta: "Compras (A)", valor: compA.inventario.comprasTotal },
+                  { etiqueta: "Compras (B)", valor: compB.inventario.comprasTotal },
+                  { etiqueta: "Gastos (A)", valor: compA.utilidad.totalGastos },
+                  { etiqueta: "Gastos (B)", valor: compB.utilidad.totalGastos },
+                  { etiqueta: "Utilidad real (A)", valor: compA.utilidad.utilidadReal },
+                  { etiqueta: "Utilidad real (B)", valor: compB.utilidad.utilidadReal },
+                ]}
+                formatoValor={formatoCLP}
+              />
+
               <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "1.5rem" }}>
                 <div>
                   <h3>Más vendidos (Período B)</h3>
+                  <GraficoBarras
+                    datos={compB.ventas.masVendidosPorIngreso.slice(0, 5).map((p) => ({ etiqueta: p.descripcion, valor: p.ingreso }))}
+                    formatoValor={formatoCLP}
+                  />
                   <table className="tabla">
                     <thead>
                       <tr><th>Producto</th><th>Cantidad</th><th>Ingreso</th></tr>
@@ -705,6 +740,9 @@ export default function Reportes() {
                 </div>
                 <div>
                   <h3>Menos vendidos (Período B)</h3>
+                  <GraficoBarras
+                    datos={compB.ventas.menosVendidosPorCantidad.slice(0, 5).map((p) => ({ etiqueta: p.descripcion, valor: p.cantidad }))}
+                  />
                   <table className="tabla">
                     <thead>
                       <tr><th>Producto</th><th>Cantidad</th><th>Ingreso</th></tr>
@@ -761,6 +799,12 @@ export default function Reportes() {
                               <p style={{ fontSize: "1.2rem", margin: "0.25rem 0" }}>{porcentajeDelTotal.toFixed(1)}%</p>
                             </div>
                           </div>
+                          {catB.masVendidos.length > 0 && (
+                            <GraficoBarras
+                              datos={catB.masVendidos.map((p) => ({ etiqueta: p.descripcion, valor: p.ingreso }))}
+                              formatoValor={formatoCLP}
+                            />
+                          )}
                           <table className="tabla" style={{ marginTop: "1rem" }}>
                             <thead>
                               <tr><th>Producto</th><th>Cantidad</th><th>Ingreso</th></tr>
@@ -863,6 +907,24 @@ export default function Reportes() {
               .filter(([, cantidad]) => cantidad > 0)
               .map(([motivo, cantidad]) => ({ etiqueta: etiquetasMotivo[motivo] ?? motivo, valor: cantidad }))}
           />
+
+          {reporteInventario.comprasDetalle.length > 0 && (
+            <>
+              <h3>Compras por proveedor</h3>
+              <GraficoBarras
+                datos={Array.from(
+                  reporteInventario.comprasDetalle.reduce(
+                    (mapa, c) => mapa.set(c.proveedor ?? "Sin proveedor", (mapa.get(c.proveedor ?? "Sin proveedor") ?? 0) + c.subtotal),
+                    new Map<string, number>()
+                  )
+                  .entries()
+                )
+                  .map(([etiqueta, valor]) => ({ etiqueta, valor }))
+                  .sort((a, b) => b.valor - a.valor)}
+                formatoValor={formatoCLP}
+              />
+            </>
+          )}
 
           <h3>Detalle de compras del período</h3>
           <p className="ayuda">
