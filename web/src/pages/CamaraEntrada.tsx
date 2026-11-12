@@ -151,6 +151,14 @@ export default function CamaraEntrada() {
   const [proveedorSeleccionado, setProveedorSeleccionado] = useState<Proveedor | null>(
     borrador?.proveedorSeleccionado ?? null
   );
+  // Crear un proveedor nuevo sin salir de esta pantalla — a pedido del
+  // usuario, para no tener que ir a Proveedores antes de poder cargar un
+  // lote de alguien que todavía no está en la lista.
+  const [creandoProveedor, setCreandoProveedor] = useState(false);
+  const [nuevoProveedorNombre, setNuevoProveedorNombre] = useState("");
+  const [nuevoProveedorContacto, setNuevoProveedorContacto] = useState("");
+  const [creandoProveedorError, setCreandoProveedorError] = useState<string | null>(null);
+  const [guardandoProveedor, setGuardandoProveedor] = useState(false);
   const [numeroFactura, setNumeroFactura] = useState(borrador?.numeroFactura ?? "");
   const [fecha, setFecha] = useState(borrador?.fecha ?? hoy());
 
@@ -237,6 +245,37 @@ export default function CamaraEntrada() {
         // Un fallo acá no debe bloquear cargar la factura — el guardado
         // igual vuelve a revisar por su cuenta como respaldo.
       });
+  }
+
+  function abrirCrearProveedor() {
+    setNuevoProveedorNombre(buscarProveedor.trim());
+    setNuevoProveedorContacto("");
+    setCreandoProveedorError(null);
+    setCreandoProveedor(true);
+  }
+
+  async function crearProveedor() {
+    setCreandoProveedorError(null);
+    if (!nuevoProveedorNombre.trim()) {
+      setCreandoProveedorError("Falta el nombre del proveedor");
+      return;
+    }
+    setGuardandoProveedor(true);
+    try {
+      const proveedor = await api.proveedores.crear({
+        nombre: nuevoProveedorNombre.trim(),
+        contacto: nuevoProveedorContacto.trim() || null,
+      });
+      setProveedores((actual) => [...actual, proveedor].sort((a, b) => a.nombre.localeCompare(b.nombre)));
+      setProveedorSeleccionado(proveedor);
+      setBuscarProveedor("");
+      setCreandoProveedor(false);
+      mostrarToast("Proveedor creado", proveedor.nombre);
+    } catch (e) {
+      setCreandoProveedorError((e as Error).message);
+    } finally {
+      setGuardandoProveedor(false);
+    }
   }
 
   const proveedoresFiltrados = buscarProveedor.trim()
@@ -527,6 +566,9 @@ export default function CamaraEntrada() {
                     {p.nombre}
                   </button>
                 ))}
+                <button type="button" className="resultado-item" onClick={abrirCrearProveedor}>
+                  + Nuevo proveedor{buscarProveedor.trim() ? `: "${buscarProveedor.trim()}"` : ""}
+                </button>
               </div>
             )}
           </div>
@@ -537,6 +579,39 @@ export default function CamaraEntrada() {
                 Cambiar
               </button>
             </p>
+          )}
+          {creandoProveedor && (
+            <div className="tarjeta-mini">
+              <p>
+                <strong>Nuevo proveedor</strong>
+              </p>
+              {creandoProveedorError && <p className="error">{creandoProveedorError}</p>}
+              <label className="ayuda">
+                Nombre
+                <input
+                  type="text"
+                  value={nuevoProveedorNombre}
+                  onChange={(e) => setNuevoProveedorNombre(e.target.value)}
+                  autoFocus
+                />
+              </label>
+              <label className="ayuda">
+                Contacto (opcional)
+                <input
+                  type="text"
+                  value={nuevoProveedorContacto}
+                  onChange={(e) => setNuevoProveedorContacto(e.target.value)}
+                />
+              </label>
+              <div className="fila-inline">
+                <button type="button" className="boton boton-primario" onClick={crearProveedor} disabled={guardandoProveedor}>
+                  {guardandoProveedor ? "Guardando..." : "Crear y elegir"}
+                </button>
+                <button type="button" onClick={() => setCreandoProveedor(false)} disabled={guardandoProveedor}>
+                  Cancelar
+                </button>
+              </div>
+            </div>
           )}
         </label>
         <label>
