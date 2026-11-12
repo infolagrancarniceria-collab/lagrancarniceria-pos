@@ -108,6 +108,15 @@ export default function Layout() {
     );
   }
 
+  // Encabezado chico entre grupos del menú — a pedido del usuario, para que
+  // se entienda de un vistazo a qué área pertenece cada ítem (antes era una
+  // lista plana de 19 ítems sin ninguna separación). No cambia el orden ni
+  // las rutas, solo agrega el rótulo — se esconde en "modo caja exclusiva"
+  // (puro ícono, sin espacio para texto, ver .sidebar-compacta en el CSS).
+  function Seccion({ etiqueta }: { etiqueta: string }) {
+    return <div className="nav-seccion">{etiqueta}</div>;
+  }
+
   return (
     <div className="layout">
       <header className={`sidebar${modoCaja ? " sidebar-compacta" : ""}`}>
@@ -137,15 +146,23 @@ export default function Layout() {
           ) : (
             <>
               <Item to="/avisos" emoji="🔔" etiqueta="Avisos" badge={totalAvisos} />
+
+              <Seccion etiqueta="Catálogo" />
               <Item to="/productos" emoji="🥩" etiqueta="Productos" />
               <Item to="/productos/margenes" emoji="🧩" etiqueta="Combos" />
               <Item to="/productos/control-precios" emoji="📈" etiqueta="Control de precios" />
               <Item to="/cambio-masivo" emoji="💲" etiqueta="Cambio masivo" />
               <Item to="/historial" emoji="🕘" etiqueta="Historial" />
               <Item to="/categorias" emoji="🗂️" etiqueta="Categorías" />
+
+              <Seccion etiqueta="Inventario" />
               <Item to="/inventario" emoji="📦" etiqueta="Inventario" />
+
+              <Seccion etiqueta="Reportes" />
               <Item to="/reportes" emoji="📊" etiqueta="Reportes" />
               <Item to="/gastos" emoji="🧾" etiqueta="Gastos" />
+
+              <Seccion etiqueta="Caja y ventas" />
               <Item to="/caja" emoji="🧮" etiqueta="Caja" />
               <Item to="/caja/creditos" emoji="🤝" etiqueta="Créditos" />
               <Item
@@ -163,10 +180,14 @@ export default function Layout() {
               />
               <Item to="/clientes" emoji="🧑‍🤝‍🧑" etiqueta="Clientes" />
               <Item to="/pedidos-web" emoji="🛵" etiqueta="Pedidos web" badge={avisos?.pedidosWebPendientes.cantidad} />
+
+              <Seccion etiqueta="Producción" />
               <Item to="/camara" emoji="❄️" etiqueta="Cámara" />
               <Item to="/charcuteria" emoji="🥓" etiqueta="Charcutería" />
               <Item to="/asistente" emoji="🤖" etiqueta="Asistente" />
               <Item to="/balanza" emoji="⚖️" etiqueta="Balanza" />
+
+              <Seccion etiqueta="Sistema" />
               <Item to="/configuracion" emoji="⚙️" etiqueta="Configuración" />
             </>
           )}

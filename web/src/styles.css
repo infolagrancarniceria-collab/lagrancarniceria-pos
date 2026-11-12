@@ -270,6 +270,22 @@ select {
   font-size: 0.92rem;
 }
 
+/* Rótulo chico entre grupos del menú (Catálogo, Inventario, Reportes...) —
+   puramente visual, no cambia nada de la navegación en sí (ver Seccion en
+   Layout.tsx). Se esconde en modo compacto porque ahí no hay espacio para
+   texto, solo íconos. */
+.nav-seccion {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(251, 233, 225, 0.55);
+  padding: 0.6rem 0.65rem 0.1rem;
+}
+.sidebar-compacta .nav-seccion {
+  display: none;
+}
+
 /* "Modo caja exclusiva" (ver web/src/lib/modoCaja.ts) en el PC del mesón:
    a pedido del usuario, la barra lateral queda lo más angosta posible —
    solo íconos (el nombre de cada sección queda como title, visible al
@@ -1136,6 +1152,31 @@ select {
 .destino-tile.activo {
   background: var(--destino-color, var(--color-borde));
   color: #fff;
+}
+/* Selector de tipo de gráfico (barras/torta/línea) encima de cada gráfico
+   — a pedido del usuario, para poder ver el mismo reporte de distintas
+   formas y elegir cuál (ver GraficoElegible en Graficos.tsx). Chico a
+   propósito: hay muchos gráficos en Reportes, no debe competir en tamaño
+   con el gráfico mismo. */
+.selector-tipo-grafico {
+  display: flex;
+  gap: 0.35rem;
+  margin-bottom: 0.5rem;
+}
+.chip-grafico {
+  font-size: 0.76rem;
+  font-weight: 600;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  border: 1.5px solid var(--color-borde);
+  background: var(--color-superficie);
+  color: var(--color-texto-suave);
+  cursor: pointer;
+}
+.chip-grafico.activo {
+  border-color: var(--color-primario);
+  background: color-mix(in srgb, var(--color-primario) 9%, var(--color-superficie));
+  color: var(--color-primario);
 }
 .grafico-barras {
   display: flex;

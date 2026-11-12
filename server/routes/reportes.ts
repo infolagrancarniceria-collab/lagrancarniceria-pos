@@ -263,17 +263,18 @@ export async function calcularReporteInventario(desdeTexto?: unknown, hastaTexto
     .sort((a, b) => b.cantidad - a.cantidad)
     .slice(0, 10);
 
-  // Compras (ítem 5 del pedido del usuario) — de dos fuentes distintas:
-  // - "factura": entradas de inventario con motivo "compra" (ver "Cargar
-  //   factura", eliminada — esto solo sigue mostrando lo cargado ANTES de
-  //   ese cambio). El costo se guarda por unidad (costoUnitario), así que
-  //   el total en $ de cada línea es cantidad × costoUnitario.
-  // - "camara": lotes de "Ingreso a cámara" (ver LoteCamara), que es por
-  //   donde entra toda compra nueva desde ese cambio. El costo se guarda
-  //   por kilo (costoNetoKg) y el total ya viene calculado (totalNeto).
-  // Se combinan en una sola lista para que el total de Compras no se quede
-  // pegado en $0 apenas deje de usarse "Cargar factura" — una entrada sin
-  // costo cargado (ej. ajuste manual, no factura real) no suma al total.
+  // Compras — de dos fuentes distintas, ambas cuentan como "compra" para
+  // todo el resto de Reportes (resumen, pestaña Compras, comparaciones):
+  // - "factura": entradas de inventario con motivo "compra" — hoy eso es
+  //   "Cargar factura" (congelados y productos por unidad) más cualquier
+  //   entrada individual registrada con motivo "compra" (ej. desde el
+  //   Asistente). El costo se guarda por unidad (costoUnitario), así que
+  //   el total en $ de cada línea es cantidad × costoUnitario. Una entrada
+  //   sin costo cargado (ej. ajuste manual, no es una compra real) no
+  //   suma al total porque no tiene motivo "compra".
+  // - "camara": lotes de "Ingreso a cámara" (ver LoteCamara) — carne
+  //   fresca por peso. El costo se guarda por kilo (costoNetoKg) y el
+  //   total ya viene calculado (totalNeto).
   const comprasMovimientos = movimientos.filter((m) => m.tipo === "entrada" && m.motivo === "compra");
   const comprasDeFactura = comprasMovimientos.map((m) => ({
     id: m.id,
@@ -436,6 +437,7 @@ export async function calcularReporteUtilidad(desdeTexto?: unknown, hastaTexto?:
   const gastosDetalle = gastosEnRango.map((g) => ({
     id: g.id,
     categoria: g.categoria,
+    concepto: g.concepto,
     descripcion: g.descripcion,
     monto: g.monto,
     fecha: g.fecha.toISOString(),
