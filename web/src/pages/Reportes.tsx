@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   api,
   formatoCLP,
@@ -8,8 +9,9 @@ import {
   type ReporteUtilidad,
   type ReporteVentas,
 } from "../api";
-import { GraficoBarras, GraficoLinea, GraficoTorta } from "../components/Graficos";
+import { GraficoElegible } from "../components/Graficos";
 import ModalAlerta from "../components/ModalAlerta";
+import CuadraturaCaja from "./CuadraturaCaja";
 
 const etiquetasMotivo: Record<string, string> = {
   venta: "Venta",
@@ -67,14 +69,21 @@ function Comparacion({ actual, anterior }: { actual: number; anterior: number })
   );
 }
 
-type Pestana = "resumen" | "ventas" | "comparar" | "despachos" | "inventario" | "precios";
+// Ítem 6 del pedido del usuario: la antigua pestaña "Inventario" mezclaba
+// dos temas distintos (compras a proveedores vs. movimientos de stock) y
+// no había forma de revisar la cuadratura de días anteriores sin salir a
+// Caja — separado en pestañas propias para que cada una se entienda de
+// un vistazo.
+type Pestana = "resumen" | "ventas" | "compras" | "stock" | "cuadratura" | "comparar" | "despachos" | "precios";
 
 const PESTANAS: { id: Pestana; etiqueta: string }[] = [
   { id: "resumen", etiqueta: "Resumen" },
   { id: "ventas", etiqueta: "Ventas" },
+  { id: "compras", etiqueta: "Compras" },
+  { id: "stock", etiqueta: "Stock" },
+  { id: "cuadratura", etiqueta: "Cuadratura" },
   { id: "comparar", etiqueta: "Comparar fechas" },
   { id: "despachos", etiqueta: "Despachos" },
-  { id: "inventario", etiqueta: "Inventario" },
   { id: "precios", etiqueta: "Precios" },
 ];
 
@@ -94,7 +103,27 @@ function ticketPromedio(d: DatosPeriodo): number {
 export default function Reportes() {
   const [desde, setDesde] = useState(fechaHace(30));
   const [hasta, setHasta] = useState(hoy());
-  const [pestana, setPestana] = useState<Pestana>("resumen");
+
+  // La pestaña se refleja en la URL (?tab=...) para poder volver a ella con
+  // un link desde otra pantalla (ej. "Ver compras" desde Inventario) — a
+  // pedido del usuario, para que navegar entre reportes relacionados sea
+  // más directo en vez de siempre caer en "Resumen" y tener que buscar la
+  // pestaña correcta a mano.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabInicial = PESTANAS.find((p) => p.id === searchParams.get("tab"))?.id ?? "resumen";
+  const [pestana, setPestanaState] = useState<Pestana>(tabInicial);
+
+  function setPestana(id: Pestana) {
+    setPestanaState(id);
+    setSearchParams(
+      (anteriores) => {
+        const siguientes = new URLSearchParams(anteriores);
+        siguientes.set("tab", id);
+        return siguientes;
+      },
+      { replace: true }
+    );
+  }
   const [reporteInventario, setReporteInventario] = useState<ReporteInventario | null>(null);
   const [reportePrecios, setReportePrecios] = useState<ReportePrecios | null>(null);
   const [reporteVentas, setReporteVentas] = useState<ReporteVentas | null>(null);
@@ -126,6 +155,35 @@ export default function Reportes() {
   const [compB, setCompB] = useState<DatosPeriodo | null>(null);
   const [comparando, setComparando] = useState(false);
   const [categoriaAbierta, setCategoriaAbierta] = useState<string | null>(null);
+  // Desglose de gastos por concepto dentro de una categoría (ej.
+  // "Transporte" → Transportista, Combustible) — a pedido del usuario,
+  // estado propio para no interferir con categoriaAbierta de "Comparar
+  // fechas" (son pestañas y categorías distintas).
+  const [categoriaGastoAbierta, setCategoriaGastoAbierta] = useState<string | null>(null);
+
+  const gastosPorCategoria = reporteUtilidad
+    ? Array.from(
+        reporteUtilidad.gastosDetalle.reduce(
+          (mapa, g) => mapa.set(g.categoria, (mapa.get(g.categoria) ?? 0) + g.monto),
+          new Map<string, number>()
+        )
+      )
+        .map(([categoria, total]) => ({ categoria, total }))
+        .sort((a, b) => b.total - a.total)
+    : [];
+
+  function desgloseGastosPorConcepto(categoria: string): { concepto: string; total: number }[] {
+    if (!reporteUtilidad) return [];
+    const mapa = new Map<string, number>();
+    for (const g of reporteUtilidad.gastosDetalle) {
+      if (g.categoria !== categoria) continue;
+      const clave = g.concepto?.trim() || "Sin concepto";
+      mapa.set(clave, (mapa.get(clave) ?? 0) + g.monto);
+    }
+    return Array.from(mapa.entries())
+      .map(([concepto, total]) => ({ concepto, total }))
+      .sort((a, b) => b.total - a.total);
+  }
 
   function cargarDatosPeriodo(d: string, h: string): Promise<DatosPeriodo> {
     return Promise.all([api.reportes.ventas(d, h), api.reportes.inventario(d, h), api.reportes.utilidad(d, h)]).then(
@@ -216,26 +274,30 @@ export default function Reportes() {
       <h1>Reportes</h1>
       {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
 
-      <div className="fila-inline">
-        {PRESETS.map((p) => (
-          <button key={p.etiqueta} type="button" className="boton-chico" onClick={() => aplicarPreset(...p.rango())}>
-            {p.etiqueta}
-          </button>
-        ))}
-      </div>
-      <div className="fila-inline">
-        <label>
-          Desde
-          <input type="date" value={desde} onChange={(e) => setDesde(e.target.value)} />
-        </label>
-        <label>
-          Hasta
-          <input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} />
-        </label>
-        <button type="button" onClick={cargar} disabled={cargando}>
-          {cargando ? "Cargando..." : "Actualizar reportes"}
-        </button>
-      </div>
+      {pestana !== "cuadratura" && (
+        <>
+          <div className="fila-inline">
+            {PRESETS.map((p) => (
+              <button key={p.etiqueta} type="button" className="boton-chico" onClick={() => aplicarPreset(...p.rango())}>
+                {p.etiqueta}
+              </button>
+            ))}
+          </div>
+          <div className="fila-inline">
+            <label>
+              Desde
+              <input type="date" value={desde} onChange={(e) => setDesde(e.target.value)} />
+            </label>
+            <label>
+              Hasta
+              <input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} />
+            </label>
+            <button type="button" onClick={cargar} disabled={cargando}>
+              {cargando ? "Cargando..." : "Actualizar reportes"}
+            </button>
+          </div>
+        </>
+      )}
 
       <div className="chips-categoria">
         {PESTANAS.map((p) => (
@@ -258,6 +320,8 @@ export default function Reportes() {
           <p className="ayuda">
             {desde} a {hasta} — comparado contra el mismo largo de días justo antes.
           </p>
+
+          <h3>📈 Ventas</h3>
           <div className="fila-inline" style={{ alignItems: "stretch" }}>
             {reporteVentas && reporteVentasAnterior && (
               <div className="tarjeta tarjeta-mini">
@@ -271,32 +335,22 @@ export default function Reportes() {
               <div className="tarjeta tarjeta-mini">
                 <strong>Despachos</strong>
                 <p style={{ fontSize: "1.4rem", margin: "0.25rem 0" }}>{reporteDespachos.cantidadDespachos}</p>
-                <p className="ayuda">{formatoCLP(reporteDespachos.totalCostoEnvio)} cobrado por envío</p>
-              </div>
-            )}
-            {reporteInventario && (
-              <div className="tarjeta tarjeta-mini">
-                <strong>Merma</strong>
-                <p style={{ fontSize: "1.4rem", margin: "0.25rem 0" }}>
-                  {reporteInventario.salidasPorMotivo.descarte ?? 0}
+                <p className="ayuda">
+                  {formatoCLP(reporteDespachos.totalCostoEnvio)} cobrado por envío — ver pestaña Despachos
                 </p>
-                <p className="ayuda">unidades/kg descartados en el período</p>
               </div>
             )}
-            {reportePrecios && (
-              <div className="tarjeta tarjeta-mini">
-                <strong>Cambios de precio</strong>
-                <p style={{ fontSize: "1.4rem", margin: "0.25rem 0" }}>{reportePrecios.totalCambios}</p>
-                <p className="ayuda">en el período — ver pestaña Precios para el detalle</p>
-              </div>
-            )}
+          </div>
+
+          <h3>🧾 Compras y gastos</h3>
+          <div className="fila-inline" style={{ alignItems: "stretch" }}>
             {reporteInventario && (
               <div className="tarjeta tarjeta-mini">
                 <strong>Compras</strong>
                 <p style={{ fontSize: "1.4rem", margin: "0.25rem 0" }}>{formatoCLP(reporteInventario.comprasTotal)}</p>
                 <p className="ayuda">
-                  {reporteInventario.comprasDetalle.length} línea{reporteInventario.comprasDetalle.length === 1 ? "" : "s"} de
-                  factura
+                  {reporteInventario.comprasDetalle.length} línea{reporteInventario.comprasDetalle.length === 1 ? "" : "s"}{" "}
+                  (facturas e ingresos a cámara) — ver pestaña Compras
                 </p>
               </div>
             )}
@@ -305,30 +359,87 @@ export default function Reportes() {
                 <strong>Gastos</strong>
                 <p style={{ fontSize: "1.4rem", margin: "0.25rem 0" }}>{formatoCLP(reporteUtilidad.totalGastos)}</p>
                 <p className="ayuda">
-                  {reporteUtilidad.gastosDetalle.length} gasto{reporteUtilidad.gastosDetalle.length === 1 ? "" : "s"} en el
-                  período
-                </p>
-              </div>
-            )}
-            {reporteUtilidad && (
-              <div className="tarjeta tarjeta-mini">
-                <strong>Utilidad aproximada</strong>
-                <p style={{ fontSize: "1.4rem", margin: "0.25rem 0" }}>
-                  <span className={reporteUtilidad.utilidadReal < 0 ? "error" : "exito"}>
-                    {formatoCLP(reporteUtilidad.utilidadReal)}
-                  </span>
-                </p>
-                <p className="ayuda">
-                  real (ventas − costo mercadería − gastos) · simple (sin costo):{" "}
-                  {formatoCLP(reporteUtilidad.utilidadSimple)}
+                  {reporteUtilidad.gastosDetalle.length} gasto{reporteUtilidad.gastosDetalle.length === 1 ? "" : "s"} — ver
+                  detalle por categoría más abajo
                 </p>
               </div>
             )}
           </div>
 
+          {reporteVentas && reporteInventario && reporteUtilidad && (
+            <>
+              <h4>Ventas vs Compras vs Gastos</h4>
+              <GraficoElegible
+                datos={[
+                  { etiqueta: "Ventas", valor: reporteVentas.totalVentas },
+                  { etiqueta: "Compras", valor: reporteInventario.comprasTotal },
+                  { etiqueta: "Gastos", valor: reporteUtilidad.totalGastos },
+                ]}
+                formatoValor={formatoCLP}
+              />
+              <p className="ayuda">
+                {reporteVentas.totalVentas > 0
+                  ? `Compras: ${((reporteInventario.comprasTotal / reporteVentas.totalVentas) * 100).toFixed(1)}% de las ventas · Gastos: ${(
+                      (reporteUtilidad.totalGastos / reporteVentas.totalVentas) *
+                      100
+                    ).toFixed(1)}% de las ventas.`
+                  : "No hubo ventas en este período para comparar contra compras y gastos."}
+              </p>
+            </>
+          )}
+
+          {reporteUtilidad && reporteUtilidad.gastosDetalle.length > 0 && (
+            <>
+              <h4>Gastos por categoría</h4>
+              <GraficoElegible datos={gastosPorCategoria.map(({ categoria, total }) => ({ etiqueta: categoria, valor: total }))} formatoValor={formatoCLP} />
+              <p className="ayuda">
+                Haz clic en una categoría para ver cuánto se fue en cada concepto (ej. "Transporte" → Transportista,
+                Combustible) — ver <Link to="/gastos">Gastos</Link> para registrar un concepto nuevo.
+              </p>
+              <div className="lista-categorias-comparar">
+                {gastosPorCategoria.map(({ categoria, total }) => {
+                  const abierta = categoriaGastoAbierta === categoria;
+                  return (
+                    <div key={categoria} className="tarjeta" style={{ marginBottom: "0.5rem" }}>
+                      <button
+                        type="button"
+                        onClick={() => setCategoriaGastoAbierta(abierta ? null : categoria)}
+                        className="fila-inline"
+                        style={{ width: "100%", justifyContent: "space-between", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+                      >
+                        <strong>
+                          {abierta ? "▼" : "▶"} {categoria}
+                        </strong>
+                        <span className="ayuda">{formatoCLP(total)}</span>
+                      </button>
+                      {abierta && (
+                        <table className="tabla" style={{ marginTop: "0.75rem" }}>
+                          <thead>
+                            <tr>
+                              <th>Concepto</th>
+                              <th>Total</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {desgloseGastosPorConcepto(categoria).map((d) => (
+                              <tr key={d.concepto}>
+                                <td>{d.concepto}</td>
+                                <td>{formatoCLP(d.total)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+
+          <h3>💰 Utilidad aproximada — no es contabilidad real</h3>
           {reporteUtilidad && (
             <>
-              <h3>Utilidad aproximada — no es contabilidad real</h3>
               <p className="ayuda">
                 "Simple" solo resta los gastos generales. "Real" además resta el costo de la mercadería vendida —
                 más cercana a la ganancia real, pero depende de que el costo de cada producto esté bien cargado (ver
@@ -365,56 +476,33 @@ export default function Reportes() {
                   utilidad real de este período es, en realidad, algo menor a la que se muestra.
                 </p>
               )}
-
-              {reporteUtilidad.gastosDetalle.length > 0 && (
-                <>
-                  <h3>Gastos por categoría</h3>
-                  <GraficoBarras
-                    datos={Array.from(
-                      reporteUtilidad.gastosDetalle
-                        .reduce((mapa, g) => mapa.set(g.categoria, (mapa.get(g.categoria) ?? 0) + g.monto), new Map<string, number>())
-                        .entries()
-                    )
-                      .map(([etiqueta, valor]) => ({ etiqueta, valor }))
-                      .sort((a, b) => b.valor - a.valor)}
-                    formatoValor={formatoCLP}
-                  />
-                </>
-              )}
-
-              <h3>Detalle de gastos del período</h3>
-              <table className="tabla">
-                <thead>
-                  <tr>
-                    <th>Fecha</th>
-                    <th>Categoría</th>
-                    <th>Nombre del gasto</th>
-                    <th>Monto</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {reporteUtilidad.gastosDetalle.map((g) => (
-                    <tr key={g.id}>
-                      <td>{new Date(g.fecha).toLocaleDateString("es-CL")}</td>
-                      <td>{g.categoria}</td>
-                      <td>{g.descripcion ?? "—"}</td>
-                      <td>{formatoCLP(g.monto)}</td>
-                    </tr>
-                  ))}
-                  {reporteUtilidad.gastosDetalle.length === 0 && (
-                    <tr>
-                      <td colSpan={4}>No hubo gastos en este período.</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
             </>
           )}
+
+          <h3>📦 Otros indicadores</h3>
+          <div className="fila-inline" style={{ alignItems: "stretch" }}>
+            {reporteInventario && (
+              <div className="tarjeta tarjeta-mini">
+                <strong>Merma</strong>
+                <p style={{ fontSize: "1.4rem", margin: "0.25rem 0" }}>
+                  {reporteInventario.salidasPorMotivo.descarte ?? 0}
+                </p>
+                <p className="ayuda">unidades/kg descartados — ver pestaña Stock</p>
+              </div>
+            )}
+            {reportePrecios && (
+              <div className="tarjeta tarjeta-mini">
+                <strong>Cambios de precio</strong>
+                <p style={{ fontSize: "1.4rem", margin: "0.25rem 0" }}>{reportePrecios.totalCambios}</p>
+                <p className="ayuda">en el período — ver pestaña Precios para el detalle</p>
+              </div>
+            )}
+          </div>
 
           {reporteVentas && reporteVentas.porCategoria.length > 0 && (
             <>
               <h3>Ventas por categoría</h3>
-              <GraficoBarras
+              <GraficoElegible
                 datos={reporteVentas.porCategoria.map((c) => ({ etiqueta: c.categoria, valor: c.ingreso }))}
                 formatoValor={formatoCLP}
               />
@@ -422,8 +510,36 @@ export default function Reportes() {
           )}
 
           <p className="ayuda">
-            Usa las pestañas de arriba para el detalle completo de cada área, con sus propias tablas y gráficos.
+            Usa las pestañas de arriba para el detalle completo de cada área, con sus propias tablas y gráficos. Para
+            registrar un gasto nuevo, ve a <Link to="/gastos">Gastos</Link>.
           </p>
+
+          <h3>Detalle de gastos del período</h3>
+          <table className="tabla">
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Categoría</th>
+                <th>Nombre del gasto</th>
+                <th>Monto</th>
+              </tr>
+            </thead>
+            <tbody>
+              {reporteUtilidad?.gastosDetalle.map((g) => (
+                <tr key={g.id}>
+                  <td>{new Date(g.fecha).toLocaleDateString("es-CL")}</td>
+                  <td>{g.categoria}</td>
+                  <td>{g.descripcion ?? "—"}</td>
+                  <td>{formatoCLP(g.monto)}</td>
+                </tr>
+              ))}
+              {(!reporteUtilidad || reporteUtilidad.gastosDetalle.length === 0) && (
+                <tr>
+                  <td colSpan={4}>No hubo gastos en este período.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </section>
       )}
 
@@ -451,13 +567,15 @@ export default function Reportes() {
           </p>
 
           <h3>Ventas por día</h3>
-          <GraficoLinea
+          <GraficoElegible
+            tipoInicial="linea"
+            tipos={["linea", "barras"]}
             datos={reporteVentas.porDia.map((d) => ({ etiqueta: fechaCorta(d.fecha), valor: d.totalVentas }))}
             formatoValor={formatoCLP}
           />
 
           <h3>Ventas por categoría</h3>
-          <GraficoBarras
+          <GraficoElegible
             datos={reporteVentas.porCategoria.map((c) => ({ etiqueta: c.categoria, valor: c.ingreso }))}
             formatoValor={formatoCLP}
           />
@@ -512,7 +630,7 @@ export default function Reportes() {
           )}
 
           <h3>Más vendidos por cantidad</h3>
-          <GraficoBarras
+          <GraficoElegible
             datos={reporteVentas.masVendidosPorCantidad.map((p) => ({ etiqueta: p.descripcion, valor: p.cantidad }))}
           />
 
@@ -702,7 +820,7 @@ export default function Reportes() {
               </table>
 
               <h3>Ventas, compras, gastos y utilidad — A vs B</h3>
-              <GraficoBarras
+              <GraficoElegible
                 datos={[
                   { etiqueta: "Ventas (A)", valor: compA.ventas.totalVentas },
                   { etiqueta: "Ventas (B)", valor: compB.ventas.totalVentas },
@@ -719,7 +837,7 @@ export default function Reportes() {
               <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "1.5rem" }}>
                 <div>
                   <h3>Más vendidos (Período B)</h3>
-                  <GraficoBarras
+                  <GraficoElegible
                     datos={compB.ventas.masVendidosPorIngreso.slice(0, 5).map((p) => ({ etiqueta: p.descripcion, valor: p.ingreso }))}
                     formatoValor={formatoCLP}
                   />
@@ -740,7 +858,7 @@ export default function Reportes() {
                 </div>
                 <div>
                   <h3>Menos vendidos (Período B)</h3>
-                  <GraficoBarras
+                  <GraficoElegible
                     datos={compB.ventas.menosVendidosPorCantidad.slice(0, 5).map((p) => ({ etiqueta: p.descripcion, valor: p.cantidad }))}
                   />
                   <table className="tabla">
@@ -800,7 +918,7 @@ export default function Reportes() {
                             </div>
                           </div>
                           {catB.masVendidos.length > 0 && (
-                            <GraficoBarras
+                            <GraficoElegible
                               datos={catB.masVendidos.map((p) => ({ etiqueta: p.descripcion, valor: p.ingreso }))}
                               formatoValor={formatoCLP}
                             />
@@ -849,7 +967,7 @@ export default function Reportes() {
           </div>
 
           <h3>Por comuna</h3>
-          <GraficoBarras
+          <GraficoElegible
             datos={reporteDespachos.porComuna.map((c) => ({ etiqueta: c.comuna, valor: c.cantidadDespachos }))}
           />
           <table className="tabla">
@@ -880,38 +998,46 @@ export default function Reportes() {
         </section>
       )}
 
-      {pestana === "inventario" && reporteInventario && (
+      {pestana === "compras" && reporteInventario && (
         <section className="tarjeta">
-          <h2>Inventario</h2>
+          <h2>Compras</h2>
+          <p className="ayuda">
+            Toda compra de mercadería del período: lo cargado por <Link to="/inventario/factura">Cargar factura</Link>{" "}
+            (congelados y productos por unidad) y lo ingresado por <Link to="/camara/entrada">Ingreso a cámara</Link>{" "}
+            (carne fresca por peso) — ambas cuentan igual como "compra" en esta pestaña.
+          </p>
           <div className="fila-inline">
             <div>
-              <strong>Entradas totales:</strong> {reporteInventario.entradasTotal}
+              <strong>Total comprado:</strong> {formatoCLP(reporteInventario.comprasTotal)}
             </div>
             <div>
-              <strong>Ventas:</strong> {reporteInventario.salidasPorMotivo.venta ?? 0}
-            </div>
-            <div>
-              <strong>Descarte/merma:</strong> {reporteInventario.salidasPorMotivo.descarte ?? 0}
-            </div>
-            <div>
-              <strong>Ajustes:</strong> {reporteInventario.salidasPorMotivo.ajuste ?? 0}
-            </div>
-            <div>
-              <strong>Compras:</strong> {formatoCLP(reporteInventario.comprasTotal)}
+              <strong>Líneas de compra:</strong> {reporteInventario.comprasDetalle.length}
             </div>
           </div>
 
-          <h3>Salidas por motivo</h3>
-          <GraficoTorta
-            datos={Object.entries(reporteInventario.salidasPorMotivo)
-              .filter(([, cantidad]) => cantidad > 0)
-              .map(([motivo, cantidad]) => ({ etiqueta: etiquetasMotivo[motivo] ?? motivo, valor: cantidad }))}
-          />
+          {reporteVentas && (
+            <>
+              <h3>Compras vs Ventas vs Gastos</h3>
+              <GraficoElegible
+                datos={[
+                  { etiqueta: "Ventas", valor: reporteVentas.totalVentas },
+                  { etiqueta: "Compras", valor: reporteInventario.comprasTotal },
+                  ...(reporteUtilidad ? [{ etiqueta: "Gastos", valor: reporteUtilidad.totalGastos }] : []),
+                ]}
+                formatoValor={formatoCLP}
+              />
+              <p className="ayuda">
+                {reporteVentas.totalVentas > 0
+                  ? `Las compras representan el ${((reporteInventario.comprasTotal / reporteVentas.totalVentas) * 100).toFixed(1)}% de las ventas del período.`
+                  : "No hubo ventas en este período para comparar."}
+              </p>
+            </>
+          )}
 
           {reporteInventario.comprasDetalle.length > 0 && (
             <>
               <h3>Compras por proveedor</h3>
-              <GraficoBarras
+              <GraficoElegible
                 datos={Array.from(
                   reporteInventario.comprasDetalle.reduce(
                     (mapa, c) => mapa.set(c.proveedor ?? "Sin proveedor", (mapa.get(c.proveedor ?? "Sin proveedor") ?? 0) + c.subtotal),
@@ -927,10 +1053,6 @@ export default function Reportes() {
           )}
 
           <h3>Detalle de compras del período</h3>
-          <p className="ayuda">
-            Incluye lo cargado por "Cargar factura" (congelados y productos por unidad) y lo ingresado por
-            "Ingreso a cámara" (carne fresca por peso).
-          </p>
           <table className="tabla">
             <thead>
               <tr>
@@ -968,6 +1090,38 @@ export default function Reportes() {
               )}
             </tbody>
           </table>
+        </section>
+      )}
+
+      {pestana === "stock" && reporteInventario && (
+        <section className="tarjeta">
+          <h2>Stock</h2>
+          <p className="ayuda">
+            Movimientos de inventario del período (entradas, salidas y merma) — para el stock actual de cada
+            producto y los que están bajo su umbral, ve a <Link to="/inventario">Inventario</Link>.
+          </p>
+          <div className="fila-inline">
+            <div>
+              <strong>Entradas totales:</strong> {reporteInventario.entradasTotal}
+            </div>
+            <div>
+              <strong>Salidas por venta:</strong> {reporteInventario.salidasPorMotivo.venta ?? 0}
+            </div>
+            <div>
+              <strong>Descarte/merma:</strong> {reporteInventario.salidasPorMotivo.descarte ?? 0}
+            </div>
+            <div>
+              <strong>Ajustes:</strong> {reporteInventario.salidasPorMotivo.ajuste ?? 0}
+            </div>
+          </div>
+
+          <h3>Salidas por motivo</h3>
+          <GraficoElegible
+            tipoInicial="torta"
+            datos={Object.entries(reporteInventario.salidasPorMotivo)
+              .filter(([, cantidad]) => cantidad > 0)
+              .map(([motivo, cantidad]) => ({ etiqueta: etiquetasMotivo[motivo] ?? motivo, valor: cantidad }))}
+          />
 
           <h3>Productos con más merma en el período</h3>
           <table className="tabla">
@@ -996,6 +1150,16 @@ export default function Reportes() {
         </section>
       )}
 
+      {pestana === "cuadratura" && (
+        <section>
+          <p className="ayuda">
+            Cuadratura de cajas anteriores — elige cualquier rango de fechas pasado, independiente del filtro de
+            arriba (que no aplica acá).
+          </p>
+          <CuadraturaCaja />
+        </section>
+      )}
+
       {pestana === "precios" && reportePrecios && (
         <section className="tarjeta">
           <h2>Precios</h2>
@@ -1010,7 +1174,8 @@ export default function Reportes() {
             ))}
           </div>
 
-          <GraficoTorta
+          <GraficoElegible
+            tipoInicial="torta"
             datos={Object.entries(reportePrecios.porTipo).map(([tipo, cantidad]) => ({
               etiqueta: etiquetasTipoCambio[tipo] ?? tipo,
               valor: cantidad,

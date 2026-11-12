@@ -165,6 +165,10 @@ export default function Inventario() {
         sin salida, ahí mismo avisa para no dejarla sin revisar. Esta pantalla es el stock que se vende en el mesón
         (Producto.stockActual), no el de cámara.
       </p>
+      <p className="ayuda">
+        Para ver las compras y los movimientos de este período (no el stock actual), ve a{" "}
+        <Link to="/reportes?tab=compras">Reportes → Compras</Link> o <Link to="/reportes?tab=stock">Reportes → Stock</Link>.
+      </p>
 
       {cargando && <p>Cargando...</p>}
 

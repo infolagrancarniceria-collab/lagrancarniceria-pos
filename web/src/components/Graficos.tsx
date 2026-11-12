@@ -6,6 +6,8 @@
 // desgloses por categoría, ej. motivo de salida) y línea (para evolución en
 // el tiempo, ej. ventas por día).
 
+import { useState } from "react";
+
 export const PALETA_GRAFICOS = [
   "#9c2c1c",
   "#a9781f",
@@ -152,6 +154,58 @@ export function GraficoLinea({
           Máx: {formatoValor(maxValor)}
         </text>
       </svg>
+    </div>
+  );
+}
+
+type TipoGrafico = "barras" | "torta" | "linea";
+
+const ETIQUETAS_TIPO: Record<TipoGrafico, string> = {
+  barras: "▭ Barras",
+  torta: "◔ Torta",
+  linea: "📈 Línea",
+};
+
+// Mismo reporte, pero eligiendo cómo verlo — a pedido del usuario, en vez
+// de tener fijo un solo tipo de gráfico por informe. Guarda el tipo
+// elegido en memoria propia (useState), así que cada gráfico de la
+// pantalla se cambia por separado sin afectar a los demás. "tipos" limita
+// qué opciones tiene sentido ofrecer para esos datos en particular (ej.
+// una serie de "ventas por día" no se presta para torta).
+export function GraficoElegible({
+  datos,
+  color,
+  formatoValor = (n: number) => String(n),
+  tipoInicial = "barras",
+  tipos = ["barras", "torta"],
+}: {
+  datos: DatoGrafico[];
+  color?: string;
+  formatoValor?: (n: number) => string;
+  tipoInicial?: TipoGrafico;
+  tipos?: TipoGrafico[];
+}) {
+  const [tipo, setTipo] = useState<TipoGrafico>(tipoInicial);
+
+  return (
+    <div>
+      {tipos.length > 1 && (
+        <div className="selector-tipo-grafico">
+          {tipos.map((t) => (
+            <button
+              key={t}
+              type="button"
+              className={`chip-grafico ${tipo === t ? "activo" : ""}`}
+              onClick={() => setTipo(t)}
+            >
+              {ETIQUETAS_TIPO[t]}
+            </button>
+          ))}
+        </div>
+      )}
+      {tipo === "barras" && <GraficoBarras datos={datos} color={color} formatoValor={formatoValor} />}
+      {tipo === "torta" && <GraficoTorta datos={datos} formatoValor={formatoValor} />}
+      {tipo === "linea" && <GraficoLinea datos={datos} color={color} formatoValor={formatoValor} />}
     </div>
   );
 }

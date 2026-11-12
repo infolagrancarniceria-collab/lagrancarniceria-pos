@@ -512,7 +512,14 @@ export interface ReporteUtilidad {
   hasta: string;
   totalVentas: number;
   totalGastos: number;
-  gastosDetalle: { id: number; categoria: string; descripcion: string | null; monto: number; fecha: string }[];
+  gastosDetalle: {
+    id: number;
+    categoria: string;
+    concepto: string | null;
+    descripcion: string | null;
+    monto: number;
+    fecha: string;
+  }[];
   costoMercaderia: number;
   ventasSinCostoConocido: number;
   utilidadSimple: number;
@@ -530,10 +537,19 @@ export interface Gasto {
   id: number;
   fecha: string;
   categoria: string;
+  concepto: string | null;
   descripcion: string | null;
   monto: number;
   usuarioId: number;
   usuario: Usuario;
+}
+
+// Lista manejada a mano de categorías de gasto — ver CategoriaGasto en el
+// schema.
+export interface CategoriaGasto {
+  id: number;
+  nombre: string;
+  activo: boolean;
 }
 
 export interface ReporteGastos {
@@ -541,6 +557,7 @@ export interface ReporteGastos {
   hasta: string;
   total: number;
   totalPorCategoria: Record<string, number>;
+  totalPorCategoriaYConcepto: Record<string, Record<string, number>>;
 }
 
 export interface MovimientoInventario {
@@ -1793,9 +1810,19 @@ export const api = {
       const query = qs.toString();
       return get<ReporteGastos>(`/api/gastos/reporte${query ? `?${query}` : ""}`);
     },
-    crear: (data: { fecha?: string; categoria: string; descripcion: string; monto: number; usuarioId: number }) =>
-      post<Gasto>("/api/gastos", data),
+    crear: (data: {
+      fecha?: string;
+      categoria: string;
+      concepto?: string;
+      descripcion: string;
+      monto: number;
+      usuarioId: number;
+    }) => post<Gasto>("/api/gastos", data),
     eliminar: (id: number) => del<void>(`/api/gastos/${id}`),
+    categorias: (incluirInactivas = false) =>
+      get<CategoriaGasto[]>(`/api/gastos/categorias${incluirInactivas ? "?incluirInactivas=true" : ""}`),
+    crearCategoria: (nombre: string) => post<CategoriaGasto>("/api/gastos/categorias", { nombre }),
+    desactivarCategoria: (id: number) => put<CategoriaGasto>(`/api/gastos/categorias/${id}/desactivar`, {}),
   },
   camara: {
     entradaLote: (data: {

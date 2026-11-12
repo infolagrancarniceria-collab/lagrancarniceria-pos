@@ -80,13 +80,34 @@ model Usuario {
 model Gasto {
   id Int @id @default(autoincrement())
 
-  fecha       DateTime @default(now())
-  categoria   String // ej. "Sueldos", "Luz", "Agua", "Arriendo", "Otros"
+  fecha     DateTime @default(now())
+  categoria String // ej. "Sueldos", "Luz", "Agua", "Arriendo", "Otros" — ver CategoriaGasto
+  // Sub-agrupación dentro de la categoría, a pedido del usuario — ej.
+  // categoria "Transporte" con concepto "Transportista" o "Combustible",
+  // para poder ver cuánto se gastó en cada uno por separado sin que cada
+  // gasto individual (con su propia fecha/descripcion) cuente aparte. A
+  // diferencia de categoria, no tiene una lista manejada propia: se escribe
+  // a mano cada vez, con las opciones ya usadas antes como sugerencia (ver
+  // Gastos.tsx) — es una sub-categoría liviana, no otra entidad a mantener.
+  concepto    String?
   descripcion String?
   monto       Float
 
   usuarioId Int
   usuario   Usuario @relation(fields: [usuarioId], references: [id])
+}
+
+// Lista manejada a mano de categorías de gasto — a pedido del usuario,
+// para poder "generar categorías" en vez de depender de que alguien
+// tipee siempre el mismo texto (antes era un campo libre con sugerencias
+// de lo ya usado, ver Gasto.categoria). Un gasto sigue guardando el
+// nombre de la categoría como texto (no una relación), así que desactivar
+// una categoría acá no le pasa nada a los gastos ya cargados con ese
+// nombre.
+model CategoriaGasto {
+  id     Int     @id @default(autoincrement())
+  nombre String  @unique
+  activo Boolean @default(true)
 }
 
 // Categorías jerárquicas de 3 niveles, ej: 01 Aves > 0101 Pollos > 010101 Trutros.
