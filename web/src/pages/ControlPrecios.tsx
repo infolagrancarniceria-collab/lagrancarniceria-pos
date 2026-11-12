@@ -5,10 +5,31 @@ import {
   calcularMargen,
   calcularMargenReal,
   formatoCLP,
+  type Categoria,
   type HistorialEntrada,
   type ProductoConUltimoCosto,
 } from "../api";
 import ModalAlerta from "../components/ModalAlerta";
+import SelectorCategoria from "../components/SelectorCategoria";
+import { imprimirControlPrecios } from "../lib/imprimir";
+
+// Factor de IVA (19%) — mismo usado en calcularMargen/calcularMargenReal:
+// el precio de venta ya incluye IVA, el costo no (el proveedor lo factura
+// aparte). No considera el 5% adicional de IVA carne (aplicaIvaCarne),
+// que es una calculadora aparte solo al cargar una factura — mismo
+// criterio simplificado que ya usa el resto del sistema al mostrar margen.
+const IVA = 1.19;
+
+function sinIva(valorConIva: number): number {
+  return Math.round(valorConIva / IVA);
+}
+function conIva(valorNeto: number): number {
+  return Math.round(valorNeto * IVA);
+}
+
+function hoy(): string {
+  return new Date().toLocaleDateString("es-CL");
+}
 
 // Pantalla nueva, a pedido del usuario, para tener de un vistazo el estado
 // general de los precios del catálogo — cuántos productos tienen un precio
@@ -18,13 +39,27 @@ import ModalAlerta from "../components/ModalAlerta";
 export default function ControlPrecios() {
   const [productos, setProductos] = useState<ProductoConUltimoCosto[] | null>(null);
   const [historial, setHistorial] = useState<HistorialEntrada[] | null>(null);
+  const [categorias, setCategorias] = useState<Categoria[]>([]);
+  const [categoriaId, setCategoriaId] = useState<number | "">("");
   const [verTodos, setVerTodos] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api.productos.listarConCosto().then(setProductos).catch((e) => setError(e.message));
+    api.categorias.listar().then(setCategorias).catch((e) => setError(e.message));
     api.historial.listar().then(setHistorial).catch((e) => setError(e.message));
   }, []);
+
+  // El costo (y su "último valor de compra") depende de la categoría
+  // elegida — a pedido del usuario, para poder filtrar el reporte por
+  // categoría en vez de verlo siempre completo.
+  useEffect(() => {
+    api.productos
+      .listarConCosto({ categoriaId: categoriaId || undefined })
+      .then(setProductos)
+      .catch((e) => setError(e.message));
+  }, [categoriaId]);
+
+  const categoriaElegida = categoriaId ? categorias.find((c) => c.id === categoriaId) ?? null : null;
 
   // "Precio activo" = producto activo con un precio realmente cargado (no
   // $0, que en la práctica significa que nunca se terminó de configurar) —
@@ -60,14 +95,30 @@ export default function ControlPrecios() {
     (productos ?? []).map((p) => [p.id, { costo: p.costoEfectivo, estimado: p.costoEsEstimado }]),
   );
 
+  async function imprimir() {
+    try {
+      await imprimirControlPrecios();
+    } catch {
+      setError("No se pudo imprimir — revisa la impresora configurada en Configuración → Impresoras (Pedidos web).");
+    }
+  }
+
   return (
     <div>
-      <div className="encabezado-pantalla">
+      <div className="encabezado-pantalla no-imprimir">
         <h1>Control de precios</h1>
-        <Link to="/productos/margenes" className="boton">
-          🧩 Ver Combos (Mejor margen)
-        </Link>
+        <div className="fila-inline" style={{ marginBottom: 0 }}>
+          <Link to="/productos/margenes" className="boton">
+            🧩 Ver Combos (Mejor margen)
+          </Link>
+          <button type="button" className="boton boton-primario" onClick={imprimir} disabled={!productos}>
+            Imprimir
+          </button>
+        </div>
       </div>
+      <h1 className="solo-imprimir">
+        Control de precios — {categoriaElegida?.nombre ?? "Todas las categorías"} — {hoy()}
+      </h1>
       {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
 
       <section className="tarjeta">
@@ -87,14 +138,23 @@ export default function ControlPrecios() {
         <p className="ayuda">
           <strong>Guía de rentabilidad:</strong> el recargo se calcula sobre el costo; el margen real se calcula
           sobre la venta neta. Son promedios simples de los productos guardados — no están ponderados por kilos
-          vendidos.
+          vendidos. El costo no incluye IVA (se factura aparte); el precio de venta sí lo incluye — ver las
+          columnas "con IVA" / "neto" para comparar ambos en la misma base.
         </p>
       </section>
 
-      <label className="fila-inline">
-        <input type="checkbox" checked={verTodos} onChange={(e) => setVerTodos(e.target.checked)} />
-        Ver todos los productos (incluso sin precio activo)
-      </label>
+      <div className="filtros no-imprimir">
+        <SelectorCategoria
+          categorias={categorias}
+          value={categoriaId}
+          onChange={setCategoriaId}
+          etiquetaTodas="Todas las categorías"
+        />
+        <label className="fila-inline">
+          <input type="checkbox" checked={verTodos} onChange={(e) => setVerTodos(e.target.checked)} />
+          Ver todos los productos (incluso sin precio activo)
+        </label>
+      </div>
 
       <table className="tabla">
         <thead>
@@ -102,8 +162,10 @@ export default function ControlPrecios() {
             <th>PLU</th>
             <th>Producto</th>
             <th>Categoría</th>
-            <th>Costo</th>
-            <th>Precio de venta</th>
+            <th>Costo neto (último valor de compra)</th>
+            <th>Costo con IVA</th>
+            <th>Precio neto (sin IVA)</th>
+            <th>Precio de venta (con IVA)</th>
             <th>Recargo (%)</th>
             <th>Margen real (%)</th>
           </tr>
@@ -111,12 +173,12 @@ export default function ControlPrecios() {
         <tbody>
           {productos == null && (
             <tr>
-              <td colSpan={7}>Cargando...</td>
+              <td colSpan={9}>Cargando...</td>
             </tr>
           )}
           {productos != null && productosMostrados.length === 0 && (
             <tr>
-              <td colSpan={7}>No hay productos para mostrar.</td>
+              <td colSpan={9}>No hay productos para mostrar.</td>
             </tr>
           )}
           {productosMostrados.map((p) => {
@@ -131,8 +193,18 @@ export default function ControlPrecios() {
                 <td>{p.categoria.nombre}</td>
                 <td>
                   {p.costoEfectivo != null ? formatoCLP(p.costoEfectivo) : "—"}
-                  {p.costoEsEstimado && <span className="ayuda"> (estimado)</span>}
+                  {p.costoEsEstimado ? (
+                    <div className="ayuda">(estimado — sin compra registrada)</div>
+                  ) : (
+                    p.ultimoCostoFecha && (
+                      <div className="ayuda">
+                        Última compra: {new Date(p.ultimoCostoFecha).toLocaleDateString("es-CL")}
+                      </div>
+                    )
+                  )}
                 </td>
+                <td>{p.costoEfectivo != null ? formatoCLP(conIva(p.costoEfectivo)) : "—"}</td>
+                <td>{p.precio > 0 ? formatoCLP(sinIva(p.precio)) : "—"}</td>
                 <td>{p.precio > 0 ? formatoCLP(p.precio) : "Sin precio"}</td>
                 <td>
                   {recargo != null ? (
@@ -154,13 +226,13 @@ export default function ControlPrecios() {
         </tbody>
       </table>
 
-      <h2>Registro de cambios de precio</h2>
-      <p className="ayuda">
+      <h2 className="no-imprimir">Registro de cambios de precio</h2>
+      <p className="ayuda no-imprimir">
         Costo y márgenes calculados con el costo efectivo más reciente hoy (una compra real si existe, o el
         costo de referencia ingresado a mano como respaldo — marcado "(estimado)"), no con el costo que había en
         el momento exacto del cambio (el sistema no guarda esa foto histórica).
       </p>
-      <table className="tabla">
+      <table className="tabla no-imprimir">
         <thead>
           <tr>
             <th>Fecha</th>

@@ -81,12 +81,16 @@ productosRouter.get("/", async (req, res) => {
   const compras = await prisma.movimientoInventario.findMany({
     where: { tipo: "entrada", motivo: "compra", costoUnitario: { not: null } },
     orderBy: { fecha: "desc" },
-    select: { productoId: true, costoUnitario: true },
+    select: { productoId: true, costoUnitario: true, fecha: true },
   });
-  const ultimoCostoPorProducto = new Map<number, number>();
+  // Último valor de compra (ítem 7 del pedido del usuario, Control de
+  // precios) — a diferencia de costoEfectivo (que puede caer al costo de
+  // referencia estimado si no hay ninguna compra), esto es específicamente
+  // la última compra REAL con su fecha, o null si nunca hubo una.
+  const ultimaCompraPorProducto = new Map<number, { costoUnitario: number; fecha: Date }>();
   for (const c of compras) {
-    if (!ultimoCostoPorProducto.has(c.productoId)) {
-      ultimoCostoPorProducto.set(c.productoId, c.costoUnitario!);
+    if (!ultimaCompraPorProducto.has(c.productoId)) {
+      ultimaCompraPorProducto.set(c.productoId, { costoUnitario: c.costoUnitario!, fecha: c.fecha });
     }
   }
 
@@ -109,11 +113,13 @@ productosRouter.get("/", async (req, res) => {
 
   res.json(
     productos.map((p) => {
-      const ultimoCosto = ultimoCostoPorProducto.get(p.id) ?? null;
+      const ultimaCompra = ultimaCompraPorProducto.get(p.id) ?? null;
+      const ultimoCosto = ultimaCompra?.costoUnitario ?? null;
       const ultimoLoteCamara = ultimoLoteCamaraPorProducto.get(p.id) ?? null;
       return {
         ...p,
         ultimoCosto,
+        ultimoCostoFecha: ultimaCompra?.fecha ?? null,
         ultimoCostoCamaraKg: ultimoLoteCamara?.costoNetoKg ?? null,
         ultimoCostoCamaraFecha: ultimoLoteCamara?.fechaIngreso ?? null,
         ...calcularCostoEfectivo(ultimoCosto, p.costoReferencia),

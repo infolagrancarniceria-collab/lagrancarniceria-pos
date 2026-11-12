@@ -441,6 +441,9 @@ export interface ProductoConCosto extends Producto {
 
 export interface ProductoConUltimoCosto extends Producto {
   ultimoCosto: number | null;
+  // Fecha de esa última compra real — null si costoEfectivo viene del
+  // costo de referencia estimado (ver costoEsEstimado), no de una compra.
+  ultimoCostoFecha: string | null;
   costoEfectivo: number | null;
   costoEsEstimado: boolean;
   // Costo de la última entrada a Cámara (aparte del de compras de

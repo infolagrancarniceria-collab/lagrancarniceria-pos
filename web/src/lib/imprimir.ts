@@ -182,3 +182,12 @@ export async function imprimirCuadraturaCaja() {
   await imprimirConRespaldo(obtenerImpresoraPedidosWeb(), TAMANO_A4_MICRONES);
   setTimeout(() => activarPaginaRuta(false), 500);
 }
+
+// Control de precios: mismo caso que la cuadratura de caja — un reporte
+// administrativo que se ve en pantalla y se imprime tal cual, en hoja A4
+// normal con la misma impresora de "Pedidos web".
+export async function imprimirControlPrecios() {
+  activarPaginaRuta(true);
+  await imprimirConRespaldo(obtenerImpresoraPedidosWeb(), TAMANO_A4_MICRONES);
+  setTimeout(() => activarPaginaRuta(false), 500);
+}
