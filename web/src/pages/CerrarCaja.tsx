@@ -5,13 +5,165 @@ import { useUsuario } from "../context/UsuarioContext";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 import ModalAlerta from "../components/ModalAlerta";
 import ModalConfirmarClave from "../components/ModalConfirmarClave";
+import ModalRetiroCaja from "../components/ModalRetiroCaja";
+import { mostrarToast } from "../lib/toast";
+
+// Denominaciones reales de billetes y monedas chilenas en circulación — a
+// pedido del usuario, para contar la caja al cerrar billete por billete en
+// vez de escribir un solo número a ojo. El campo de cada una coincide con
+// ArqueoCaja en el servidor (ver server/routes/caja.ts).
+const BILLETES: { campo: keyof Desglose; valor: number }[] = [
+  { campo: "billetes1000", valor: 1000 },
+  { campo: "billetes2000", valor: 2000 },
+  { campo: "billetes5000", valor: 5000 },
+  { campo: "billetes10000", valor: 10000 },
+  { campo: "billetes20000", valor: 20000 },
+];
+const MONEDAS: { campo: keyof Desglose; valor: number }[] = [
+  { campo: "monedas10", valor: 10 },
+  { campo: "monedas50", valor: 50 },
+  { campo: "monedas100", valor: 100 },
+  { campo: "monedas500", valor: 500 },
+];
+
+type Desglose = Record<
+  "billetes1000" | "billetes2000" | "billetes5000" | "billetes10000" | "billetes20000" | "monedas10" | "monedas50" | "monedas100" | "monedas500",
+  string
+>;
+
+function desgloseVacio(): Desglose {
+  return {
+    billetes1000: "",
+    billetes2000: "",
+    billetes5000: "",
+    billetes10000: "",
+    billetes20000: "",
+    monedas10: "",
+    monedas50: "",
+    monedas100: "",
+    monedas500: "",
+  };
+}
+
+function totalDesglose(d: Desglose): number {
+  return [...BILLETES, ...MONEDAS].reduce((s, { campo, valor }) => s + (Number(d[campo]) || 0) * valor, 0);
+}
+
+// Resumen en el orden pedido: inicio de caja, venta en efectivo, venta con
+// tarjeta, crédito otorgado, ventas por transferencia, ingresos (detalle +
+// suma), retiros (detalle + suma, restado) y "Total caja" al final — lo
+// que antes se llamaba "Efectivo esperado en caja". El resto de los
+// detalles que ya existían (cobros de crédito/transferencia recibidos,
+// pedidos web, mayorista) quedan abajo, sin estorbar lo principal.
+function ResumenCierre({ resumen, titulo }: { resumen: ResumenSesion; titulo: string }) {
+  return (
+    <div className="tarjeta">
+      <h2>{titulo}</h2>
+      <p>
+        <strong>Inicio de caja:</strong> {formatoCLP(resumen.sesion.fondoFijoInicial)}
+      </p>
+      <p>
+        <strong>Venta en efectivo:</strong> {formatoCLP(resumen.totalPorMedio.efectivo ?? 0)}
+      </p>
+      <p>
+        <strong>Venta con tarjeta (local):</strong> {formatoCLP(resumen.totalPorMedio.tarjeta ?? 0)}
+      </p>
+      <p>
+        <strong>Crédito otorgado:</strong> {formatoCLP(resumen.totalPorMedio.credito ?? 0)}
+      </p>
+      <p>
+        <strong>Ventas por transferencia:</strong> {formatoCLP(resumen.totalPorMedio.transferencia ?? 0)}
+      </p>
+
+      <h3>Ingresos de caja — {formatoCLP(resumen.totalIngresos)}</h3>
+      {resumen.ingresos.length === 0 ? (
+        <p className="ayuda">No hubo ingresos de caja en esta sesión.</p>
+      ) : (
+        <table className="tabla">
+          <thead>
+            <tr>
+              <th>Hora</th>
+              <th>Monto</th>
+              <th>Motivo</th>
+              <th>Autorizó</th>
+            </tr>
+          </thead>
+          <tbody>
+            {resumen.ingresos.map((i) => (
+              <tr key={i.id}>
+                <td>{new Date(i.fecha).toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" })}</td>
+                <td>+{formatoCLP(i.monto)}</td>
+                <td>{i.motivo}</td>
+                <td>{i.usuarioAutorizo?.nombre ?? "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      <h3>Retiros de caja — −{formatoCLP(resumen.totalRetiros)}</h3>
+      {resumen.retiros.length === 0 ? (
+        <p className="ayuda">No hubo retiros de caja en esta sesión.</p>
+      ) : (
+        <table className="tabla">
+          <thead>
+            <tr>
+              <th>Hora</th>
+              <th>Monto</th>
+              <th>Motivo</th>
+              <th>Autorizó</th>
+            </tr>
+          </thead>
+          <tbody>
+            {resumen.retiros.map((r) => (
+              <tr key={r.id}>
+                <td>{new Date(r.fecha).toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" })}</td>
+                <td>−{formatoCLP(r.monto)}</td>
+                <td>{r.motivo}</td>
+                <td>{r.usuarioAutorizo?.nombre ?? "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      <p style={{ fontSize: "1.1rem" }}>
+        <strong>Total caja:</strong> {formatoCLP(resumen.efectivoEsperado)}
+      </p>
+
+      <details>
+        <summary className="ayuda">Otros detalles (crédito, transferencia, pedido web, mayorista)</summary>
+        <p>
+          <strong>Cobros de crédito recibidos hoy:</strong> {formatoCLP(resumen.totalCobrosCredito)}
+        </p>
+        <p>
+          <strong>Transferencias confirmadas hoy:</strong> {formatoCLP(resumen.totalCobrosTransferencia)}
+        </p>
+        <p>
+          <strong>Pedidos web pendientes hoy:</strong> {formatoCLP(resumen.totalPorMedio.pedido_web ?? 0)}
+        </p>
+        <p>
+          <strong>Pedidos web cobrados hoy:</strong> {formatoCLP(resumen.totalCobrosPedidoWeb)}
+        </p>
+        <p>
+          <strong>Mayorista pendiente hoy:</strong> {formatoCLP(resumen.totalPorMedio.mayorista ?? 0)}
+        </p>
+        <p>
+          <strong>Mayorista cobrado hoy:</strong> {formatoCLP(resumen.totalCobrosMayorista)}
+        </p>
+      </details>
+    </div>
+  );
+}
 
 export default function CerrarCaja() {
   const { usuario } = useUsuario();
   const navigate = useNavigate();
 
   const [resumen, setResumen] = useState<ResumenSesion | null>(null);
-  const [efectivoContado, setEfectivoContado] = useState("");
+  const [desglose, setDesglose] = useState<Desglose>(desgloseVacio());
+  const [retirandoAlCierre, setRetirandoAlCierre] = useState(false);
+  const [retiroAlCierre, setRetiroAlCierre] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [cerrada, setCerrada] = useState<ResumenSesion | null>(null);
   const [guardando, setGuardando] = useState(false);
@@ -21,6 +173,10 @@ export default function CerrarCaja() {
   const [ventasBloqueantes, setVentasBloqueantes] = useState<Venta[] | null>(null);
   const [cancelandoVentaId, setCancelandoVentaId] = useState<number | null>(null);
 
+  function cargarResumen(sesionId: number) {
+    api.caja.resumenSesion(sesionId).then(setResumen).catch((e) => setError(e.message));
+  }
+
   useEffect(() => {
     api.caja
       .sesionActual()
@@ -29,7 +185,7 @@ export default function CerrarCaja() {
           setError("No hay una caja abierta");
           return;
         }
-        return api.caja.resumenSesion(sesion.id).then(setResumen);
+        cargarResumen(sesion.id);
       })
       .catch((e) => setError(e.message));
   }, []);
@@ -45,23 +201,45 @@ export default function CerrarCaja() {
       });
   }
 
+  const totalContado = totalDesglose(desglose);
+  const efectivoContadoFinal = Math.max(0, totalContado - retiroAlCierre);
+
+  async function confirmarRetiroAlCierre(monto: number, motivo: string, usuarioId: number, clave: string) {
+    if (!resumen) return;
+    const disponible = totalContado - retiroAlCierre;
+    if (monto > disponible) {
+      throw new Error(`No puedes retirar más de lo contado y disponible (${formatoCLP(disponible)}).`);
+    }
+    await api.caja.registrarRetiro(resumen.sesion.id, { tipo: "retiro", monto, motivo, usuarioId, clave });
+    setRetiroAlCierre((actual) => actual + monto);
+    setRetirandoAlCierre(false);
+    mostrarToast("Retiro registrado", `${formatoCLP(monto)} — ${motivo}. Queda ${formatoCLP(totalContado - retiroAlCierre - monto)} para el cierre.`);
+    cargarResumen(resumen.sesion.id);
+  }
+
   async function cerrar(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setVentasBloqueantes(null);
     if (!resumen || !usuario) return;
-    const contado = Number(efectivoContado);
-    if (Number.isNaN(contado) || contado < 0) {
-      setError("El efectivo contado debe ser un número mayor o igual a 0");
-      return;
-    }
     const confirmado = window.confirm("¿Cerrar la caja? No se van a poder registrar más ventas en esta sesión.");
     if (!confirmado) return;
     setGuardando(true);
     try {
       const resultado = await api.caja.cerrarSesion(resumen.sesion.id, {
-        efectivoContado: contado,
+        efectivoContado: efectivoContadoFinal,
         usuarioId: usuario.id,
+        desgloseEfectivo: {
+          billetes1000: Number(desglose.billetes1000) || 0,
+          billetes2000: Number(desglose.billetes2000) || 0,
+          billetes5000: Number(desglose.billetes5000) || 0,
+          billetes10000: Number(desglose.billetes10000) || 0,
+          billetes20000: Number(desglose.billetes20000) || 0,
+          monedas10: Number(desglose.monedas10) || 0,
+          monedas50: Number(desglose.monedas50) || 0,
+          monedas100: Number(desglose.monedas100) || 0,
+          monedas500: Number(desglose.monedas500) || 0,
+        },
       });
       setCerrada(resultado);
     } catch (e) {
@@ -84,62 +262,18 @@ export default function CerrarCaja() {
     return (
       <div>
         <h1>Caja cerrada — reporte Z</h1>
+        <ResumenCierre resumen={cerrada} titulo="Resumen del cierre" />
         <div className="tarjeta">
-          <p>
-            <strong>Cantidad de ventas:</strong> {cerrada.cantidadVentas}
-          </p>
-          <p>
-            <strong>Total vendido:</strong> {formatoCLP(cerrada.totalVentas)}
-          </p>
-          <p>
-            <strong>Efectivo:</strong> {formatoCLP(cerrada.totalPorMedio.efectivo ?? 0)}
-          </p>
-          <p>
-            <strong>Tarjeta:</strong> {formatoCLP(cerrada.totalPorMedio.tarjeta ?? 0)}
-          </p>
-          <p>
-            <strong>Crédito otorgado hoy:</strong> {formatoCLP(cerrada.totalPorMedio.credito ?? 0)}
-          </p>
-          <p>
-            <strong>Cobros de crédito recibidos hoy:</strong> {formatoCLP(cerrada.totalCobrosCredito)}
-          </p>
-          <p>
-            <strong>Transferencias pendientes hoy:</strong> {formatoCLP(cerrada.totalPorMedio.transferencia ?? 0)}
-          </p>
-          <p>
-            <strong>Transferencias confirmadas hoy:</strong> {formatoCLP(cerrada.totalCobrosTransferencia)}
-          </p>
-          <p>
-            <strong>Pedidos web pendientes hoy:</strong> {formatoCLP(cerrada.totalPorMedio.pedido_web ?? 0)}
-          </p>
-          <p>
-            <strong>Pedidos web cobrados hoy:</strong> {formatoCLP(cerrada.totalCobrosPedidoWeb)}
-          </p>
-          <p>
-            <strong>Mayorista pendiente hoy:</strong> {formatoCLP(cerrada.totalPorMedio.mayorista ?? 0)}
-          </p>
-          <p>
-            <strong>Mayorista cobrado hoy:</strong> {formatoCLP(cerrada.totalCobrosMayorista)}
-          </p>
-          <p>
-            <strong>Retiros de caja:</strong> {formatoCLP(cerrada.totalRetiros)}
-          </p>
-          <p>
-            <strong>Ingresos de caja:</strong> {formatoCLP(cerrada.totalIngresos)}
-          </p>
-          <p>
-            <strong>
-              Efectivo esperado (fondo fijo + ventas en efectivo + cobros de crédito en efectivo − retiros de caja +
-              ingresos de caja):
-            </strong>{" "}
-            {formatoCLP(cerrada.efectivoEsperado)}
-          </p>
           <p>
             <strong>Efectivo contado:</strong> {formatoCLP(cerrada.sesion.efectivoContado ?? 0)}
           </p>
           <p className={dif === 0 ? "exito" : "error"}>
             <strong>Diferencia:</strong> {formatoCLP(dif)}
             {dif === 0 ? " (cuadra)" : dif > 0 ? " (sobra efectivo)" : " (falta efectivo)"}
+          </p>
+          <p className="ayuda">
+            Lo contado hoy ({formatoCLP(cerrada.sesion.efectivoContado ?? 0)}) queda sugerido como fondo inicial para
+            mañana — se puede cambiar al abrir, pero si es distinto va a pedir motivo y clave de supervisor.
           </p>
         </div>
         <button type="button" className="boton boton-primario" onClick={() => navigate("/caja")}>
@@ -154,74 +288,71 @@ export default function CerrarCaja() {
       <h1>Cerrar caja</h1>
       {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
 
-      {resumen && (
-        <div className="tarjeta">
-          <h2>Resumen antes de cerrar (reporte X)</h2>
-          <p>
-            <strong>Fondo fijo inicial:</strong> {formatoCLP(resumen.sesion.fondoFijoInicial)}
-          </p>
-          <p>
-            <strong>Cantidad de ventas:</strong> {resumen.cantidadVentas}
-          </p>
-          <p>
-            <strong>Total vendido:</strong> {formatoCLP(resumen.totalVentas)}
-          </p>
-          <p>
-            <strong>Efectivo:</strong> {formatoCLP(resumen.totalPorMedio.efectivo ?? 0)}
-          </p>
-          <p>
-            <strong>Tarjeta:</strong> {formatoCLP(resumen.totalPorMedio.tarjeta ?? 0)}
-          </p>
-          <p>
-            <strong>Crédito otorgado hoy:</strong> {formatoCLP(resumen.totalPorMedio.credito ?? 0)}
-          </p>
-          <p>
-            <strong>Cobros de crédito recibidos hoy:</strong> {formatoCLP(resumen.totalCobrosCredito)}
-          </p>
-          <p>
-            <strong>Transferencias pendientes hoy:</strong> {formatoCLP(resumen.totalPorMedio.transferencia ?? 0)}
-          </p>
-          <p>
-            <strong>Transferencias confirmadas hoy:</strong> {formatoCLP(resumen.totalCobrosTransferencia)}
-          </p>
-          <p>
-            <strong>Pedidos web pendientes hoy:</strong> {formatoCLP(resumen.totalPorMedio.pedido_web ?? 0)}
-          </p>
-          <p>
-            <strong>Pedidos web cobrados hoy:</strong> {formatoCLP(resumen.totalCobrosPedidoWeb)}
-          </p>
-          <p>
-            <strong>Mayorista pendiente hoy:</strong> {formatoCLP(resumen.totalPorMedio.mayorista ?? 0)}
-          </p>
-          <p>
-            <strong>Mayorista cobrado hoy:</strong> {formatoCLP(resumen.totalCobrosMayorista)}
-          </p>
-          <p>
-            <strong>Retiros de caja:</strong> {formatoCLP(resumen.totalRetiros)}
-          </p>
-          <p>
-            <strong>Ingresos de caja:</strong> {formatoCLP(resumen.totalIngresos)}
-          </p>
-          <p>
-            <strong>Efectivo esperado en caja:</strong> {formatoCLP(resumen.efectivoEsperado)}
-          </p>
-        </div>
-      )}
+      {resumen && <ResumenCierre resumen={resumen} titulo="Resumen antes de cerrar (reporte X)" />}
 
       <form onSubmit={cerrar} onKeyDown={manejarEnterComoTab} className="formulario">
-        <label>
-          Efectivo contado al cerrar
-          <input
-            type="number"
-            min="0"
-            value={efectivoContado}
-            onChange={(e) => setEfectivoContado(e.target.value)}
-            required
-          />
-        </label>
+        <h2>Conteo de efectivo al cerrar</h2>
+        <p className="ayuda">Marca cuántos billetes y monedas de cada tipo hay en la caja ahora mismo.</p>
+        <div className="fila-inline" style={{ flexWrap: "wrap", gap: "1.5rem" }}>
+          <div>
+            <strong className="ayuda">Billetes</strong>
+            <div className="fila-inline">
+              {BILLETES.map(({ campo, valor }) => (
+                <label key={campo} className="ayuda">
+                  {formatoCLP(valor)}
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    className="input-chico"
+                    value={desglose[campo]}
+                    onChange={(e) => setDesglose((d) => ({ ...d, [campo]: e.target.value }))}
+                  />
+                </label>
+              ))}
+            </div>
+          </div>
+          <div>
+            <strong className="ayuda">Monedas</strong>
+            <div className="fila-inline">
+              {MONEDAS.map(({ campo, valor }) => (
+                <label key={campo} className="ayuda">
+                  {formatoCLP(valor)}
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    className="input-chico"
+                    value={desglose[campo]}
+                    onChange={(e) => setDesglose((d) => ({ ...d, [campo]: e.target.value }))}
+                  />
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <p style={{ fontSize: "1.2rem", margin: "0.75rem 0" }}>
+          <strong>Total contado:</strong> {formatoCLP(totalContado)}
+        </p>
+
+        <div className="acciones-formulario">
+          <button type="button" onClick={() => setRetirandoAlCierre(true)} disabled={totalContado <= 0}>
+            Hacer un retiro en efectivo antes de cerrar
+          </button>
+        </div>
+
+        {retiroAlCierre > 0 && (
+          <p className="ayuda">
+            Se retiraron {formatoCLP(retiroAlCierre)} para dejar en caja fuerte / banco — queda{" "}
+            <strong>{formatoCLP(efectivoContadoFinal)}</strong> para el cierre, que se sugiere como fondo inicial
+            para mañana.
+          </p>
+        )}
+
         <div className="acciones-formulario">
           <button type="submit" className="boton boton-primario" disabled={guardando || !resumen}>
-            {guardando ? "Cerrando..." : "Cerrar caja"}
+            {guardando ? "Cerrando..." : `Cerrar caja con ${formatoCLP(efectivoContadoFinal)}`}
           </button>
         </div>
       </form>
@@ -274,6 +405,10 @@ export default function CerrarCaja() {
           onConfirmar={confirmarCancelarVentaBloqueante}
           onCancelar={() => setCancelandoVentaId(null)}
         />
+      )}
+
+      {retirandoAlCierre && (
+        <ModalRetiroCaja tipo="retiro" onConfirmar={confirmarRetiroAlCierre} onCancelar={() => setRetirandoAlCierre(false)} />
       )}
     </div>
   );

@@ -485,6 +485,7 @@ model SesionCaja {
   cobrosDeCredito   PagoVenta[]        @relation("CobrosDeCredito")
   retiros           RetiroCaja[]
   ajustesCuadratura AjusteCuadratura[]
+  arqueo            ArqueoCaja?
 }
 
 // Corrección auditada a lo que la cuadratura calculó para un día — a
@@ -513,6 +514,35 @@ model AjusteCuadratura {
 
   usuarioAutorizoId Int
   usuarioAutorizo   Usuario @relation(fields: [usuarioAutorizoId], references: [id])
+
+  fecha DateTime @default(now())
+}
+
+// Desglose de billetes/monedas contados al cerrar la caja (ítem a pedido
+// del usuario) — un registro por sesión, uno a uno. No reemplaza
+// SesionCaja.efectivoContado (que sigue siendo el número final que se
+// compara contra lo esperado): este modelo guarda CÓMO se llegó a ese
+// número, para poder revisarlo después en la cuadratura. Guarda el
+// conteo FÍSICO completo tal como se encontró la caja al cerrar —
+// independiente de si después se hizo un retiro con parte de esa plata
+// (ver POST /sesiones/:id/retiros): ese retiro es lo que explica la
+// diferencia entre la suma de este desglose y el efectivoContado final.
+model ArqueoCaja {
+  id Int @id @default(autoincrement())
+
+  sesionCajaId Int        @unique
+  sesionCaja   SesionCaja @relation(fields: [sesionCajaId], references: [id])
+
+  billetes1000  Int @default(0)
+  billetes2000  Int @default(0)
+  billetes5000  Int @default(0)
+  billetes10000 Int @default(0)
+  billetes20000 Int @default(0)
+
+  monedas10  Int @default(0)
+  monedas50  Int @default(0)
+  monedas100 Int @default(0)
+  monedas500 Int @default(0)
 
   fecha DateTime @default(now())
 }

@@ -1,0 +1,19 @@
+-- CreateTable
+CREATE TABLE "ArqueoCaja" (
+    "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "sesionCajaId" INTEGER NOT NULL,
+    "billetes1000" INTEGER NOT NULL DEFAULT 0,
+    "billetes2000" INTEGER NOT NULL DEFAULT 0,
+    "billetes5000" INTEGER NOT NULL DEFAULT 0,
+    "billetes10000" INTEGER NOT NULL DEFAULT 0,
+    "billetes20000" INTEGER NOT NULL DEFAULT 0,
+    "monedas10" INTEGER NOT NULL DEFAULT 0,
+    "monedas50" INTEGER NOT NULL DEFAULT 0,
+    "monedas100" INTEGER NOT NULL DEFAULT 0,
+    "monedas500" INTEGER NOT NULL DEFAULT 0,
+    "fecha" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "ArqueoCaja_sesionCajaId_fkey" FOREIGN KEY ("sesionCajaId") REFERENCES "SesionCaja" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
+);
+
+-- CreateIndex
+CREATE UNIQUE INDEX "ArqueoCaja_sesionCajaId_key" ON "ArqueoCaja"("sesionCajaId");

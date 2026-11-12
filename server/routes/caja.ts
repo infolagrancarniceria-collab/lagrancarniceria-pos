@@ -275,6 +275,10 @@ async function calcularResumenSesion(sesionId: number) {
   const totalAjustesEfectivo = netoAjustes("efectivo");
   const totalAjustesTarjeta = netoAjustes("tarjeta");
 
+  // Desglose de billetes/monedas contado al cerrar (ver modelo ArqueoCaja)
+  // — null hasta que la sesión se cierre con ese detalle.
+  const arqueo = await prisma.arqueoCaja.findUnique({ where: { sesionCajaId: sesionId } });
+
   return {
     cantidadVentas: ventas.length,
     totalVentas,
@@ -296,6 +300,7 @@ async function calcularResumenSesion(sesionId: number) {
     ajustes,
     totalAjustesEfectivo,
     totalAjustesTarjeta,
+    arqueo,
   };
 }
 
@@ -491,9 +496,27 @@ cajaRouter.post("/sesiones/:id/ajustes-cuadratura", async (req, res) => {
   res.status(201).json(ajuste);
 });
 
+// Desglose de billetes/monedas contado al cerrar (ítem a pedido del
+// usuario) — opcional: si no se manda (ej. una sesión vieja, o quien cierra
+// prefiere seguir tipeando un solo número), se cierra igual sin guardar
+// ArqueoCaja. Todas las denominaciones reales de billetes y monedas
+// chilenas en circulación.
+const desgloseEfectivoSchema = z.object({
+  billetes1000: z.number().int().min(0),
+  billetes2000: z.number().int().min(0),
+  billetes5000: z.number().int().min(0),
+  billetes10000: z.number().int().min(0),
+  billetes20000: z.number().int().min(0),
+  monedas10: z.number().int().min(0),
+  monedas50: z.number().int().min(0),
+  monedas100: z.number().int().min(0),
+  monedas500: z.number().int().min(0),
+});
+
 const cerrarSesionSchema = z.object({
   efectivoContado: z.number().min(0, "El efectivo contado no puede ser negativo"),
   usuarioId: z.number().int().positive(),
+  desgloseEfectivo: desgloseEfectivoSchema.optional(),
 });
 
 cajaRouter.post("/sesiones/:id/cerrar", async (req, res) => {
@@ -502,7 +525,7 @@ cajaRouter.post("/sesiones/:id/cerrar", async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.issues[0].message });
   }
-  const { efectivoContado, usuarioId } = parsed.data;
+  const { efectivoContado, usuarioId, desgloseEfectivo } = parsed.data;
 
   const usuario = await validarUsuario(usuarioId);
   if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
@@ -541,6 +564,10 @@ cajaRouter.post("/sesiones/:id/cerrar", async (req, res) => {
     where: { id },
     data: { estado: "cerrada", efectivoContado, fechaCierre: new Date(), usuarioCierreId: usuarioId },
   });
+
+  if (desgloseEfectivo) {
+    await prisma.arqueoCaja.create({ data: { sesionCajaId: id, ...desgloseEfectivo } });
+  }
 
   const sesionActualizada = await prisma.sesionCaja.findUnique({ where: { id } });
   const resumen = await calcularResumenSesion(id);
