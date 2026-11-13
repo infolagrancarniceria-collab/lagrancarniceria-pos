@@ -882,7 +882,16 @@ export interface ResumenSesion {
   totalVentasOnline: number;
   cantidadVentasMayorista: number;
   totalVentasMayorista: number;
+  // Plata que entró HOY por cada medio — mezcla ventas nuevas de hoy con
+  // cobros de créditos/transferencias de otro día (ver comentario en
+  // calcularResumenSesion), así que sirve para calcular efectivoEsperado
+  // pero NO suma exacto a totalVentas. Para mostrar "cuánto se vendió hoy
+  // por medio" usar ventasPorMedio en su lugar.
   totalPorMedio: Record<string, number>;
+  // Cuánto se vendió HOY, clasificado por el medio de cada venta en el
+  // momento de hacerla — esta sí suma exacto a totalVentas, a diferencia de
+  // totalPorMedio.
+  ventasPorMedio: Record<string, number>;
   totalCobrosCredito: number;
   // Desglose de totalCobrosCredito por cómo se cobró de verdad — a pedido
   // del usuario, para que el cierre de caja muestre claramente si un
@@ -909,6 +918,7 @@ export interface Cuadratura {
     fondoFijoInicial: number;
     totalVentas: number;
     totalPorMedio: Record<string, number>;
+    ventasPorMedio: Record<string, number>;
     totalRetiros: number;
     totalIngresos: number;
     totalAjustesEfectivo: number;

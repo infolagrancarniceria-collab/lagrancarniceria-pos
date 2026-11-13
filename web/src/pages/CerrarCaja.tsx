@@ -62,7 +62,17 @@ function totalDesglose(d: Desglose): number {
 // confirmada, pedidos web, mayorista) quedan abajo, sin estorbar lo
 // principal.
 function ResumenCierre({ resumen, titulo }: { resumen: ResumenSesion; titulo: string }) {
-  const creditoOtorgado = resumen.totalPorMedio.credito ?? 0;
+  // ventasPorMedio (no totalPorMedio) para que estas cuatro líneas sumen
+  // exacto al TOTAL GENERAL de arriba — ver comentario en
+  // calcularResumenSesion (server/routes/caja.ts). totalPorMedio mezcla
+  // ventas nuevas con cobros de créditos de otro día, así que usarlo acá
+  // hacía que un crédito ya pagado se contara dos veces.
+  const ventaEfectivoHoy = resumen.ventasPorMedio.efectivo ?? 0;
+  const ventaTarjetaHoy = resumen.ventasPorMedio.tarjeta ?? 0;
+  const creditoOtorgado = resumen.ventasPorMedio.credito ?? 0;
+  const ventaTransferenciaHoy = resumen.ventasPorMedio.transferencia ?? 0;
+  const sumaCuatroLineas = ventaEfectivoHoy + ventaTarjetaHoy + creditoOtorgado + ventaTransferenciaHoy;
+
   const creditoPagadoEfectivo = resumen.cobrosCreditoPorMedio.efectivo ?? 0;
   const creditoPagadoTarjeta = resumen.cobrosCreditoPorMedio.tarjeta ?? 0;
   const creditoPagadoTransferencia = resumen.cobrosCreditoPorMedio.transferencia ?? 0;
@@ -78,35 +88,46 @@ function ResumenCierre({ resumen, titulo }: { resumen: ResumenSesion; titulo: st
       </p>
       <p className="ayuda" style={{ marginTop: 0 }}>
         Incluye las ventas a crédito recién otorgadas hoy (ya cuentan como venta cerrada, aunque el cliente todavía no
-        pague) — por eso puede ser mayor que lo que de verdad entró en plata hoy.
+        pague) — por eso puede ser distinto de lo que de verdad entró en plata hoy. Debe sumar exacto con las 4
+        líneas de abajo.
       </p>
       <p>
         <strong>Inicio de caja:</strong> {formatoCLP(resumen.sesion.fondoFijoInicial)}
       </p>
       <p>
-        <strong>Venta en efectivo:</strong> {formatoCLP(resumen.totalPorMedio.efectivo ?? 0)}
+        <strong>Venta en efectivo:</strong> {formatoCLP(ventaEfectivoHoy)}
       </p>
       <p>
-        <strong>Venta con tarjeta (local):</strong> {formatoCLP(resumen.totalPorMedio.tarjeta ?? 0)}
+        <strong>Venta con tarjeta (local):</strong> {formatoCLP(ventaTarjetaHoy)}
       </p>
       <p>
         <strong>Crédito otorgado:</strong> {formatoCLP(creditoOtorgado)}
       </p>
       <p>
-        <strong>Ventas por transferencia:</strong> {formatoCLP(resumen.totalPorMedio.transferencia ?? 0)}
+        <strong>Ventas por transferencia:</strong> {formatoCLP(ventaTransferenciaHoy)}
+      </p>
+      <p className={sumaCuatroLineas === resumen.totalVentas ? "exito" : "error"} style={{ fontSize: "0.9rem" }}>
+        {sumaCuatroLineas === resumen.totalVentas
+          ? "✓ Estas 4 líneas suman exacto el TOTAL GENERAL de arriba."
+          : `⚠ Estas 4 líneas suman ${formatoCLP(sumaCuatroLineas)}, no calzan con el TOTAL GENERAL (${formatoCLP(resumen.totalVentas)}) — revisa si hay una venta sin medio de pago asignado.`}
       </p>
 
       <h3>Créditos</h3>
       <p className="ayuda" style={{ marginTop: 0 }}>
         Separado de las ventas del día de arriba — esto es solo para seguir la plata que se fía y la que se cobra
-        después, sea del día que sea.
+        después, sea del día que sea. "Crédito otorgado hoy" es el mismo número que la línea de arriba (puede
+        incluir créditos que ya se pagaron hoy mismo, no necesariamente está todo pendiente).
       </p>
       <p>
-        <strong>Crédito otorgado hoy (pendiente de cobro):</strong> {formatoCLP(creditoOtorgado)}
+        <strong>Crédito otorgado hoy:</strong> {formatoCLP(creditoOtorgado)}
       </p>
       <p>
         <strong>Crédito pagado hoy:</strong> {formatoCLP(creditoPagadoTotal)}
         {creditoPagadoTotal === 0 && <span className="ayuda"> (ningún crédito se cobró hoy)</span>}
+      </p>
+      <p className="ayuda" style={{ marginTop: 0 }}>
+        Ojo: "pagado hoy" puede ser de un crédito otorgado hoy mismo o de otro día — no lo restes de "Crédito
+        otorgado hoy" de arriba, son dos cosas distintas que no se cuadran entre sí.
       </p>
       {creditoPagadoTotal > 0 && (
         <ul style={{ marginTop: 0 }}>
@@ -178,9 +199,10 @@ function ResumenCierre({ resumen, titulo }: { resumen: ResumenSesion; titulo: st
         <strong>Efectivo esperado en caja:</strong> {formatoCLP(resumen.efectivoEsperado)}
       </p>
       <p className="ayuda" style={{ marginTop: 0 }}>
-        Esto es solo la plata física que debería haber en el cajón ahora mismo (fondo inicial + ventas en efectivo +
-        ajustes − retiros + ingresos) — no es lo mismo que el TOTAL GENERAL de arriba, que incluye tarjeta, crédito y
-        transferencia.
+        Esto es solo la plata física que debería haber en el cajón ahora mismo: fondo inicial + venta en efectivo de
+        hoy + crédito pagado hoy en efectivo ({formatoCLP(creditoPagadoEfectivo)}, ver "Créditos" más arriba) +
+        ajustes − retiros + ingresos. No es lo mismo que el TOTAL GENERAL de arriba, que incluye tarjeta, crédito
+        otorgado (todavía sin cobrar) y transferencia.
       </p>
 
       <details>
@@ -189,13 +211,13 @@ function ResumenCierre({ resumen, titulo }: { resumen: ResumenSesion; titulo: st
           <strong>Transferencias confirmadas hoy:</strong> {formatoCLP(resumen.totalCobrosTransferencia)}
         </p>
         <p>
-          <strong>Pedidos web pendientes hoy:</strong> {formatoCLP(resumen.totalPorMedio.pedido_web ?? 0)}
+          <strong>Pedidos web pendientes hoy:</strong> {formatoCLP(resumen.ventasPorMedio.pedido_web ?? 0)}
         </p>
         <p>
           <strong>Pedidos web cobrados hoy:</strong> {formatoCLP(resumen.totalCobrosPedidoWeb)}
         </p>
         <p>
-          <strong>Mayorista pendiente hoy:</strong> {formatoCLP(resumen.totalPorMedio.mayorista ?? 0)}
+          <strong>Mayorista pendiente hoy:</strong> {formatoCLP(resumen.ventasPorMedio.mayorista ?? 0)}
         </p>
         <p>
           <strong>Mayorista cobrado hoy:</strong> {formatoCLP(resumen.totalCobrosMayorista)}

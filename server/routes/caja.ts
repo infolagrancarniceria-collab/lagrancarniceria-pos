@@ -199,6 +199,21 @@ async function calcularResumenSesion(sesionId: number) {
     }
   }
 
+  // Foto de "cuánto se vendió hoy, por el medio con que se clasificó cada
+  // venta" — ANTES de que el bloque de cobros de abajo empiece a sumarle
+  // encima plata de créditos/transferencias de otros días que se cobraron
+  // hoy. A pedido del usuario, que al revisar el cierre de caja sumó
+  // efectivo + tarjeta + crédito otorgado + transferencia y no le daba el
+  // mismo total que "TOTAL GENERAL": pasaba porque esos cuatro números (ver
+  // totalPorMedio) mezclan ventas nuevas de hoy CON cobros de crédito de
+  // otro día, así que un crédito ya pagado quedaba contado dos veces (una
+  // vez como "crédito otorgado", otra vez metido en "efectivo"/
+  // "transferencia"). ventasPorMedio es la versión que sí suma exacto a
+  // totalVentas — totalPorMedio se sigue necesitando tal cual para calcular
+  // el efectivo esperado en caja (ahí sí importa toda la plata física que
+  // entró hoy, sea de la venta que sea).
+  const ventasPorMedio = { ...totalPorMedio };
+
   // Separado por canal (ver Venta.canal) — mismo criterio que el reporte de
   // Ventas (ver calcularReporteVentas en reportes.ts): "local" agrupa el
   // canal por defecto más cualquier valor viejo/no usado, para que las tres
@@ -297,6 +312,7 @@ async function calcularResumenSesion(sesionId: number) {
     cantidadVentasMayorista,
     totalVentasMayorista,
     totalPorMedio,
+    ventasPorMedio,
     totalCobrosCredito,
     cobrosCreditoPorMedio,
     totalCobrosTransferencia,
@@ -381,6 +397,17 @@ cajaRouter.get("/cuadratura", async (req, res) => {
         pedido_web: acc.totalPorMedio.pedido_web + (dia.totalPorMedio.pedido_web ?? 0),
         mayorista: acc.totalPorMedio.mayorista + (dia.totalPorMedio.mayorista ?? 0),
       },
+      // Igual que en calcularResumenSesion: ventasPorMedio es la versión que
+      // suma exacto a totalVentas (ver comentario ahí) — totalPorMedio sigue
+      // aparte porque alimenta el efectivo esperado.
+      ventasPorMedio: {
+        efectivo: acc.ventasPorMedio.efectivo + dia.ventasPorMedio.efectivo,
+        tarjeta: acc.ventasPorMedio.tarjeta + dia.ventasPorMedio.tarjeta,
+        credito: acc.ventasPorMedio.credito + dia.ventasPorMedio.credito,
+        transferencia: acc.ventasPorMedio.transferencia + dia.ventasPorMedio.transferencia,
+        pedido_web: acc.ventasPorMedio.pedido_web + (dia.ventasPorMedio.pedido_web ?? 0),
+        mayorista: acc.ventasPorMedio.mayorista + (dia.ventasPorMedio.mayorista ?? 0),
+      },
       totalRetiros: acc.totalRetiros + dia.totalRetiros,
       totalIngresos: acc.totalIngresos + dia.totalIngresos,
       totalAjustesEfectivo: acc.totalAjustesEfectivo + dia.totalAjustesEfectivo,
@@ -392,6 +419,7 @@ cajaRouter.get("/cuadratura", async (req, res) => {
       fondoFijoInicial: 0,
       totalVentas: 0,
       totalPorMedio: { efectivo: 0, tarjeta: 0, credito: 0, transferencia: 0, pedido_web: 0, mayorista: 0 },
+      ventasPorMedio: { efectivo: 0, tarjeta: 0, credito: 0, transferencia: 0, pedido_web: 0, mayorista: 0 },
       totalRetiros: 0,
       totalIngresos: 0,
       totalAjustesEfectivo: 0,
