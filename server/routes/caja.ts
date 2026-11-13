@@ -234,6 +234,13 @@ async function calcularResumenSesion(sesionId: number) {
   let totalCobrosTransferencia = 0;
   let totalCobrosPedidoWeb = 0;
   let totalCobrosMayorista = 0;
+  // Desglose de los cobros de crédito (medio = "credito", no transferencia/
+  // pedido_web/mayorista) por cómo se cobraron de verdad — a pedido del
+  // usuario, para que en el cierre de caja quede clarísimo si un crédito
+  // pagado hoy entró como efectivo, tarjeta o transferencia, en vez de un
+  // solo número sin desglosar. "condonado" se deja aparte porque no es
+  // dinero recibido (ver POST /creditos/:pagoId/condonar).
+  const cobrosCreditoPorMedio: Record<string, number> = { efectivo: 0, tarjeta: 0, transferencia: 0, condonado: 0 };
   for (const cobro of cobrosHoy) {
     totalPorMedio[cobro.medioCobro!] = (totalPorMedio[cobro.medioCobro!] ?? 0) + cobro.monto;
     if (cobro.medio === "transferencia") {
@@ -244,6 +251,7 @@ async function calcularResumenSesion(sesionId: number) {
       totalCobrosMayorista += cobro.monto;
     } else {
       totalCobrosCredito += cobro.monto;
+      cobrosCreditoPorMedio[cobro.medioCobro!] = (cobrosCreditoPorMedio[cobro.medioCobro!] ?? 0) + cobro.monto;
     }
   }
 
@@ -290,6 +298,7 @@ async function calcularResumenSesion(sesionId: number) {
     totalVentasMayorista,
     totalPorMedio,
     totalCobrosCredito,
+    cobrosCreditoPorMedio,
     totalCobrosTransferencia,
     totalCobrosPedidoWeb,
     totalCobrosMayorista,
@@ -2052,7 +2061,7 @@ cajaRouter.get("/creditos-pendientes", async (req, res) => {
 });
 
 const cobrarCreditoSchema = z.object({
-  medioCobro: z.enum(["efectivo", "tarjeta"]),
+  medioCobro: z.enum(["efectivo", "tarjeta", "transferencia"]),
   usuarioId: z.number().int().positive(),
 });
 
