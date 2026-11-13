@@ -111,11 +111,8 @@ export default function Inventario() {
           <Link to="/inventario/salida" className="boton">
             Registrar salida / merma
           </Link>
-          <Link to="/camara/entrada" className="boton">
-            ❄ Ingreso a cámara
-          </Link>
-          <Link to="/inventario/factura" className="boton">
-            + Cargar factura
+          <Link to="/mercaderia/ingreso" className="boton">
+            + Ingreso de mercadería
           </Link>
           <Link to="/inventario/facturas" className="boton">
             Facturas

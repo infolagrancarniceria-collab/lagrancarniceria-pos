@@ -1002,9 +1002,9 @@ export default function Reportes() {
         <section className="tarjeta">
           <h2>Compras</h2>
           <p className="ayuda">
-            Toda compra de mercadería del período: lo cargado por <Link to="/inventario/factura">Cargar factura</Link>{" "}
-            (congelados y productos por unidad) y lo ingresado por <Link to="/camara/entrada">Ingreso a cámara</Link>{" "}
-            (carne fresca por peso) — ambas cuentan igual como "compra" en esta pestaña.
+            Toda compra de mercadería del período, cargada desde{" "}
+            <Link to="/mercaderia/ingreso">Ingreso de mercadería</Link>: tanto en modo "Por unidad / congelados" como
+            en modo "Por kilo" (carne fresca) — ambas cuentan igual como "compra" en esta pestaña.
           </p>
           <div className="fila-inline">
             <div>
