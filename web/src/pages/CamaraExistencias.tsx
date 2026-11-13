@@ -23,6 +23,7 @@ import ModalAlerta from "../components/ModalAlerta";
 import { DESTINOS_CAMARA } from "../lib/destinoCamara";
 
 const MOTIVOS_ANULAR_LOTE = ["Lote de prueba", "Entrada duplicada", "Datos incorrectos"];
+const MOTIVOS_CORREGIR_LOTE = ["Peso mal ingresado", "Costo mal ingresado", "Producto equivocado", "Familia o procedencia equivocada"];
 
 function fechaHace(dias: number): string {
   const d = new Date();
@@ -79,7 +80,10 @@ export default function CamaraExistencias() {
 
   const [corrigiendoId, setCorrigiendoId] = useState<number | null>(null);
   const [formCorreccion, setFormCorreccion] = useState<FormularioCorreccion | null>(null);
-  const [guardandoCorreccion, setGuardandoCorreccion] = useState(false);
+  // A pedido del usuario: corregir un lote ya ingresado ahora pide
+  // autorización (igual que anular uno) — este modal se abre recién
+  // después de validar los datos del formulario (ver guardarCorreccion).
+  const [pidiendoClaveCorreccion, setPidiendoClaveCorreccion] = useState(false);
 
   const [anulandoId, setAnulandoId] = useState<number | null>(null);
 
@@ -161,7 +165,12 @@ export default function CamaraExistencias() {
     setError(null);
   }
 
-  async function guardarCorreccion() {
+  // Valida los datos del formulario y recién ahí pide autorización (ver
+  // pidiendoClaveCorreccion más abajo) — a pedido del usuario, corregir un
+  // lote ya ingresado ahora necesita motivo + clave de supervisor, igual
+  // que anular uno. El guardado real queda en confirmarCorreccionConClave,
+  // que se llama recién al confirmar el modal de clave.
+  function guardarCorreccion() {
     if (!formCorreccion || !formCorreccion.productoSeleccionado || !usuario || corrigiendoId == null) return;
     const pesoTotalKg = Number(formCorreccion.pesoTotalKg);
     const costoNetoKg = Number(formCorreccion.costoNetoKg);
@@ -177,26 +186,27 @@ export default function CamaraExistencias() {
       setError("Elige la procedencia (Nacional, Brasil o Paraguay)");
       return;
     }
-    setGuardandoCorreccion(true);
     setError(null);
-    try {
-      await api.camara.corregirLote(corrigiendoId, {
-        productoId: formCorreccion.productoSeleccionado.id,
-        familia: formCorreccion.familia,
-        ...(formCorreccion.familia === "Vacuno" ? { procedencia: formCorreccion.procedencia as ProcedenciaCamara } : {}),
-        pesoTotalKg,
-        costoNetoKg,
-        usuarioId: usuario.id,
-      });
-      mostrarToast("Lote corregido", formCorreccion.productoSeleccionado.descripcion);
-      setCorrigiendoId(null);
-      setFormCorreccion(null);
-      await cargar();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setGuardandoCorreccion(false);
-    }
+    setPidiendoClaveCorreccion(true);
+  }
+
+  async function confirmarCorreccionConClave(usuarioAutorizaId: number, clave: string, motivo?: string) {
+    if (!formCorreccion || !formCorreccion.productoSeleccionado || corrigiendoId == null) return;
+    await api.camara.corregirLote(corrigiendoId, {
+      productoId: formCorreccion.productoSeleccionado.id,
+      familia: formCorreccion.familia,
+      ...(formCorreccion.familia === "Vacuno" ? { procedencia: formCorreccion.procedencia as ProcedenciaCamara } : {}),
+      pesoTotalKg: Number(formCorreccion.pesoTotalKg),
+      costoNetoKg: Number(formCorreccion.costoNetoKg),
+      usuarioId: usuarioAutorizaId,
+      motivo: motivo ?? "",
+      clave,
+    });
+    mostrarToast("Lote corregido", formCorreccion.productoSeleccionado.descripcion);
+    setPidiendoClaveCorreccion(false);
+    setCorrigiendoId(null);
+    setFormCorreccion(null);
+    await cargar();
   }
 
   async function reimprimirLote(loteId: number) {
@@ -844,18 +854,12 @@ export default function CamaraExistencias() {
                 </p>
               )}
               <div className="acciones-formulario">
-                <button
-                  type="button"
-                  className="boton boton-primario"
-                  disabled={guardandoCorreccion}
-                  onClick={guardarCorreccion}
-                >
-                  {guardandoCorreccion ? "Guardando..." : "Guardar cambios"}
+                <button type="button" className="boton boton-primario" onClick={guardarCorreccion}>
+                  Guardar cambios
                 </button>
                 <button
                   type="button"
                   className="boton"
-                  disabled={guardandoCorreccion}
                   onClick={() => {
                     setCorrigiendoId(null);
                     setFormCorreccion(null);
@@ -876,6 +880,16 @@ export default function CamaraExistencias() {
           motivoOpciones={MOTIVOS_ANULAR_LOTE}
           onConfirmar={confirmarAnulacion}
           onCancelar={() => setAnulandoId(null)}
+        />
+      )}
+
+      {pidiendoClaveCorreccion && (
+        <ModalConfirmarClave
+          titulo="Corregir lote"
+          descripcion="Elige el motivo de la corrección, quién autoriza y la clave de supervisor."
+          motivoOpciones={MOTIVOS_CORREGIR_LOTE}
+          onConfirmar={confirmarCorreccionConClave}
+          onCancelar={() => setPidiendoClaveCorreccion(false)}
         />
       )}
     </div>
