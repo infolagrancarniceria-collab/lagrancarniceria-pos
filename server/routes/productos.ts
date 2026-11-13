@@ -11,15 +11,34 @@ import { calcularMargen, calcularMargenReal } from "../lib/margen";
 
 export const productosRouter = Router();
 
-// El costo "efectivo" para calcular margen: el real (de una compra
-// registrada) manda siempre que exista; el costo de referencia ingresado
-// a mano (Producto.costoReferencia) es solo un respaldo para cuando
-// todavía no hay ninguna compra real — así se puede ver el margen
-// reflejado mientras se junta el dato real, sin perder la prioridad de
-// este último apenas se registre.
-function calcularCostoEfectivo(ultimoCosto: number | null, costoReferencia: number | null) {
-  const costoEfectivo = ultimoCosto ?? costoReferencia ?? null;
-  const costoEsEstimado = ultimoCosto == null && costoReferencia != null;
+// El costo "efectivo" para calcular margen: el real manda siempre que
+// exista (el costo de referencia ingresado a mano es solo un respaldo
+// para cuando todavía no hay ninguna compra real). Corregido a pedido del
+// usuario — antes "el real" solo miraba las compras de "Cargar factura"
+// (MovimientoInventario), nunca las de "Ingreso a cámara" (LoteCamara), así
+// que un producto que solo entra por cámara (la mayoría de la carne
+// fresca) se quedaba con un costo viejo o nunca actualizado aunque se le
+// acabara de registrar una compra real. Ahora se usa la compra real MÁS
+// RECIENTE entre ambas fuentes, comparando su fecha — no "factura siempre
+// gana".
+function resolverCostoEfectivo(opciones: {
+  facturaCosto: number | null;
+  facturaFecha: Date | null;
+  camaraCostoKg: number | null;
+  camaraFecha: Date | null;
+  costoReferencia: number | null;
+}) {
+  const { facturaCosto, facturaFecha, camaraCostoKg, camaraFecha, costoReferencia } = opciones;
+  let costoReal: number | null = null;
+  if (facturaCosto != null && camaraCostoKg != null) {
+    costoReal = camaraFecha && facturaFecha && camaraFecha.getTime() > facturaFecha.getTime() ? camaraCostoKg : facturaCosto;
+  } else if (facturaCosto != null) {
+    costoReal = facturaCosto;
+  } else if (camaraCostoKg != null) {
+    costoReal = camaraCostoKg;
+  }
+  const costoEfectivo = costoReal ?? costoReferencia ?? null;
+  const costoEsEstimado = costoReal == null && costoReferencia != null;
   return { costoEfectivo, costoEsEstimado };
 }
 // Límite de tamaño explícito (antes no había ninguno, sin querer permitía
@@ -122,7 +141,13 @@ productosRouter.get("/", async (req, res) => {
         ultimoCostoFecha: ultimaCompra?.fecha ?? null,
         ultimoCostoCamaraKg: ultimoLoteCamara?.costoNetoKg ?? null,
         ultimoCostoCamaraFecha: ultimoLoteCamara?.fechaIngreso ?? null,
-        ...calcularCostoEfectivo(ultimoCosto, p.costoReferencia),
+        ...resolverCostoEfectivo({
+          facturaCosto: ultimoCosto,
+          facturaFecha: ultimaCompra?.fecha ?? null,
+          camaraCostoKg: ultimoLoteCamara?.costoNetoKg ?? null,
+          camaraFecha: ultimoLoteCamara?.fechaIngreso ?? null,
+          costoReferencia: p.costoReferencia,
+        }),
       };
     })
   );
@@ -142,8 +167,9 @@ productosRouter.get("/proximo-plu", async (_req, res) => {
 // Asistente (ver calcularReporteMargenes más abajo) y el reporte de
 // utilidad aproximada (ver calcularReporteUtilidad en reportes.ts):
 // productos activos (de una categoría o de todo el catálogo) con su costo
-// efectivo resuelto — último costo real de compra si existe, o el costo de
-// referencia manual como respaldo (ver calcularCostoEfectivo). Productos
+// efectivo resuelto — último costo real de compra (factura o cámara, el
+// más reciente) si existe, o el costo de referencia manual como respaldo
+// (ver resolverCostoEfectivo). Productos
 // sin ningún costo conocido quedan en `total` pero no en `conCosto`, para
 // no calcular un margen (ni una utilidad) inventada.
 export async function productosConCostoEfectivo(categoriaId?: number) {
@@ -172,15 +198,40 @@ export async function productosConCostoEfectivo(categoriaId?: number) {
     }
   }
 
+  // Último lote de Cámara de cada producto — corrección del mismo bug que
+  // GET /api/productos?incluirCosto=true (ver resolverCostoEfectivo):
+  // muchos productos (la mayoría de la carne fresca, justo lo que esta
+  // función alimenta a "Mejor margen") solo entran por cámara y nunca por
+  // "Cargar factura" — sin esto quedaban SIN costo conocido y por lo tanto
+  // afuera de "conCosto" por completo, aunque se les acabara de registrar
+  // una compra real.
+  const lotesCamara = await prisma.loteCamara.findMany({
+    orderBy: { fechaIngreso: "desc" },
+    select: { productoId: true, costoNetoKg: true, fechaIngreso: true },
+  });
+  const ultimoLoteCamaraPorProducto = new Map<number, { costoNetoKg: number; fechaIngreso: Date }>();
+  for (const l of lotesCamara) {
+    if (!ultimoLoteCamaraPorProducto.has(l.productoId)) {
+      ultimoLoteCamaraPorProducto.set(l.productoId, l);
+    }
+  }
+
   const conCosto = productos
     .map((p) => {
       const ultima = ultimaCompraPorProducto.get(p.id);
       const ultimoCosto = ultima?.costoUnitario ?? null;
+      const ultimoLoteCamara = ultimoLoteCamaraPorProducto.get(p.id) ?? null;
       return {
         ...p,
         ultimoCosto,
         ultimoCostoFecha: ultima?.fecha ?? null,
-        ...calcularCostoEfectivo(ultimoCosto, p.costoReferencia),
+        ...resolverCostoEfectivo({
+          facturaCosto: ultimoCosto,
+          facturaFecha: ultima?.fecha ?? null,
+          camaraCostoKg: ultimoLoteCamara?.costoNetoKg ?? null,
+          camaraFecha: ultimoLoteCamara?.fechaIngreso ?? null,
+          costoReferencia: p.costoReferencia,
+        }),
       };
     })
     .filter((p): p is typeof p & { costoEfectivo: number } => p.costoEfectivo != null);
@@ -309,7 +360,13 @@ productosRouter.get("/:id", async (req, res) => {
     penultimoCostoFecha: ultimasCompras[1]?.fecha ?? null,
     ultimoCostoCamaraKg: ultimoLoteCamara?.costoNetoKg ?? null,
     ultimoCostoCamaraFecha: ultimoLoteCamara?.fechaIngreso ?? null,
-    ...calcularCostoEfectivo(ultimoCosto, producto.costoReferencia),
+    ...resolverCostoEfectivo({
+      facturaCosto: ultimoCosto,
+      facturaFecha: ultimasCompras[0]?.fecha ?? null,
+      camaraCostoKg: ultimoLoteCamara?.costoNetoKg ?? null,
+      camaraFecha: ultimoLoteCamara?.fechaIngreso ?? null,
+      costoReferencia: producto.costoReferencia,
+    }),
   });
 });
 
