@@ -49,16 +49,37 @@ function totalDesglose(d: Desglose): number {
   return [...BILLETES, ...MONEDAS].reduce((s, { campo, valor }) => s + (Number(d[campo]) || 0) * valor, 0);
 }
 
-// Resumen en el orden pedido: inicio de caja, venta en efectivo, venta con
-// tarjeta, crédito otorgado, ventas por transferencia, ingresos (detalle +
-// suma), retiros (detalle + suma, restado) y "Total caja" al final — lo
-// que antes se llamaba "Efectivo esperado en caja". El resto de los
-// detalles que ya existían (cobros de crédito/transferencia recibidos,
-// pedidos web, mayorista) quedan abajo, sin estorbar lo principal.
+// Resumen en el orden pedido: TOTAL GENERAL del día primero (para que
+// quede clarísimo que una venta a crédito YA cuenta como venta cerrada hoy,
+// aunque el dinero no haya entrado todavía), después inicio de caja, venta
+// en efectivo, venta con tarjeta, crédito otorgado, ventas por
+// transferencia, una sección de Créditos separada y bien visible (otorgado
+// hoy vs. pagado hoy, desglosado por efectivo/tarjeta/transferencia — a
+// pedido del usuario, porque antes quedaba todo mezclado y no se veía claro
+// si un crédito pagado se había registrado), ingresos (detalle + suma),
+// retiros (detalle + suma, restado) y "Efectivo esperado en caja" al final.
+// El resto de los detalles que ya existían (transferencia de venta directa
+// confirmada, pedidos web, mayorista) quedan abajo, sin estorbar lo
+// principal.
 function ResumenCierre({ resumen, titulo }: { resumen: ResumenSesion; titulo: string }) {
+  const creditoOtorgado = resumen.totalPorMedio.credito ?? 0;
+  const creditoPagadoEfectivo = resumen.cobrosCreditoPorMedio.efectivo ?? 0;
+  const creditoPagadoTarjeta = resumen.cobrosCreditoPorMedio.tarjeta ?? 0;
+  const creditoPagadoTransferencia = resumen.cobrosCreditoPorMedio.transferencia ?? 0;
+  const creditoCondonado = resumen.cobrosCreditoPorMedio.condonado ?? 0;
+  const creditoPagadoTotal = creditoPagadoEfectivo + creditoPagadoTarjeta + creditoPagadoTransferencia;
+
   return (
     <div className="tarjeta">
       <h2>{titulo}</h2>
+      <p style={{ fontSize: "1.2rem" }}>
+        <strong>TOTAL GENERAL del día (todas las ventas, cualquier medio de pago):</strong>{" "}
+        {formatoCLP(resumen.totalVentas)}
+      </p>
+      <p className="ayuda" style={{ marginTop: 0 }}>
+        Incluye las ventas a crédito recién otorgadas hoy (ya cuentan como venta cerrada, aunque el cliente todavía no
+        pague) — por eso puede ser mayor que lo que de verdad entró en plata hoy.
+      </p>
       <p>
         <strong>Inicio de caja:</strong> {formatoCLP(resumen.sesion.fondoFijoInicial)}
       </p>
@@ -69,11 +90,37 @@ function ResumenCierre({ resumen, titulo }: { resumen: ResumenSesion; titulo: st
         <strong>Venta con tarjeta (local):</strong> {formatoCLP(resumen.totalPorMedio.tarjeta ?? 0)}
       </p>
       <p>
-        <strong>Crédito otorgado:</strong> {formatoCLP(resumen.totalPorMedio.credito ?? 0)}
+        <strong>Crédito otorgado:</strong> {formatoCLP(creditoOtorgado)}
       </p>
       <p>
         <strong>Ventas por transferencia:</strong> {formatoCLP(resumen.totalPorMedio.transferencia ?? 0)}
       </p>
+
+      <h3>Créditos</h3>
+      <p className="ayuda" style={{ marginTop: 0 }}>
+        Separado de las ventas del día de arriba — esto es solo para seguir la plata que se fía y la que se cobra
+        después, sea del día que sea.
+      </p>
+      <p>
+        <strong>Crédito otorgado hoy (pendiente de cobro):</strong> {formatoCLP(creditoOtorgado)}
+      </p>
+      <p>
+        <strong>Crédito pagado hoy:</strong> {formatoCLP(creditoPagadoTotal)}
+        {creditoPagadoTotal === 0 && <span className="ayuda"> (ningún crédito se cobró hoy)</span>}
+      </p>
+      {creditoPagadoTotal > 0 && (
+        <ul style={{ marginTop: 0 }}>
+          <li>Efectivo: {formatoCLP(creditoPagadoEfectivo)}</li>
+          <li>Tarjeta: {formatoCLP(creditoPagadoTarjeta)}</li>
+          <li>Transferencia: {formatoCLP(creditoPagadoTransferencia)}</li>
+        </ul>
+      )}
+      {creditoCondonado > 0 && (
+        <p className="ayuda">
+          Además, se condonó (perdonó, sin cobrar) {formatoCLP(creditoCondonado)} en crédito hoy — no es dinero
+          recibido, no suma a nada de arriba.
+        </p>
+      )}
 
       <h3>Ingresos de caja — {formatoCLP(resumen.totalIngresos)}</h3>
       {resumen.ingresos.length === 0 ? (
@@ -127,15 +174,17 @@ function ResumenCierre({ resumen, titulo }: { resumen: ResumenSesion; titulo: st
         </table>
       )}
 
-      <p style={{ fontSize: "1.1rem" }}>
-        <strong>Total caja:</strong> {formatoCLP(resumen.efectivoEsperado)}
+      <p style={{ fontSize: "1.15rem" }}>
+        <strong>Efectivo esperado en caja:</strong> {formatoCLP(resumen.efectivoEsperado)}
+      </p>
+      <p className="ayuda" style={{ marginTop: 0 }}>
+        Esto es solo la plata física que debería haber en el cajón ahora mismo (fondo inicial + ventas en efectivo +
+        ajustes − retiros + ingresos) — no es lo mismo que el TOTAL GENERAL de arriba, que incluye tarjeta, crédito y
+        transferencia.
       </p>
 
       <details>
-        <summary className="ayuda">Otros detalles (crédito, transferencia, pedido web, mayorista)</summary>
-        <p>
-          <strong>Cobros de crédito recibidos hoy:</strong> {formatoCLP(resumen.totalCobrosCredito)}
-        </p>
+        <summary className="ayuda">Otros detalles (transferencia de venta directa, pedido web, mayorista)</summary>
         <p>
           <strong>Transferencias confirmadas hoy:</strong> {formatoCLP(resumen.totalCobrosTransferencia)}
         </p>

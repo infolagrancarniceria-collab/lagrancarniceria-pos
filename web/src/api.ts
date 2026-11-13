@@ -685,7 +685,7 @@ export interface HistorialEntrada {
 }
 
 export type MedioPago = "efectivo" | "tarjeta" | "credito" | "transferencia" | "pedido_web" | "mayorista";
-export type MedioCobro = "efectivo" | "tarjeta";
+export type MedioCobro = "efectivo" | "tarjeta" | "transferencia";
 
 // Cliente registrado para ventas a crédito/transferencia — reemplaza el
 // nombre libre que se escribía antes en cada venta, para poder identificar
@@ -755,7 +755,7 @@ export interface PagoVenta {
   // "condonado" solo puede venir del lado del servidor (ver
   // POST /creditos/:pagoId/condonar) — cobrarCredito() nunca lo manda como
   // input, por eso MedioCobro (el tipo del parámetro) se deja acotado a
-  // "efectivo" | "tarjeta" y acá se amplía aparte.
+  // los medios reales de cobro y acá se amplía aparte.
   medioCobro: MedioCobro | "condonado" | null;
   motivoCondonacion: string | null;
   sesionCajaCobroId: number | null;
@@ -884,6 +884,10 @@ export interface ResumenSesion {
   totalVentasMayorista: number;
   totalPorMedio: Record<string, number>;
   totalCobrosCredito: number;
+  // Desglose de totalCobrosCredito por cómo se cobró de verdad — a pedido
+  // del usuario, para que el cierre de caja muestre claramente si un
+  // crédito pagado hoy entró como efectivo, tarjeta o transferencia.
+  cobrosCreditoPorMedio: Record<string, number>;
   totalCobrosTransferencia: number;
   totalCobrosPedidoWeb: number;
   totalCobrosMayorista: number;

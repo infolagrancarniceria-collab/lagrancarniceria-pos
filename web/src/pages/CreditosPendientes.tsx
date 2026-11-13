@@ -30,6 +30,16 @@ const ETIQUETAS_FILTRO: Record<Filtro, string> = {
   transferencia: "Transferencia",
 };
 
+// A pedido del usuario: antes solo se podía marcar un cobro como efectivo o
+// tarjeta, pero un crédito también se puede pagar por transferencia — sin
+// esta opción había que forzarlo como "efectivo" o "tarjeta" aunque no
+// correspondiera, ensuciando la cuadratura de caja del día.
+const ETIQUETAS_MEDIO_COBRO: Record<MedioCobro, string> = {
+  efectivo: "efectivo",
+  tarjeta: "tarjeta",
+  transferencia: "transferencia",
+};
+
 export default function CreditosPendientes() {
   const { usuario } = useUsuario();
   const [filtro, setFiltro] = useState<Filtro>("todos");
@@ -79,9 +89,7 @@ export default function CreditosPendientes() {
     setMensaje(null);
     const palabra = pago.medio === "transferencia" ? "la transferencia" : "el crédito";
     const confirmado = window.confirm(
-      `¿Registrar el cobro de ${formatoCLP(pago.monto)} (${palabra} de ${pago.clienteNombre}) como ${
-        medioCobro === "efectivo" ? "efectivo" : "tarjeta"
-      }?`
+      `¿Registrar el cobro de ${formatoCLP(pago.monto)} (${palabra} de ${pago.clienteNombre}) como ${ETIQUETAS_MEDIO_COBRO[medioCobro]}?`
     );
     if (!confirmado) return;
     try {
@@ -125,9 +133,7 @@ export default function CreditosPendientes() {
     const filas = creditos.filter((c) => seleccionados.has(c.id));
     const totalLote = filas.reduce((s, c) => s + c.monto, 0);
     const confirmado = window.confirm(
-      `¿Registrar el cobro de ${filas.length} pendiente(s) por ${formatoCLP(totalLote)} como ${
-        medioCobro === "efectivo" ? "efectivo" : "tarjeta"
-      }? Esto asume que TODOS se pagaron con el mismo medio — si alguno se pagó distinto, cóbralo aparte.`
+      `¿Registrar el cobro de ${filas.length} pendiente(s) por ${formatoCLP(totalLote)} como ${ETIQUETAS_MEDIO_COBRO[medioCobro]}? Esto asume que TODOS se pagaron con el mismo medio — si alguno se pagó distinto, cóbralo aparte.`
     );
     if (!confirmado) return;
 
@@ -224,6 +230,9 @@ export default function CreditosPendientes() {
             <button type="button" disabled={cobrandoLote} onClick={() => cobrarSeleccionados("tarjeta")}>
               {cobrandoLote ? "Cobrando..." : "Cobrar seleccionados con tarjeta"}
             </button>
+            <button type="button" disabled={cobrandoLote} onClick={() => cobrarSeleccionados("transferencia")}>
+              {cobrandoLote ? "Cobrando..." : "Cobrar seleccionados por transferencia"}
+            </button>
             <button type="button" disabled={cobrandoLote} onClick={() => setSeleccionados(new Set())}>
               Quitar selección
             </button>
@@ -278,6 +287,9 @@ export default function CreditosPendientes() {
                     </button>
                     <button type="button" onClick={() => cobrar(c, "tarjeta")}>
                       Cobrar con tarjeta
+                    </button>
+                    <button type="button" onClick={() => cobrar(c, "transferencia")}>
+                      Cobrar por transferencia
                     </button>
                     <button type="button" className="boton-peligro" onClick={() => setCondonandoId(c.id)}>
                       Dar de baja
