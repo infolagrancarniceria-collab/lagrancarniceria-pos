@@ -156,22 +156,22 @@ export default function Caja() {
 
             <div className="fila-inline">
               <div>
-                <strong>Efectivo:</strong> {formatoCLP(resumen.totalPorMedio.efectivo ?? 0)}
+                <strong>Efectivo:</strong> {formatoCLP(resumen.ventasPorMedio.efectivo ?? 0)}
               </div>
               <div>
-                <strong>Tarjeta:</strong> {formatoCLP(resumen.totalPorMedio.tarjeta ?? 0)}
+                <strong>Tarjeta:</strong> {formatoCLP(resumen.ventasPorMedio.tarjeta ?? 0)}
               </div>
               <div>
-                <strong>Crédito otorgado hoy:</strong> {formatoCLP(resumen.totalPorMedio.credito ?? 0)}
+                <strong>Crédito otorgado hoy:</strong> {formatoCLP(resumen.ventasPorMedio.credito ?? 0)}
               </div>
               <div>
                 <strong>Cobros de crédito recibidos hoy:</strong> {formatoCLP(resumen.totalCobrosCredito)}
               </div>
               <div>
-                <strong>Pedidos web pendientes hoy:</strong> {formatoCLP(resumen.totalPorMedio.pedido_web ?? 0)}
+                <strong>Pedidos web pendientes hoy:</strong> {formatoCLP(resumen.ventasPorMedio.pedido_web ?? 0)}
               </div>
               <div>
-                <strong>Mayorista pendiente hoy:</strong> {formatoCLP(resumen.totalPorMedio.mayorista ?? 0)}
+                <strong>Mayorista pendiente hoy:</strong> {formatoCLP(resumen.ventasPorMedio.mayorista ?? 0)}
               </div>
               <div>
                 <strong>Retiros de caja:</strong> {formatoCLP(resumen.totalRetiros)}

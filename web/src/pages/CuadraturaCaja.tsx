@@ -122,27 +122,27 @@ export default function CuadraturaCaja() {
                   </tr>
                   <tr>
                     <td>Venta en efectivo</td>
-                    <td>{formatoCLP(dia.totalPorMedio.efectivo ?? 0)}</td>
+                    <td>{formatoCLP(dia.ventasPorMedio.efectivo ?? 0)}</td>
                   </tr>
                   <tr>
                     <td>Venta con tarjeta</td>
-                    <td>{formatoCLP(dia.totalPorMedio.tarjeta ?? 0)}</td>
+                    <td>{formatoCLP(dia.ventasPorMedio.tarjeta ?? 0)}</td>
                   </tr>
                   <tr>
                     <td>Venta a crédito</td>
-                    <td>{formatoCLP(dia.totalPorMedio.credito ?? 0)}</td>
+                    <td>{formatoCLP(dia.ventasPorMedio.credito ?? 0)}</td>
                   </tr>
                   <tr>
                     <td>Venta por transferencia</td>
-                    <td>{formatoCLP(dia.totalPorMedio.transferencia ?? 0)}</td>
+                    <td>{formatoCLP(dia.ventasPorMedio.transferencia ?? 0)}</td>
                   </tr>
                   <tr>
                     <td>Pedido web (pendiente de pago)</td>
-                    <td>{formatoCLP(dia.totalPorMedio.pedido_web ?? 0)}</td>
+                    <td>{formatoCLP(dia.ventasPorMedio.pedido_web ?? 0)}</td>
                   </tr>
                   <tr>
                     <td>Venta mayorista (pendiente de pago)</td>
-                    <td>{formatoCLP(dia.totalPorMedio.mayorista ?? 0)}</td>
+                    <td>{formatoCLP(dia.ventasPorMedio.mayorista ?? 0)}</td>
                   </tr>
                   <tr>
                     <td>
@@ -213,27 +213,27 @@ export default function CuadraturaCaja() {
                   </tr>
                   <tr>
                     <td>Venta en efectivo</td>
-                    <td>{formatoCLP(datos.totalGeneral.totalPorMedio.efectivo ?? 0)}</td>
+                    <td>{formatoCLP(datos.totalGeneral.ventasPorMedio.efectivo ?? 0)}</td>
                   </tr>
                   <tr>
                     <td>Venta con tarjeta</td>
-                    <td>{formatoCLP(datos.totalGeneral.totalPorMedio.tarjeta ?? 0)}</td>
+                    <td>{formatoCLP(datos.totalGeneral.ventasPorMedio.tarjeta ?? 0)}</td>
                   </tr>
                   <tr>
                     <td>Venta a crédito</td>
-                    <td>{formatoCLP(datos.totalGeneral.totalPorMedio.credito ?? 0)}</td>
+                    <td>{formatoCLP(datos.totalGeneral.ventasPorMedio.credito ?? 0)}</td>
                   </tr>
                   <tr>
                     <td>Venta por transferencia</td>
-                    <td>{formatoCLP(datos.totalGeneral.totalPorMedio.transferencia ?? 0)}</td>
+                    <td>{formatoCLP(datos.totalGeneral.ventasPorMedio.transferencia ?? 0)}</td>
                   </tr>
                   <tr>
                     <td>Pedido web (pendiente de pago)</td>
-                    <td>{formatoCLP(datos.totalGeneral.totalPorMedio.pedido_web ?? 0)}</td>
+                    <td>{formatoCLP(datos.totalGeneral.ventasPorMedio.pedido_web ?? 0)}</td>
                   </tr>
                   <tr>
                     <td>Venta mayorista (pendiente de pago)</td>
-                    <td>{formatoCLP(datos.totalGeneral.totalPorMedio.mayorista ?? 0)}</td>
+                    <td>{formatoCLP(datos.totalGeneral.ventasPorMedio.mayorista ?? 0)}</td>
                   </tr>
                   <tr>
                     <td>
