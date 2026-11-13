@@ -25,7 +25,7 @@ export default function Camara() {
 
       <h2>Registrar un movimiento</h2>
       <div className="grilla-camara">
-        <Opcion to="/camara/entrada" emoji="📥" titulo="Entrada de cajas" descripcion="Ingresar una factura o lote nuevo a cámara." />
+        <Opcion to="/mercaderia/ingreso" emoji="📥" titulo="Entrada de cajas" descripcion="Ingresar una factura o lote nuevo a cámara (pantalla de Ingreso de mercadería, modo 'Por kilo')." />
         <Opcion to="/camara/salida" emoji="📤" titulo="Salida de cajas" descripcion="Escanear una caja y sacarla a sala de venta, merma, venta por mayor, etc." />
         <Opcion to="/camara/inventario" emoji="🔍" titulo="Inventario por escaneo" descripcion="Contar físicamente lo que hay y comparar contra lo esperado." />
       </div>

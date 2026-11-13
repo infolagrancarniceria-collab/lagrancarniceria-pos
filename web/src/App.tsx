@@ -15,7 +15,7 @@ import Inventario from "./pages/Inventario";
 import RegistrarEntrada from "./pages/RegistrarEntrada";
 import RegistrarSalida from "./pages/RegistrarSalida";
 import MovimientosInventario from "./pages/MovimientosInventario";
-import CargarFactura from "./pages/CargarFactura";
+import IngresoMercaderia from "./pages/IngresoMercaderia";
 import Facturas from "./pages/Facturas";
 import Proveedores from "./pages/Proveedores";
 import Reportes from "./pages/Reportes";
@@ -45,7 +45,6 @@ import ControlPrecios from "./pages/ControlPrecios";
 import Asistente from "./pages/Asistente";
 import Balanza from "./pages/Balanza";
 import Camara from "./pages/Camara";
-import CamaraEntrada from "./pages/CamaraEntrada";
 import CamaraSalida from "./pages/CamaraSalida";
 import Mayoristas from "./pages/Mayoristas";
 import CamaraInventario from "./pages/CamaraInventario";
@@ -91,7 +90,7 @@ export default function App() {
             <Route path="/inventario/entrada" element={<RegistrarEntrada />} />
             <Route path="/inventario/salida" element={<RegistrarSalida />} />
             <Route path="/inventario/movimientos" element={<MovimientosInventario />} />
-            <Route path="/inventario/factura" element={<CargarFactura />} />
+            <Route path="/mercaderia/ingreso" element={<IngresoMercaderia />} />
             <Route path="/inventario/facturas" element={<Facturas />} />
             <Route path="/inventario/revisiones" element={<Revisiones />} />
             <Route path="/proveedores" element={<Proveedores />} />
@@ -118,7 +117,6 @@ export default function App() {
             <Route path="/asistente" element={<Asistente />} />
             <Route path="/balanza" element={<Balanza />} />
             <Route path="/camara" element={<Camara />} />
-            <Route path="/camara/entrada" element={<CamaraEntrada />} />
             <Route path="/camara/salida" element={<CamaraSalida />} />
             <Route path="/camara/mayoristas" element={<Mayoristas />} />
             <Route path="/camara/inventario" element={<CamaraInventario />} />

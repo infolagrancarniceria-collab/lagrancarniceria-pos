@@ -77,8 +77,8 @@ export default function Facturas() {
       <div className="encabezado-pantalla no-imprimir">
         <h1>Facturas cargadas</h1>
         <div className="fila-inline" style={{ marginBottom: 0 }}>
-          <Link to="/inventario/factura" className="boton boton-primario">
-            + Cargar factura
+          <Link to="/mercaderia/ingreso" className="boton boton-primario">
+            + Ingreso de mercadería
           </Link>
           <button type="button" className="boton" onClick={exportarCsv} disabled={facturas.length === 0}>
             Exportar a Excel (CSV)
@@ -94,8 +94,8 @@ export default function Facturas() {
 
       <h1 className="solo-imprimir">Facturas cargadas — {desde} a {hasta}</h1>
       <p className="ayuda no-imprimir">
-        Solo para productos congelados o que se venden por unidad — la carne fresca por peso se carga por{" "}
-        <Link to="/camara/entrada">Ingreso a cámara</Link>.
+        Solo las facturas cargadas en modo "Por unidad / congelados" — la carne fresca por peso se carga en la misma
+        pantalla de <Link to="/mercaderia/ingreso">Ingreso de mercadería</Link>, eligiendo el modo "Por kilo".
       </p>
 
       {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
