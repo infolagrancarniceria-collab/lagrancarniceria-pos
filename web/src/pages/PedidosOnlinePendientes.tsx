@@ -5,6 +5,14 @@ import { imprimirSilencioso as imprimirVale } from "../lib/imprimir";
 import ModalAlerta from "../components/ModalAlerta";
 import ComprobantePagoCredito from "../components/ComprobantePagoCredito";
 
+// A pedido del usuario: antes solo se podía marcar un pedido como pagado en
+// efectivo o tarjeta, pero el cliente también puede transferir al recibir.
+const ETIQUETAS_MEDIO_COBRO: Record<MedioCobro, string> = {
+  efectivo: "efectivo",
+  tarjeta: "tarjeta",
+  transferencia: "transferencia",
+};
+
 // Mismo mecanismo que Créditos y transferencias pendientes (ver
 // CreditosPendientes.tsx): un PagoVenta con medio "pedido_web" queda
 // cobrado:false hasta que el equipo registra a mano que el cliente pagó al
@@ -36,9 +44,7 @@ export default function PedidosOnlinePendientes() {
     setError(null);
     setMensaje(null);
     const confirmado = window.confirm(
-      `¿Registrar el cobro de ${formatoCLP(pago.monto)} del pedido de ${pago.clienteNombre} como ${
-        medioCobro === "efectivo" ? "efectivo" : "tarjeta"
-      }?`
+      `¿Registrar el cobro de ${formatoCLP(pago.monto)} del pedido de ${pago.clienteNombre} como ${ETIQUETAS_MEDIO_COBRO[medioCobro]}?`
     );
     if (!confirmado) return;
     try {
@@ -98,6 +104,9 @@ export default function PedidosOnlinePendientes() {
                   </button>
                   <button type="button" onClick={() => cobrar(p, "tarjeta")}>
                     Cobrar con tarjeta
+                  </button>
+                  <button type="button" onClick={() => cobrar(p, "transferencia")}>
+                    Cobrar por transferencia
                   </button>
                 </td>
               </tr>
