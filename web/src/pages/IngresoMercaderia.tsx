@@ -25,14 +25,18 @@ import ParMargen from "../components/ParMargen";
 // Pantalla única de ingreso de mercadería — a pedido del usuario, para no
 // tener que elegir de entrada entre dos pantallas distintas ("Ingreso a
 // cámara" vs. "Cargar factura") que en el fondo hacen lo mismo (cargar una
-// factura de compra, línea por línea, con el mismo proveedor y N°). Ahora
-// es UNA pantalla con un selector arriba: "Por kilo" (carne fresca, crea
-// lotes de cámara con etiqueta y FEFO) o "Por unidad / congelados" (crea
-// una entrada de inventario directa). Por debajo siguen siendo dos
-// mecanismos distintos a propósito — unificar el modelo de datos habría
-// significado tocar cómo cámara maneja lotes/vencimiento, mucho más riesgo
-// por una ganancia que es puramente de qué tan fácil es encontrar la
-// pantalla correcta.
+// factura de compra, línea por línea, con el mismo proveedor y N°). Arriba
+// hay dos interruptores, no excluyentes entre sí: "Por kilo" (carne
+// fresca, crea lotes de cámara con etiqueta y FEFO) y "Por unidad /
+// congelados" (crea una entrada de inventario directa) — a pedido del
+// usuario, para cuando una misma factura mezcla carne y productos
+// congelados/por unidad: se activan los dos y se registran juntos con un
+// solo clic, bajo el mismo proveedor/N° de factura/fecha. Por debajo
+// siguen siendo dos mecanismos distintos a propósito (dos llamadas al
+// servidor, una por cada endpoint existente) — unificar el modelo de
+// datos habría significado tocar cómo cámara maneja lotes/vencimiento,
+// mucho más riesgo por una ganancia que es puramente de qué tan fácil es
+// encontrar la pantalla correcta.
 type Modo = "kilo" | "unidad";
 
 // --- Modo "Por kilo" (carne fresca → cámara) ---
@@ -125,11 +129,12 @@ function hoy(): string {
 
 // Borrador en localStorage para no perder lo tipeado si hay que salir a
 // atender la caja a mitad de cargar una factura — un solo borrador para
-// toda la pantalla (incluye el modo y las líneas de AMBOS modos, no solo
-// el activo) así que cambiar de modo a mitad de camino no pierde lo ya
-// tipeado en el otro. Se guarda en cada cambio y se borra recién al
-// registrar la factura con éxito.
-const CLAVE_BORRADOR = "granCarniceria_borradorIngresoMercaderia_v1";
+// toda la pantalla (incluye qué modos están activos y las líneas de AMBOS
+// modos, aunque alguno esté con el interruptor apagado) así que
+// activar/desactivar un modo a mitad de camino no pierde lo ya tipeado en
+// el otro. Se guarda en cada cambio y se borra recién al registrar la
+// factura con éxito.
+const CLAVE_BORRADOR = "granCarniceria_borradorIngresoMercaderia_v2";
 
 type LineaKiloBorrador = Pick<
   LineaKilo,
@@ -138,7 +143,7 @@ type LineaKiloBorrador = Pick<
 type LineaUnidadBorrador = Pick<LineaUnidad, "id" | "producto" | "cantidad" | "costoUnitario" | "aplicaIvaCarne" | "umbralStockBajo">;
 
 interface Borrador {
-  modo: Modo;
+  modosActivos: Modo[];
   proveedorSeleccionado: Proveedor | null;
   numeroFactura: string;
   fecha: string;
@@ -199,7 +204,7 @@ export default function IngresoMercaderia() {
     ? borrador.lineasUnidad.map((l) => ({ ...l, buscarProducto: "", resultados: [] }))
     : [lineaUnidadVacia(1)];
 
-  const [modo, setModo] = useState<Modo>(borrador?.modo ?? "kilo");
+  const [modosActivos, setModosActivos] = useState<Set<Modo>>(new Set(borrador?.modosActivos ?? ["kilo"]));
 
   const [proveedores, setProveedores] = useState<Proveedor[]>([]);
   const [categorias, setCategorias] = useState<Categoria[]>([]);
@@ -261,9 +266,25 @@ export default function IngresoMercaderia() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // No excluyente: se puede activar "Por kilo" y "Por unidad" a la vez
+  // cuando la misma factura trae mercadería de ambos tipos — siempre queda
+  // al menos uno activo (no tendría sentido una factura sin ningún modo).
+  function toggleModo(m: Modo) {
+    setModosActivos((actual) => {
+      const copia = new Set(actual);
+      if (copia.has(m)) {
+        if (copia.size === 1) return actual;
+        copia.delete(m);
+      } else {
+        copia.add(m);
+      }
+      return copia;
+    });
+  }
+
   useEffect(() => {
     guardarBorrador({
-      modo,
+      modosActivos: Array.from(modosActivos),
       proveedorSeleccionado,
       numeroFactura,
       fecha,
@@ -289,7 +310,7 @@ export default function IngresoMercaderia() {
         umbralStockBajo: l.umbralStockBajo,
       })),
     });
-  }, [modo, proveedorSeleccionado, numeroFactura, fecha, lineasKilo, lineasUnidad]);
+  }, [modosActivos, proveedorSeleccionado, numeroFactura, fecha, lineasKilo, lineasUnidad]);
 
   function descartarBorrador() {
     borrarBorrador();
@@ -458,13 +479,14 @@ export default function IngresoMercaderia() {
     return (Number(l.cantidad) || 0) * (Number(l.costoUnitario) || 0);
   }
 
-  // --- Totales (de la línea activa) ---
+  // --- Totales (de toda la factura: líneas por kilo + líneas por unidad,
+  // estén o no con el interruptor de ese modo prendido en este momento) ---
 
-  const totalNeto = modo === "kilo" ? lineasKilo.reduce((s, l) => s + subtotalLineaKilo(l), 0) : lineasUnidad.reduce((s, l) => s + subtotalLineaUnidad(l), 0);
+  const totalNeto =
+    lineasKilo.reduce((s, l) => s + subtotalLineaKilo(l), 0) + lineasUnidad.reduce((s, l) => s + subtotalLineaUnidad(l), 0);
   const subtotalCarne =
-    modo === "kilo"
-      ? lineasKilo.filter((l) => l.aplicaIvaCarne).reduce((s, l) => s + subtotalLineaKilo(l), 0)
-      : lineasUnidad.filter((l) => l.aplicaIvaCarne).reduce((s, l) => s + subtotalLineaUnidad(l), 0);
+    lineasKilo.filter((l) => l.aplicaIvaCarne).reduce((s, l) => s + subtotalLineaKilo(l), 0) +
+    lineasUnidad.filter((l) => l.aplicaIvaCarne).reduce((s, l) => s + subtotalLineaUnidad(l), 0);
   const iva = Math.round(totalNeto * TASA_IVA);
   const ivaCarne = Math.round(subtotalCarne * TASA_IVA_CARNE);
   const totalConImpuestos = totalNeto + iva + ivaCarne;
@@ -484,118 +506,75 @@ export default function IngresoMercaderia() {
     setDuplicadoConfirmado(false);
   }
 
-  async function guardarKilo() {
+  // Solo valida/envía las líneas con un producto elegido — así una fila
+  // vacía que quedó de sobra (o todo un modo con el interruptor prendido
+  // pero sin ninguna línea llenada) no bloquea registrar la factura.
+  function validarLineasKilo(lineas: LineaKilo[]): string | null {
     if (avisoDuplicado && !duplicadoConfirmado) {
-      setError("Esta factura ya se cargó antes — revisa el aviso arriba y confirma si quieres seguir igual.");
-      return;
+      return "Esta factura ya se cargó antes — revisa el aviso arriba y confirma si quieres seguir igual.";
     }
-    for (const l of lineasKilo) {
-      if (!l.producto) {
-        setError("Falta elegir el producto de alguna línea");
-        return;
-      }
-      if (l.familia === "Vacuno" && !l.procedencia) {
-        setError(`Falta la procedencia de "${l.producto.descripcion}"`);
-        return;
-      }
+    for (const l of lineas) {
+      if (l.familia === "Vacuno" && !l.procedencia) return `Falta la procedencia de "${l.producto!.descripcion}"`;
       const cajas = Number(l.cantidadCajas);
-      if (!cajas || cajas <= 0 || !Number.isInteger(cajas)) {
-        setError(`Cantidad de cajas inválida en "${l.producto.descripcion}"`);
-        return;
-      }
-      if (!Number(l.pesoValor) || Number(l.pesoValor) <= 0) {
-        setError(`Falta el peso de "${l.producto.descripcion}"`);
-        return;
-      }
-      if (!Number(l.costoNetoKg) || Number(l.costoNetoKg) <= 0) {
-        setError(`Falta el costo neto por kilo de "${l.producto.descripcion}"`);
-        return;
-      }
+      if (!cajas || cajas <= 0 || !Number.isInteger(cajas)) return `Cantidad de cajas inválida en "${l.producto!.descripcion}"`;
+      if (!Number(l.pesoValor) || Number(l.pesoValor) <= 0) return `Falta el peso de "${l.producto!.descripcion}"`;
+      if (!Number(l.costoNetoKg) || Number(l.costoNetoKg) <= 0) return `Falta el costo neto por kilo de "${l.producto!.descripcion}"`;
     }
-
-    const confirmado = window.confirm(
-      `¿Registrar esta factura? ${lineasKilo.length} línea(s), total neto ${formatoCLP(totalNeto)}.`
-    );
-    if (!confirmado) return;
-
-    setGuardando(true);
-    try {
-      const resultado = await api.camara.entradaFactura({
-        proveedorId: proveedorSeleccionado!.id,
-        numeroFactura: numeroFactura.trim(),
-        fecha,
-        usuarioId: usuario!.id,
-        lineas: lineasKilo.map((l) => ({
-          productoId: l.producto!.id,
-          familia: l.familia,
-          ...(l.familia === "Vacuno" ? { procedencia: l.procedencia as ProcedenciaCamara } : {}),
-          cantidadCajas: Number(l.cantidadCajas),
-          ...(l.modoPeso === "total" ? { pesoTotalKg: Number(l.pesoValor) } : { pesoIndividualKg: Number(l.pesoValor) }),
-          costoNetoKg: Number(l.costoNetoKg),
-        })),
-        confirmarDuplicado: duplicadoConfirmado,
-      });
-      borrarBorrador();
-      setCajasCreadas(resultado.cajas);
-      mostrarToast(
-        "Factura ingresada a cámara",
-        `${lineasKilo.length} línea(s) de ${proveedorSeleccionado!.nombre} — ${formatoCLP(totalNeto)}.`
-      );
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setGuardando(false);
-    }
+    return null;
   }
 
-  async function guardarUnidad() {
-    const lineasValidas = lineasUnidad.filter((l) => l.producto);
-    if (lineasValidas.length === 0) {
-      setError("Agrega al menos una línea con un producto elegido");
-      return;
-    }
-    for (const l of lineasValidas) {
-      if (!Number(l.cantidad) || Number(l.cantidad) <= 0) {
-        setError(`Falta la cantidad de "${l.producto!.descripcion}"`);
-        return;
-      }
-      if (!Number(l.costoUnitario) || Number(l.costoUnitario) <= 0) {
-        setError(`Falta el costo unitario de "${l.producto!.descripcion}"`);
-        return;
-      }
+  async function enviarKilo(lineas: LineaKilo[]): Promise<CajaCamara[]> {
+    const resultado = await api.camara.entradaFactura({
+      proveedorId: proveedorSeleccionado!.id,
+      numeroFactura: numeroFactura.trim(),
+      fecha,
+      usuarioId: usuario!.id,
+      lineas: lineas.map((l) => ({
+        productoId: l.producto!.id,
+        familia: l.familia,
+        ...(l.familia === "Vacuno" ? { procedencia: l.procedencia as ProcedenciaCamara } : {}),
+        cantidadCajas: Number(l.cantidadCajas),
+        ...(l.modoPeso === "total" ? { pesoTotalKg: Number(l.pesoValor) } : { pesoIndividualKg: Number(l.pesoValor) }),
+        costoNetoKg: Number(l.costoNetoKg),
+      })),
+      confirmarDuplicado: duplicadoConfirmado,
+    });
+    return resultado.cajas;
+  }
+
+  function validarLineasUnidad(lineas: LineaUnidad[]): string | null {
+    for (const l of lineas) {
+      if (!Number(l.cantidad) || Number(l.cantidad) <= 0) return `Falta la cantidad de "${l.producto!.descripcion}"`;
+      if (!Number(l.costoUnitario) || Number(l.costoUnitario) <= 0) return `Falta el costo unitario de "${l.producto!.descripcion}"`;
       if (l.umbralStockBajo.trim() && (!Number.isInteger(Number(l.umbralStockBajo)) || Number(l.umbralStockBajo) < 0)) {
-        setError(`El umbral de stock bajo de "${l.producto!.descripcion}" debe ser un número entero mayor o igual a 0`);
-        return;
+        return `El umbral de stock bajo de "${l.producto!.descripcion}" debe ser un número entero mayor o igual a 0`;
       }
     }
-
-    setGuardando(true);
-    try {
-      await api.inventario.entradaFactura({
-        proveedorId: proveedorSeleccionado!.id,
-        numeroFactura: numeroFactura.trim(),
-        fecha,
-        usuarioId: usuario!.id,
-        lineas: lineasValidas.map((l) => ({
-          productoId: l.producto!.id,
-          cantidad: Number(l.cantidad),
-          costoUnitario: Number(l.costoUnitario),
-          umbralStockBajo: l.umbralStockBajo.trim() ? Number(l.umbralStockBajo) : null,
-        })),
-      });
-      mostrarToast(
-        "Factura cargada",
-        `${lineasValidas.length} línea(s) de ${proveedorSeleccionado!.nombre} — ${formatoCLP(totalNeto)}.`
-      );
-      borrarBorrador();
-      navigate("/inventario/facturas");
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setGuardando(false);
-    }
+    return null;
   }
 
+  async function enviarUnidad(lineas: LineaUnidad[]): Promise<void> {
+    await api.inventario.entradaFactura({
+      proveedorId: proveedorSeleccionado!.id,
+      numeroFactura: numeroFactura.trim(),
+      fecha,
+      usuarioId: usuario!.id,
+      lineas: lineas.map((l) => ({
+        productoId: l.producto!.id,
+        cantidad: Number(l.cantidad),
+        costoUnitario: Number(l.costoUnitario),
+        umbralStockBajo: l.umbralStockBajo.trim() ? Number(l.umbralStockBajo) : null,
+      })),
+    });
+  }
+
+  // Registra en un solo paso las líneas por kilo y por unidad que estén
+  // llenas (una factura puede traer de los dos tipos a la vez) — son dos
+  // llamadas distintas al servidor, una por cada sistema de por debajo, así
+  // que si la primera ya tuvo éxito y la segunda falla, NO hay que
+  // reintentar la primera: se limpian sus líneas apenas se confirma su
+  // éxito, de modo que un reintento solo vuelve a mandar lo que de verdad
+  // falta — evitando el riesgo de duplicar la parte que ya quedó registrada.
   async function guardar(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -607,8 +586,74 @@ export default function IngresoMercaderia() {
       setError("Falta el N° de factura");
       return;
     }
-    if (modo === "kilo") await guardarKilo();
-    else await guardarUnidad();
+
+    const lineasKiloValidas = lineasKilo.filter((l) => l.producto);
+    const lineasUnidadValidas = lineasUnidad.filter((l) => l.producto);
+    if (lineasKiloValidas.length === 0 && lineasUnidadValidas.length === 0) {
+      setError("Agrega al menos una línea con un producto elegido");
+      return;
+    }
+
+    if (lineasKiloValidas.length > 0) {
+      const errorKilo = validarLineasKilo(lineasKiloValidas);
+      if (errorKilo) {
+        setError(errorKilo);
+        return;
+      }
+    }
+    if (lineasUnidadValidas.length > 0) {
+      const errorUnidad = validarLineasUnidad(lineasUnidadValidas);
+      if (errorUnidad) {
+        setError(errorUnidad);
+        return;
+      }
+    }
+
+    const partes: string[] = [];
+    if (lineasKiloValidas.length > 0) partes.push(`${lineasKiloValidas.length} línea(s) por kilo`);
+    if (lineasUnidadValidas.length > 0) partes.push(`${lineasUnidadValidas.length} línea(s) por unidad`);
+    const confirmado = window.confirm(`¿Registrar esta factura? ${partes.join(" y ")}, total neto ${formatoCLP(totalNeto)}.`);
+    if (!confirmado) return;
+
+    let cajas: CajaCamara[] | null = null;
+    setGuardando(true);
+    try {
+      if (lineasKiloValidas.length > 0) {
+        cajas = await enviarKilo(lineasKiloValidas);
+        setLineasKilo([lineaKiloVacia(1)]);
+        setSiguienteIdKilo(2);
+        setAvisoDuplicado(null);
+        setDuplicadoConfirmado(false);
+        mostrarToast(
+          "Factura ingresada a cámara",
+          `${lineasKiloValidas.length} línea(s) por kilo de ${proveedorSeleccionado!.nombre}.`
+        );
+      }
+      if (lineasUnidadValidas.length > 0) {
+        await enviarUnidad(lineasUnidadValidas);
+        setLineasUnidad([lineaUnidadVacia(1)]);
+        setSiguienteIdUnidad(2);
+        mostrarToast(
+          "Factura cargada a inventario",
+          `${lineasUnidadValidas.length} línea(s) por unidad de ${proveedorSeleccionado!.nombre}.`
+        );
+      }
+      borrarBorrador();
+      if (cajas) {
+        setCajasCreadas(cajas);
+      } else {
+        navigate("/inventario/facturas");
+      }
+    } catch (e) {
+      const base = (e as Error).message;
+      setError(
+        cajas
+          ? `${base} — Ojo: la parte por kilo ya quedó registrada bien (${cajas.length} caja(s) en cámara; puedes imprimir sus etiquetas luego desde Cámara → Revisar entradas). No la vuelvas a cargar: corrige solo la parte por unidad/congelados y presiona "Registrar factura" de nuevo.`
+          : base
+      );
+    } finally {
+      setGuardando(false);
+    }
   }
 
   function imprimirEtiqueta(id: number) {
@@ -692,8 +737,9 @@ export default function IngresoMercaderia() {
         </Link>
       </div>
       <p className="ayuda">
-        Una sola pantalla para cargar cualquier factura de compra. Elige cómo viene esta mercadería: por kilo (carne
-        fresca, genera cajas con etiqueta para cámara) o por unidad/congelados (entra directo a inventario).
+        Una sola pantalla para cargar cualquier factura de compra. Activa uno o los dos interruptores según lo que
+        traiga esta factura — por kilo (carne fresca, genera cajas con etiqueta para cámara) y por unidad/congelados
+        (entra directo a inventario) se pueden mezclar en la misma factura y se registran juntos con un solo clic.
       </p>
       {error && <ModalAlerta mensaje={error} onCerrar={() => setError(null)} />}
       {borradorRestaurado && (
@@ -705,22 +751,28 @@ export default function IngresoMercaderia() {
         </p>
       )}
 
-      <div className="chips-categoria" role="radiogroup" aria-label="Cómo viene esta mercadería">
+      <div className="chips-categoria" role="group" aria-label="Qué trae esta factura (se pueden activar los dos)">
         <button
           type="button"
-          className={`chip-categoria ${modo === "kilo" ? "activo" : ""}`}
-          onClick={() => setModo("kilo")}
+          className={`chip-categoria ${modosActivos.has("kilo") ? "activo" : ""}`}
+          onClick={() => toggleModo("kilo")}
         >
-          🥩 Por kilo (carne fresca)
+          {modosActivos.has("kilo") ? "✓ " : ""}🥩 Por kilo (carne fresca)
         </button>
         <button
           type="button"
-          className={`chip-categoria ${modo === "unidad" ? "activo" : ""}`}
-          onClick={() => setModo("unidad")}
+          className={`chip-categoria ${modosActivos.has("unidad") ? "activo" : ""}`}
+          onClick={() => toggleModo("unidad")}
         >
-          📦 Por unidad / congelados
+          {modosActivos.has("unidad") ? "✓ " : ""}📦 Por unidad / congelados
         </button>
       </div>
+      {modosActivos.size > 1 && (
+        <p className="ayuda" style={{ marginTop: "4px" }}>
+          Los dos están activos: abajo van a aparecer las dos listas de líneas, y "Registrar factura" las manda
+          juntas, bajo el mismo proveedor y N° de factura.
+        </p>
+      )}
 
       <form onSubmit={guardar} onKeyDown={manejarEnterComoTab} className="formulario">
         <label>
@@ -746,7 +798,7 @@ export default function IngresoMercaderia() {
                     onClick={() => {
                       setProveedorSeleccionado(p);
                       setBuscarProveedor("");
-                      if (modo === "kilo") verificarDuplicado(p.id, numeroFactura);
+                      if (modosActivos.has("kilo")) verificarDuplicado(p.id, numeroFactura);
                     }}
                   >
                     {p.nombre}
@@ -805,12 +857,12 @@ export default function IngresoMercaderia() {
           <input
             value={numeroFactura}
             onChange={(e) => setNumeroFactura(e.target.value)}
-            onBlur={(e) => modo === "kilo" && proveedorSeleccionado && verificarDuplicado(proveedorSeleccionado.id, e.target.value)}
+            onBlur={(e) => modosActivos.has("kilo") && proveedorSeleccionado && verificarDuplicado(proveedorSeleccionado.id, e.target.value)}
             required
           />
         </label>
 
-        {modo === "kilo" && avisoDuplicado && (
+        {modosActivos.has("kilo") && avisoDuplicado && (
           <div className="tarjeta tarjeta-mini aviso-advertencia">
             <p>
               ⚠ <strong>Esta factura ya se cargó antes</strong> — mismo proveedor y N° de factura, en{" "}
@@ -836,9 +888,9 @@ export default function IngresoMercaderia() {
           </div>
         )}
 
-        {modo === "kilo" ? (
+        {modosActivos.has("kilo") && (
           <div className="acciones-formulario">
-            <h2>Líneas de la factura</h2>
+            <h2>🥩 Líneas por kilo (carne fresca)</h2>
             {lineasKilo.map((l, i) => (
               <div key={l.id} className="tarjeta tarjeta-mini">
                 <div className="fila-inline" style={{ justifyContent: "space-between" }}>
@@ -1014,9 +1066,11 @@ export default function IngresoMercaderia() {
               + Agregar línea
             </button>
           </div>
-        ) : (
+        )}
+
+        {modosActivos.has("unidad") && (
           <div className="acciones-formulario">
-            <h2>Líneas de la factura</h2>
+            <h2>📦 Líneas por unidad / congelados</h2>
             <table className="tabla">
               <thead>
                 <tr>
