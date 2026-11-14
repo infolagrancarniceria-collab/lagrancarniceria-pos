@@ -721,6 +721,92 @@ select {
   font-variant-numeric: tabular-nums;
 }
 
+/* Recuadros de métrica para el cierre de caja (CerrarCaja.tsx) — a pedido
+   del usuario, para poder identificar de un vistazo qué cifras importan
+   sin leer un párrafo tras otro. Mismo patrón de tarjeta que
+   .resumen-canal, pero con 3 tonos: neutro (informativo, ej. "venta
+   total"), éxito (cuadra) y error (no cuadra / falta algo) — el tono lo
+   decide cada pantalla según si la cifra es "buena/mala" o solo
+   informativa.
+*/
+.grilla-metricas {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.75rem;
+  margin: 0.75rem 0 1.25rem;
+}
+.recuadro-metrica {
+  border-radius: 10px;
+  padding: 0.7rem 1.1rem;
+  border: 1px solid var(--color-borde);
+  background: var(--color-superficie-2);
+}
+.recuadro-metrica.exito {
+  background: var(--color-exito-fondo);
+  border-color: var(--color-exito);
+}
+.recuadro-metrica.error {
+  background: var(--color-error-fondo);
+  border-color: var(--color-error);
+}
+.recuadro-metrica-etiqueta {
+  font-family: var(--fuente-titulos);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-size: 0.78rem;
+  display: block;
+  color: var(--color-texto-suave);
+}
+.recuadro-metrica.exito .recuadro-metrica-etiqueta {
+  color: var(--color-exito);
+}
+.recuadro-metrica.error .recuadro-metrica-etiqueta {
+  color: var(--color-error);
+}
+.recuadro-metrica-valor {
+  font-size: 1.35rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  display: block;
+  margin-top: 0.15rem;
+}
+.recuadro-metrica-nota {
+  font-size: 0.8rem;
+  margin: 0.2rem 0 0;
+}
+
+/* Lista tipo "boleta" para Movimientos en efectivo — cada línea es
+   etiqueta a la izquierda, monto a la derecha (números alineados), en vez
+   de un párrafo tras otro, para que el cálculo paso a paso se lea de
+   arriba hacia abajo igual que en la planilla de papel. La fila final
+   ("= Efectivo esperado") se destaca aparte, no con esta clase. */
+.lista-calculo {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.5rem 0 1rem;
+}
+.lista-calculo td {
+  padding: 0.35rem 0;
+  border-bottom: 1px dashed var(--color-borde);
+}
+.lista-calculo td:last-child {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.lista-calculo tr:last-child td {
+  border-bottom: none;
+}
+.lista-calculo-total td {
+  font-size: 1.1rem;
+  font-weight: 700;
+  border-top: 2px solid var(--color-texto);
+  border-bottom: none !important;
+  padding-top: 0.5rem;
+}
+
 /* Aviso emergente del vuelto en efectivo — antes un window.alert() del
    navegador sin estilo; ahora un mismo lenguaje visual que el Total
    (número grande, destacado), pero en verde para que se lea como un
