@@ -65,6 +65,35 @@ function totalDesglose(d: Desglose): number {
   return [...BILLETES, ...MONEDAS].reduce((s, { campo, valor }) => s + (Number(d[campo]) || 0) * valor, 0);
 }
 
+// Recuadro de una sola cifra — a pedido del usuario, para poder
+// identificar de un vistazo qué números importan en vez de leer un
+// párrafo tras otro. "tono" decide el color: "exito"/"error" para una
+// cifra que de verdad está bien o mal (ej. si algo cuadra o no), "neutro"
+// (el default) para una cifra puramente informativa.
+function MetricaBox({
+  etiqueta,
+  valor,
+  tono = "neutro",
+  nota,
+}: {
+  etiqueta: string;
+  valor: string;
+  tono?: "exito" | "error" | "neutro";
+  nota?: string;
+}) {
+  return (
+    <div className={`recuadro-metrica${tono !== "neutro" ? ` ${tono}` : ""}`}>
+      <span className="recuadro-metrica-etiqueta">{etiqueta}</span>
+      <span className="recuadro-metrica-valor">{valor}</span>
+      {nota && (
+        <p className="ayuda recuadro-metrica-nota" style={{ margin: 0 }}>
+          {nota}
+        </p>
+      )}
+    </div>
+  );
+}
+
 // Estructura calcada de la planilla de arqueo en papel que usa el local
 // ("LA GRAN CARNICERÍA — Arqueo diario de caja"), a pedido del usuario:
 // "Venta total del día" / "Total caja del sistema" arriba, "Movimientos en
@@ -114,23 +143,9 @@ function ResumenCierre({ resumen, titulo }: { resumen: ResumenSesion; titulo: st
   return (
     <div className="tarjeta">
       <h2>{titulo}</h2>
-      <div className="fila-inline" style={{ flexWrap: "wrap", gap: "2rem" }}>
-        <div>
-          <p className="ayuda" style={{ margin: 0 }}>
-            Venta total del día
-          </p>
-          <p style={{ fontSize: "1.2rem", margin: 0 }}>
-            <strong>{formatoCLP(resumen.totalVentas)}</strong>
-          </p>
-        </div>
-        <div>
-          <p className="ayuda" style={{ margin: 0 }}>
-            Total caja del sistema (efectivo esperado)
-          </p>
-          <p style={{ fontSize: "1.2rem", margin: 0 }}>
-            <strong>{formatoCLP(resumen.efectivoEsperado)}</strong>
-          </p>
-        </div>
+      <div className="grilla-metricas">
+        <MetricaBox etiqueta="Venta total del día" valor={formatoCLP(resumen.totalVentas)} />
+        <MetricaBox etiqueta="Total caja del sistema (efectivo esperado)" valor={formatoCLP(resumen.efectivoEsperado)} />
       </div>
       <p className="ayuda">
         "Venta total del día" incluye las ventas a crédito recién otorgadas hoy (ya cuentan como venta cerrada,
@@ -139,53 +154,71 @@ function ResumenCierre({ resumen, titulo }: { resumen: ResumenSesion; titulo: st
       </p>
 
       <h3>Desglose de la venta por medio de pago</h3>
-      <p>
-        <strong>Venta en efectivo:</strong> {formatoCLP(ventaEfectivoHoy)}
-      </p>
-      <p>
-        <strong>Venta con tarjeta (local):</strong> {formatoCLP(ventaTarjetaHoy)}
-      </p>
-      <p>
-        <strong>Crédito otorgado:</strong> {formatoCLP(creditoOtorgado)}
-      </p>
-      <p>
-        <strong>Ventas por transferencia:</strong> {formatoCLP(ventaTransferenciaHoy)}
-      </p>
-      <p className={sumaCuatroLineas === resumen.totalVentas ? "exito" : "error"} style={{ fontSize: "0.9rem" }}>
-        {sumaCuatroLineas === resumen.totalVentas
-          ? "✓ Estas 4 líneas suman exacto la venta total del día."
-          : `⚠ Estas 4 líneas suman ${formatoCLP(sumaCuatroLineas)}, no calzan con la venta total del día (${formatoCLP(resumen.totalVentas)}) — revisa si hay una venta sin medio de pago asignado.`}
-      </p>
+      <div className="grilla-metricas">
+        <MetricaBox etiqueta="Venta en efectivo" valor={formatoCLP(ventaEfectivoHoy)} />
+        <MetricaBox etiqueta="Venta con tarjeta (local)" valor={formatoCLP(ventaTarjetaHoy)} />
+        <MetricaBox etiqueta="Crédito otorgado" valor={formatoCLP(creditoOtorgado)} />
+        <MetricaBox etiqueta="Ventas por transferencia" valor={formatoCLP(ventaTransferenciaHoy)} />
+      </div>
+      <div className={`recuadro-metrica ${sumaCuatroLineas === resumen.totalVentas ? "exito" : "error"}`}>
+        <span className="recuadro-metrica-etiqueta">
+          {sumaCuatroLineas === resumen.totalVentas ? "✓ Cuadra con la venta total del día" : "⚠ No cuadra"}
+        </span>
+        {sumaCuatroLineas !== resumen.totalVentas && (
+          <p style={{ margin: "0.2rem 0 0" }}>
+            Estas 4 líneas suman {formatoCLP(sumaCuatroLineas)}, no calzan con la venta total del día (
+            {formatoCLP(resumen.totalVentas)}) — revisa si hay una venta sin medio de pago asignado.
+          </p>
+        )}
+      </div>
 
       <h3>Movimientos en efectivo</h3>
-      <p>
-        <strong>Fondo de apertura:</strong> {formatoCLP(resumen.sesion.fondoFijoInicial)}
-      </p>
-      <p>
-        <strong>+ Ventas registradas en efectivo:</strong> {formatoCLP(ventaEfectivoHoy)}
-      </p>
-      <p>
-        <strong>+ Abonos recibidos en efectivo:</strong> {formatoCLP(abonosEfectivo)}
-        {abonosEfectivo === 0 && <span className="ayuda"> (ningún crédito/transferencia se cobró en efectivo hoy)</span>}
-      </p>
-      <p>
-        <strong>− Gastos pagados en efectivo:</strong> {formatoCLP(gastosEfectivo)}
-        {gastosEfectivo === 0 && <span className="ayuda"> (sin gastos en efectivo hoy)</span>}
-      </p>
-      <p>
-        <strong>− Retiros durante el día:</strong> {formatoCLP(resumen.totalRetiros)}
-      </p>
-      {resumen.totalIngresos > 0 && (
-        <p>
-          <strong>+ Ingresos de caja:</strong> {formatoCLP(resumen.totalIngresos)}
-        </p>
-      )}
-      <p>
-        <strong>± Corrección de medio de pago:</strong> {formatoCLP(resumen.totalAjustesEfectivo)}
-      </p>
-      <p style={{ fontSize: "1.1rem" }}>
-        <strong>= Efectivo esperado:</strong> {formatoCLP(resumen.efectivoEsperado)}
-      </p>
+      <table className="lista-calculo">
+        <tbody>
+          <tr>
+            <td>Fondo de apertura</td>
+            <td>{formatoCLP(resumen.sesion.fondoFijoInicial)}</td>
+          </tr>
+          <tr>
+            <td>+ Ventas registradas en efectivo</td>
+            <td>{formatoCLP(ventaEfectivoHoy)}</td>
+          </tr>
+          <tr>
+            <td>
+              + Abonos recibidos en efectivo
+              {abonosEfectivo === 0 && (
+                <span className="ayuda"> (ningún crédito/transferencia se cobró en efectivo hoy)</span>
+              )}
+            </td>
+            <td>{formatoCLP(abonosEfectivo)}</td>
+          </tr>
+          <tr>
+            <td>
+              − Gastos pagados en efectivo
+              {gastosEfectivo === 0 && <span className="ayuda"> (sin gastos en efectivo hoy)</span>}
+            </td>
+            <td>{formatoCLP(gastosEfectivo)}</td>
+          </tr>
+          <tr>
+            <td>− Retiros durante el día</td>
+            <td>{formatoCLP(resumen.totalRetiros)}</td>
+          </tr>
+          {resumen.totalIngresos > 0 && (
+            <tr>
+              <td>+ Ingresos de caja</td>
+              <td>{formatoCLP(resumen.totalIngresos)}</td>
+            </tr>
+          )}
+          <tr>
+            <td>± Corrección de medio de pago</td>
+            <td>{formatoCLP(resumen.totalAjustesEfectivo)}</td>
+          </tr>
+          <tr className="lista-calculo-total">
+            <td>= Efectivo esperado</td>
+            <td>{formatoCLP(resumen.efectivoEsperado)}</td>
+          </tr>
+        </tbody>
+      </table>
       <p className="ayuda" style={{ marginTop: 0 }}>
         Ej. venta anotada en efectivo y pagada con tarjeta: se corrige acá arriba ("Corrección de medio de pago"), no
         se resta de "Ventas registradas en efectivo".
@@ -244,45 +277,54 @@ function ResumenCierre({ resumen, titulo }: { resumen: ResumenSesion; titulo: st
       )}
 
       <h3>Tarjetas y transferencias</h3>
-      <p>
-        <strong>Tarjetas en sistema + abonos:</strong> {formatoCLP(tarjetasSistema)}
-      </p>
-      <p>
-        <strong>Total del terminal de tarjetas:</strong>{" "}
-        {resumen.sesion.totalTerminalTarjetas != null ? formatoCLP(resumen.sesion.totalTerminalTarjetas) : "—"}
-      </p>
-      {diferenciaTerminal != null && (
-        <p className={diferenciaTerminal === 0 ? "exito" : "error"}>
-          <strong>Diferencia (terminal − sistema):</strong> {formatoCLP(diferenciaTerminal)}
-        </p>
-      )}
-      <p>
-        <strong>Transferencias (ventas y abonos):</strong> {formatoCLP(resumen.totalPorMedio.transferencia ?? 0)}
-      </p>
+      <div className="grilla-metricas">
+        <MetricaBox etiqueta="Tarjetas en sistema + abonos" valor={formatoCLP(tarjetasSistema)} />
+        <MetricaBox
+          etiqueta="Total del terminal de tarjetas"
+          valor={resumen.sesion.totalTerminalTarjetas != null ? formatoCLP(resumen.sesion.totalTerminalTarjetas) : "—"}
+        />
+        {diferenciaTerminal != null && (
+          <MetricaBox
+            etiqueta="Diferencia (terminal − sistema)"
+            valor={formatoCLP(diferenciaTerminal)}
+            tono={diferenciaTerminal === 0 ? "exito" : "error"}
+          />
+        )}
+        <MetricaBox etiqueta="Transferencias (ventas y abonos)" valor={formatoCLP(resumen.totalPorMedio.transferencia ?? 0)} />
+      </div>
 
       <h3>Créditos</h3>
       <p className="ayuda" style={{ marginTop: 0 }}>
         Separado de las ventas del día de arriba — esto es solo para seguir la plata que se fía y la que se cobra
         después, sea del día que sea. "Crédito otorgado hoy" es el mismo número que arriba (puede incluir créditos
-        que ya se pagaron hoy mismo, no necesariamente está todo pendiente).
+        que ya se pagaron hoy mismo, no necesariamente está todo pendiente). Ojo: "pagado hoy" puede ser de un
+        crédito otorgado hoy mismo o de otro día — no se restan entre sí.
       </p>
-      <p>
-        <strong>Crédito otorgado hoy:</strong> {formatoCLP(creditoOtorgado)}
-      </p>
-      <p>
-        <strong>Crédito pagado hoy:</strong> {formatoCLP(creditoPagadoTotal)}
-        {creditoPagadoTotal === 0 && <span className="ayuda"> (ningún crédito se cobró hoy)</span>}
-      </p>
-      <p className="ayuda" style={{ marginTop: 0 }}>
-        Ojo: "pagado hoy" puede ser de un crédito otorgado hoy mismo o de otro día — no lo restes de "Crédito
-        otorgado hoy" de arriba, son dos cosas distintas que no se cuadran entre sí.
-      </p>
+      <div className="grilla-metricas">
+        <MetricaBox etiqueta="Crédito otorgado hoy" valor={formatoCLP(creditoOtorgado)} />
+        <MetricaBox
+          etiqueta="Crédito pagado hoy"
+          valor={formatoCLP(creditoPagadoTotal)}
+          nota={creditoPagadoTotal === 0 ? "Ningún crédito se cobró hoy" : undefined}
+        />
+      </div>
       {creditoPagadoTotal > 0 && (
-        <ul style={{ marginTop: 0 }}>
-          <li>Efectivo: {formatoCLP(creditoPagadoEfectivo)}</li>
-          <li>Tarjeta: {formatoCLP(creditoPagadoTarjeta)}</li>
-          <li>Transferencia: {formatoCLP(creditoPagadoTransferencia)}</li>
-        </ul>
+        <table className="lista-calculo">
+          <tbody>
+            <tr>
+              <td>Efectivo</td>
+              <td>{formatoCLP(creditoPagadoEfectivo)}</td>
+            </tr>
+            <tr>
+              <td>Tarjeta</td>
+              <td>{formatoCLP(creditoPagadoTarjeta)}</td>
+            </tr>
+            <tr>
+              <td>Transferencia</td>
+              <td>{formatoCLP(creditoPagadoTransferencia)}</td>
+            </tr>
+          </tbody>
+        </table>
       )}
       {creditoCondonado > 0 && (
         <p className="ayuda">
@@ -294,11 +336,22 @@ function ResumenCierre({ resumen, titulo }: { resumen: ResumenSesion; titulo: st
       {resumen.totalGastos > 0 && (
         <>
           <h3>Gastos pagados hoy (cualquier medio)</h3>
-          <ul style={{ marginTop: 0 }}>
-            <li>Efectivo: {formatoCLP(resumen.gastosPorMedio.efectivo ?? 0)}</li>
-            <li>Transferencia: {formatoCLP(resumen.gastosPorMedio.transferencia ?? 0)}</li>
-            <li>Tarjeta: {formatoCLP(resumen.gastosPorMedio.tarjeta ?? 0)}</li>
-          </ul>
+          <table className="lista-calculo">
+            <tbody>
+              <tr>
+                <td>Efectivo</td>
+                <td>{formatoCLP(resumen.gastosPorMedio.efectivo ?? 0)}</td>
+              </tr>
+              <tr>
+                <td>Transferencia</td>
+                <td>{formatoCLP(resumen.gastosPorMedio.transferencia ?? 0)}</td>
+              </tr>
+              <tr>
+                <td>Tarjeta</td>
+                <td>{formatoCLP(resumen.gastosPorMedio.tarjeta ?? 0)}</td>
+              </tr>
+            </tbody>
+          </table>
           <p className="ayuda" style={{ marginTop: 0 }}>
             Solo el de efectivo se resta del efectivo esperado — los pagados con tarjeta/transferencia no salieron
             del cajón.
@@ -450,37 +503,37 @@ export default function CerrarCaja() {
 
         <div className="tarjeta">
           <h2>Resultado del cierre</h2>
-          <p>
-            <strong>Efectivo contado:</strong> {formatoCLP(cerrada.sesion.efectivoContado ?? 0)}
-          </p>
-          <p className={dif === 0 ? "exito" : "error"}>
-            <strong>Diferencia (efectivo contado − efectivo esperado):</strong> {formatoCLP(dif)}
-            {dif === 0 ? " (cuadra)" : dif > 0 ? " (sobra efectivo)" : " (falta efectivo)"}
-          </p>
-          {faltante > 0 && (
-            <>
-              <p className="error">
-                <strong>Faltante de efectivo:</strong> {formatoCLP(faltante)}
-              </p>
-              <p>
-                <strong>% de pérdida sobre ventas:</strong> {porcentajePerdida.toFixed(2)}%
-              </p>
-              <p className="ayuda" style={{ marginTop: 0 }}>
-                Faltante ÷ venta total del día × 100.
-              </p>
-            </>
-          )}
+          <div className="grilla-metricas">
+            <MetricaBox etiqueta="Efectivo contado" valor={formatoCLP(cerrada.sesion.efectivoContado ?? 0)} />
+            <MetricaBox
+              etiqueta="Diferencia (contado − esperado)"
+              valor={formatoCLP(dif)}
+              tono={dif === 0 ? "exito" : "error"}
+              nota={dif === 0 ? "Cuadra" : dif > 0 ? "Sobra efectivo" : "Falta efectivo"}
+            />
+            {faltante > 0 && (
+              <>
+                <MetricaBox etiqueta="Faltante de efectivo" valor={formatoCLP(faltante)} tono="error" />
+                <MetricaBox
+                  etiqueta="% de pérdida sobre ventas"
+                  valor={`${porcentajePerdida.toFixed(2)}%`}
+                  tono="error"
+                  nota="Faltante ÷ venta total del día × 100"
+                />
+              </>
+            )}
+          </div>
         </div>
 
         <div className="tarjeta">
           <h2>Depósito y fondo para mañana</h2>
-          <p>
-            <strong>Retiro para depositar en el banco:</strong> {formatoCLP(retiroAlCierre)}
-          </p>
-          <p>
-            <strong>Fondo para mañana (efectivo contado menos retiro):</strong>{" "}
-            {formatoCLP(cerrada.sesion.efectivoContado ?? 0)}
-          </p>
+          <div className="grilla-metricas">
+            <MetricaBox etiqueta="Retiro para depositar en el banco" valor={formatoCLP(retiroAlCierre)} />
+            <MetricaBox
+              etiqueta="Fondo para mañana (contado menos retiro)"
+              valor={formatoCLP(cerrada.sesion.efectivoContado ?? 0)}
+            />
+          </div>
           <p className="ayuda" style={{ marginTop: 0 }}>
             Queda sugerido como fondo inicial para mañana — se puede cambiar al abrir, pero si es distinto va a
             pedir motivo y clave de supervisor.
@@ -585,9 +638,13 @@ export default function CerrarCaja() {
           />
         </label>
         {terminalTarjetas.trim() && resumen && (
-          <p className={Number(terminalTarjetas) === (resumen.totalPorMedio.tarjeta ?? 0) ? "exito" : "error"}>
-            Diferencia (terminal − sistema): {formatoCLP(Number(terminalTarjetas) - (resumen.totalPorMedio.tarjeta ?? 0))}
-          </p>
+          <div className="grilla-metricas" style={{ maxWidth: "260px" }}>
+            <MetricaBox
+              etiqueta="Diferencia (terminal − sistema)"
+              valor={formatoCLP(Number(terminalTarjetas) - (resumen.totalPorMedio.tarjeta ?? 0))}
+              tono={Number(terminalTarjetas) === (resumen.totalPorMedio.tarjeta ?? 0) ? "exito" : "error"}
+            />
+          </div>
         )}
 
         <h2>Observaciones</h2>
