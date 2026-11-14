@@ -302,6 +302,21 @@ async function calcularResumenSesion(sesionId: number) {
   // — null hasta que la sesión se cierre con ese detalle.
   const arqueo = await prisma.arqueoCaja.findUnique({ where: { sesionCajaId: sesionId } });
 
+  // Gastos pagados con la plata de ESTA sesión (ver Gasto.sesionCajaId) —
+  // a pedido del usuario, para que el cierre de caja reste del efectivo
+  // esperado los gastos que de verdad salieron del cajón, igual que la
+  // planilla de arqueo en papel ("- Gastos pagados en efectivo"). Los
+  // pagados con tarjeta/transferencia no tocan el efectivo esperado, pero
+  // se muestran igual para que el desglose por medio sea completo.
+  const gastosSesion = await prisma.gasto.findMany({ where: { sesionCajaId: sesionId } });
+  const gastosPorMedio: Record<string, number> = { efectivo: 0, transferencia: 0, tarjeta: 0 };
+  let totalGastos = 0;
+  for (const g of gastosSesion) {
+    gastosPorMedio[g.medioPago] = (gastosPorMedio[g.medioPago] ?? 0) + g.monto;
+    totalGastos += g.monto;
+  }
+  const totalGastosEfectivo = gastosPorMedio.efectivo;
+
   return {
     cantidadVentas: ventas.length,
     totalVentas,
@@ -326,6 +341,9 @@ async function calcularResumenSesion(sesionId: number) {
     totalAjustesEfectivo,
     totalAjustesTarjeta,
     arqueo,
+    gastosPorMedio,
+    totalGastos,
+    totalGastosEfectivo,
   };
 }
 
@@ -340,7 +358,8 @@ cajaRouter.get("/sesiones/:id/resumen", async (req, res) => {
     resumen.totalPorMedio.efectivo +
     resumen.totalAjustesEfectivo -
     resumen.totalRetiros +
-    resumen.totalIngresos;
+    resumen.totalIngresos -
+    resumen.totalGastosEfectivo;
 
   res.json({
     sesion,
@@ -375,7 +394,8 @@ cajaRouter.get("/cuadratura", async (req, res) => {
         resumen.totalPorMedio.efectivo +
         resumen.totalAjustesEfectivo -
         resumen.totalRetiros +
-        resumen.totalIngresos;
+        resumen.totalIngresos -
+        resumen.totalGastosEfectivo;
       return {
         sesion,
         ...resumen,
@@ -412,6 +432,8 @@ cajaRouter.get("/cuadratura", async (req, res) => {
       totalIngresos: acc.totalIngresos + dia.totalIngresos,
       totalAjustesEfectivo: acc.totalAjustesEfectivo + dia.totalAjustesEfectivo,
       totalAjustesTarjeta: acc.totalAjustesTarjeta + dia.totalAjustesTarjeta,
+      totalGastos: acc.totalGastos + dia.totalGastos,
+      totalGastosEfectivo: acc.totalGastosEfectivo + dia.totalGastosEfectivo,
       efectivoEsperado: acc.efectivoEsperado + dia.efectivoEsperado,
       efectivoContado: acc.efectivoContado + (dia.sesion.efectivoContado ?? 0),
     }),
@@ -424,6 +446,8 @@ cajaRouter.get("/cuadratura", async (req, res) => {
       totalIngresos: 0,
       totalAjustesEfectivo: 0,
       totalAjustesTarjeta: 0,
+      totalGastos: 0,
+      totalGastosEfectivo: 0,
       efectivoEsperado: 0,
       efectivoContado: 0,
     }
@@ -544,6 +568,8 @@ const desgloseEfectivoSchema = z.object({
   billetes5000: z.number().int().min(0),
   billetes10000: z.number().int().min(0),
   billetes20000: z.number().int().min(0),
+  monedas1: z.number().int().min(0),
+  monedas5: z.number().int().min(0),
   monedas10: z.number().int().min(0),
   monedas50: z.number().int().min(0),
   monedas100: z.number().int().min(0),
@@ -554,6 +580,11 @@ const cerrarSesionSchema = z.object({
   efectivoContado: z.number().min(0, "El efectivo contado no puede ser negativo"),
   usuarioId: z.number().int().positive(),
   desgloseEfectivo: desgloseEfectivoSchema.optional(),
+  // Total que marca el terminal de tarjetas y notas libres — ambos
+  // opcionales, a pedido del usuario (ver SesionCaja.totalTerminalTarjetas
+  // / observacionesCierre), igual que la planilla de arqueo en papel.
+  totalTerminalTarjetas: z.number().min(0).optional(),
+  observacionesCierre: z.string().trim().optional(),
 });
 
 cajaRouter.post("/sesiones/:id/cerrar", async (req, res) => {
@@ -562,7 +593,7 @@ cajaRouter.post("/sesiones/:id/cerrar", async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.issues[0].message });
   }
-  const { efectivoContado, usuarioId, desgloseEfectivo } = parsed.data;
+  const { efectivoContado, usuarioId, desgloseEfectivo, totalTerminalTarjetas, observacionesCierre } = parsed.data;
 
   const usuario = await validarUsuario(usuarioId);
   if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
@@ -599,7 +630,14 @@ cajaRouter.post("/sesiones/:id/cerrar", async (req, res) => {
 
   await prisma.sesionCaja.update({
     where: { id },
-    data: { estado: "cerrada", efectivoContado, fechaCierre: new Date(), usuarioCierreId: usuarioId },
+    data: {
+      estado: "cerrada",
+      efectivoContado,
+      fechaCierre: new Date(),
+      usuarioCierreId: usuarioId,
+      totalTerminalTarjetas: totalTerminalTarjetas ?? null,
+      observacionesCierre: observacionesCierre || null,
+    },
   });
 
   if (desgloseEfectivo) {
@@ -613,7 +651,8 @@ cajaRouter.post("/sesiones/:id/cerrar", async (req, res) => {
     resumen.totalPorMedio.efectivo +
     resumen.totalAjustesEfectivo -
     resumen.totalRetiros +
-    resumen.totalIngresos;
+    resumen.totalIngresos -
+    resumen.totalGastosEfectivo;
 
   res.json({
     sesion: sesionActualizada,
@@ -724,6 +763,10 @@ cajaRouter.post("/sesiones/:id/dividir", async (req, res) => {
       where: { sesionCajaId: id, fecha: { lt: corte } },
       data: { sesionCajaId: nueva.id },
     });
+    await tx.gasto.updateMany({
+      where: { sesionCajaId: id, fecha: { lt: corte } },
+      data: { sesionCajaId: nueva.id },
+    });
 
     await tx.sesionCaja.update({ where: { id }, data: { fechaApertura: corte } });
 
@@ -738,13 +781,15 @@ cajaRouter.post("/sesiones/:id/dividir", async (req, res) => {
     resumenAnterior.totalPorMedio.efectivo +
     resumenAnterior.totalAjustesEfectivo -
     resumenAnterior.totalRetiros +
-    resumenAnterior.totalIngresos;
+    resumenAnterior.totalIngresos -
+    resumenAnterior.totalGastosEfectivo;
   const efectivoEsperadoActual =
     sesionActual!.fondoFijoInicial +
     resumenActual.totalPorMedio.efectivo +
     resumenActual.totalAjustesEfectivo -
     resumenActual.totalRetiros +
-    resumenActual.totalIngresos;
+    resumenActual.totalIngresos -
+    resumenActual.totalGastosEfectivo;
 
   res.json({
     sesionAnterior: {

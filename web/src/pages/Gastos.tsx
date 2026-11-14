@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, formatoCLP, type CategoriaGasto, type Gasto, type ReporteGastos } from "../api";
+import { api, formatoCLP, type CategoriaGasto, type Gasto, type MedioPagoGasto, type ReporteGastos } from "../api";
 import { useUsuario } from "../context/UsuarioContext";
 import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 import { TecladoNumerico } from "../components/TecladoNumerico";
@@ -16,6 +16,12 @@ function fechaHace(dias: number): string {
 function hoy(): string {
   return new Date().toISOString().slice(0, 10);
 }
+
+const ETIQUETAS_MEDIO_PAGO: Record<MedioPagoGasto, string> = {
+  efectivo: "Efectivo",
+  transferencia: "Transferencia",
+  tarjeta: "Tarjeta",
+};
 
 export default function Gastos() {
   const { usuario } = useUsuario();
@@ -39,6 +45,11 @@ export default function Gastos() {
   const [concepto, setConcepto] = useState("");
   const [descripcion, setDescripcion] = useState("");
   const [monto, setMonto] = useState("");
+  // Con qué plata se pagó — a pedido del usuario, para que el cierre de
+  // caja pueda restar del efectivo esperado los gastos que de verdad
+  // salieron del cajón (ver Gasto.medioPago en el schema). "efectivo" por
+  // default porque es lo más común en los gastos chicos del día a día.
+  const [medioPago, setMedioPago] = useState<MedioPagoGasto>("efectivo");
   const [guardando, setGuardando] = useState(false);
   const [categoriaAbierta, setCategoriaAbierta] = useState<string | null>(null);
 
@@ -113,6 +124,7 @@ export default function Gastos() {
         concepto: concepto.trim() || undefined,
         descripcion: descripcion.trim(),
         monto: montoNum,
+        medioPago,
         usuarioId: usuario.id,
       });
       setMensaje("Gasto registrado");
@@ -298,6 +310,13 @@ export default function Gastos() {
           </datalist>
           <input type="number" min="1" placeholder="Monto" value={monto} onChange={(e) => setMonto(e.target.value)} />
           <TecladoNumerico valor={monto} onCambiar={setMonto} />
+          <select value={medioPago} onChange={(e) => setMedioPago(e.target.value as MedioPagoGasto)}>
+            {(Object.keys(ETIQUETAS_MEDIO_PAGO) as MedioPagoGasto[]).map((m) => (
+              <option key={m} value={m}>
+                {ETIQUETAS_MEDIO_PAGO[m]}
+              </option>
+            ))}
+          </select>
           <button type="submit" className="boton boton-primario" disabled={guardando}>
             {guardando ? "Guardando..." : "Registrar"}
           </button>
@@ -333,6 +352,7 @@ export default function Gastos() {
             <th>Concepto</th>
             <th>Descripción</th>
             <th>Monto</th>
+            <th>Medio</th>
             <th>Registrado por</th>
             <th></th>
           </tr>
@@ -345,6 +365,7 @@ export default function Gastos() {
               <td>{g.concepto ?? "—"}</td>
               <td>{g.descripcion ?? "—"}</td>
               <td>{formatoCLP(g.monto)}</td>
+              <td>{ETIQUETAS_MEDIO_PAGO[g.medioPago]}</td>
               <td>{g.usuario.nombre}</td>
               <td>
                 <button type="button" className="boton-quitar-item" title="Eliminar" onClick={() => eliminar(g.id)}>
@@ -355,7 +376,7 @@ export default function Gastos() {
           ))}
           {gastos.length === 0 && (
             <tr>
-              <td colSpan={7}>No hay gastos registrados en este período.</td>
+              <td colSpan={8}>No hay gastos registrados en este período.</td>
             </tr>
           )}
         </tbody>

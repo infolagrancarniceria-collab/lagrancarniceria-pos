@@ -93,6 +93,24 @@ model Gasto {
   descripcion String?
   monto       Float
 
+  // Con qué plata se pagó — a pedido del usuario, para poder restar del
+  // efectivo esperado en el cierre de caja los gastos que de verdad
+  // salieron del cajón (antes no se sabía, así que el cierre no calzaba con
+  // la planilla de arqueo en papel). Por default "efectivo" porque la
+  // mayoría de los gastos chicos del día a día se pagan así; se puede
+  // cambiar al cargar el gasto. Los gastos ya cargados antes de este campo
+  // quedan con ese mismo default, que es la mejor suposición posible sin
+  // poder preguntarle a nadie cómo se pagó cada uno en su momento.
+  medioPago String @default("efectivo") // "efectivo" | "transferencia" | "tarjeta"
+
+  // Sesión de caja abierta al momento de cargar el gasto — null si se
+  // cargó sin ninguna caja abierta, o con una fecha pasada a mano (ver
+  // POST /gastos, fecha opcional): ahí no corresponde restarlo del
+  // efectivo esperado de HOY. Null en todos los gastos cargados antes de
+  // este campo (no hay cómo reconstruir a cuál sesión correspondían).
+  sesionCajaId Int?
+  sesionCaja   SesionCaja? @relation(fields: [sesionCajaId], references: [id])
+
   usuarioId Int
   usuario   Usuario @relation(fields: [usuarioId], references: [id])
 }
@@ -502,11 +520,24 @@ model SesionCaja {
   efectivoContado Float?
   fechaCierre     DateTime?
 
+  // Total que marca el terminal de tarjetas al cerrar, escrito a mano por
+  // quien cierra (el sistema no tiene forma de leerlo automático) — a
+  // pedido del usuario, para poder comparar contra lo que el sistema
+  // registró y detectar si quedó algo mal cobrado o sin registrar. Null si
+  // no se cargó (ej. sesiones viejas, antes de este campo).
+  totalTerminalTarjetas Float?
+
+  // Notas libres del cierre (ej. "faltó anotar una venta", "el terminal se
+  // trabó dos veces") — a pedido del usuario, igual que el campo
+  // "Observaciones" de la planilla de arqueo en papel.
+  observacionesCierre String?
+
   ventas            Venta[]
   cobrosDeCredito   PagoVenta[]        @relation("CobrosDeCredito")
   retiros           RetiroCaja[]
   ajustesCuadratura AjusteCuadratura[]
   arqueo            ArqueoCaja?
+  gastos            Gasto[]
 }
 
 // Corrección auditada a lo que la cuadratura calculó para un día — a
@@ -560,6 +591,11 @@ model ArqueoCaja {
   billetes10000 Int @default(0)
   billetes20000 Int @default(0)
 
+  // $1 y $5 agregados a pedido del usuario, para calzar con la planilla de
+  // arqueo en papel (que los incluye) — siguen siendo moneda de curso legal
+  // en Chile aunque ya casi no circulen.
+  monedas1   Int @default(0)
+  monedas5   Int @default(0)
   monedas10  Int @default(0)
   monedas50  Int @default(0)
   monedas100 Int @default(0)
