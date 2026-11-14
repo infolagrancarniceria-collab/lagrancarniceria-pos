@@ -642,7 +642,7 @@ export default function IngresoMercaderia() {
       if (cajas) {
         setCajasCreadas(cajas);
       } else {
-        navigate("/inventario/facturas");
+        navigate("/mercaderia/entradas");
       }
     } catch (e) {
       const base = (e as Error).message;
@@ -679,9 +679,9 @@ export default function IngresoMercaderia() {
     }, 0);
   }
 
-  // Pantalla de etiquetas tras registrar en modo "Por kilo" — el modo "Por
-  // unidad" no genera cajas físicas, así que navega directo a Facturas
-  // (ver guardarUnidad) y nunca llega a este estado.
+  // Pantalla de etiquetas tras registrar líneas por kilo — si la factura
+  // fue solo por unidad (sin ninguna caja de cámara creada), se navega
+  // directo a "Revisar entradas" y nunca se llega a este estado.
   if (cajasCreadas) {
     return (
       <div>
