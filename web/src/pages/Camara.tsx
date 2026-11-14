@@ -38,7 +38,7 @@ export default function Camara() {
           titulo="Reporte de salidas"
           descripcion="Buscar por rango de fechas qué salió de cámara, a qué destino y por cuánto."
         />
-        <Opcion to="/camara/entradas" emoji="📋" titulo="Revisar entradas" descripcion="Ver o corregir las cajas que entraron en un rango de fechas." />
+        <Opcion to="/mercaderia/entradas" emoji="📋" titulo="Revisar entradas" descripcion="Ver todo lo ingresado (por kilo y por unidad), agrupado por factura." />
         <Opcion to="/camara/existencias" emoji="📦" titulo="Existencias" descripcion="Cuánto hay guardado ahora mismo, por producto." />
         <Opcion to="/camara/mayoristas" emoji="🤝" titulo="Ventas por mayor" descripcion="Ver, cobrar, editar o anular ventas al por mayor." />
         <Opcion to="/camara/ajustes-pendientes" emoji="⚠️" titulo="Ajustes pendientes" descripcion="Cajas que quedaron pendientes de revisar tras un conteo." />

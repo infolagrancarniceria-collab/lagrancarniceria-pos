@@ -114,8 +114,8 @@ export default function Inventario() {
           <Link to="/mercaderia/ingreso" className="boton">
             + Ingreso de mercadería
           </Link>
-          <Link to="/inventario/facturas" className="boton">
-            Facturas
+          <Link to="/mercaderia/entradas" className="boton">
+            Revisar entradas
           </Link>
           <Link to="/inventario/movimientos" className="boton">
             Historial

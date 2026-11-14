@@ -16,7 +16,7 @@ import RegistrarEntrada from "./pages/RegistrarEntrada";
 import RegistrarSalida from "./pages/RegistrarSalida";
 import MovimientosInventario from "./pages/MovimientosInventario";
 import IngresoMercaderia from "./pages/IngresoMercaderia";
-import Facturas from "./pages/Facturas";
+import RevisarIngresos from "./pages/RevisarIngresos";
 import Proveedores from "./pages/Proveedores";
 import Reportes from "./pages/Reportes";
 import Caja from "./pages/Caja";
@@ -50,7 +50,6 @@ import Mayoristas from "./pages/Mayoristas";
 import CamaraInventario from "./pages/CamaraInventario";
 import CamaraAjustesPendientes from "./pages/CamaraAjustesPendientes";
 import CamaraImportar from "./pages/CamaraImportar";
-import CamaraEntradas from "./pages/CamaraEntradas";
 import CamaraExistencias from "./pages/CamaraExistencias";
 import CamaraReporteSalidas from "./pages/CamaraReporteSalidas";
 import Charcuteria from "./pages/Charcuteria";
@@ -91,7 +90,7 @@ export default function App() {
             <Route path="/inventario/salida" element={<RegistrarSalida />} />
             <Route path="/inventario/movimientos" element={<MovimientosInventario />} />
             <Route path="/mercaderia/ingreso" element={<IngresoMercaderia />} />
-            <Route path="/inventario/facturas" element={<Facturas />} />
+            <Route path="/mercaderia/entradas" element={<RevisarIngresos />} />
             <Route path="/inventario/revisiones" element={<Revisiones />} />
             <Route path="/proveedores" element={<Proveedores />} />
             <Route path="/reportes" element={<Reportes />} />
@@ -122,7 +121,6 @@ export default function App() {
             <Route path="/camara/inventario" element={<CamaraInventario />} />
             <Route path="/camara/ajustes-pendientes" element={<CamaraAjustesPendientes />} />
             <Route path="/camara/importar" element={<CamaraImportar />} />
-            <Route path="/camara/entradas" element={<CamaraEntradas />} />
             <Route path="/camara/existencias" element={<CamaraExistencias />} />
             <Route path="/camara/reporte-salidas" element={<CamaraReporteSalidas />} />
             <Route path="/configuracion" element={<Configuracion />} />
