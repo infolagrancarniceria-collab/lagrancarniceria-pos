@@ -1088,6 +1088,13 @@ model CorreccionLoteCamara {
   pesoTotalNuevoKg Float
   costoNuevoKg     Float
 
+  // Motivo + clave de supervisor pasaron a ser obligatorios a pedido del
+  // usuario (antes cualquiera corregía un lote sin autorización ni dejar
+  // dicho por qué) — motivo queda nullable en la base de datos para no
+  // tocar las correcciones ya guardadas antes de este cambio, igual
+  // criterio que Gasto.descripcion.
+  motivo String?
+
   usuarioId Int
   usuario   Usuario @relation(fields: [usuarioId], references: [id])
 

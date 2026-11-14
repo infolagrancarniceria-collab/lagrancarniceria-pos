@@ -478,24 +478,33 @@ const corregirLoteSchema = z.object({
   pesoTotalKg: z.number().positive("El peso total debe ser mayor a 0"),
   costoNetoKg: z.number().positive("El costo debe ser mayor a 0"),
   usuarioId: z.number().int().positive(),
+  // A pedido del usuario: corregir un lote ya ingresado ahora pide
+  // autorización (motivo + clave de supervisor), igual que anular un lote
+  // — antes cualquier usuario podía corregirlo sin dejar rastro de quién
+  // aprobó el cambio.
+  motivo: z.string().trim().min(1, "Indica el motivo de la corrección"),
+  clave: z.string().trim().min(1, "Falta la clave de supervisor"),
 });
 
 // Corrige familia/producto/peso total/costo de TODO el lote a la vez,
 // repartiendo el peso corregido entre sus cajas (mismo reparto exacto que
 // al crearlas) — bloqueado si cualquier caja del lote ya tuvo una salida.
-// Queda auditado en CorreccionLoteCamara (qué cambió, quién y cuándo) y
-// además cada caja recibe un MovimientoCamara "correccion_entrada" con su
-// peso nuevo, sin sobrescribir el movimiento de entrada original.
+// Queda auditado en CorreccionLoteCamara (qué cambió, quién, cuándo y por
+// qué) y además cada caja recibe un MovimientoCamara "correccion_entrada"
+// con su peso nuevo, sin sobrescribir el movimiento de entrada original.
 camaraRouter.put("/lotes/:id", async (req, res) => {
   const parsed = corregirLoteSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0].message });
-  const { productoId, familia, procedencia, pesoTotalKg, costoNetoKg, usuarioId } = parsed.data;
+  const { productoId, familia, procedencia, pesoTotalKg, costoNetoKg, usuarioId, motivo, clave } = parsed.data;
 
   const errorProcedencia = validarProcedencia(familia, procedencia);
   if (errorProcedencia) return res.status(400).json({ error: errorProcedencia });
 
   const usuario = await validarUsuario(usuarioId);
   if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
+
+  const errorClave = await verificarClaveSupervisor(req, clave);
+  if (errorClave) return res.status(errorClave.status).json({ error: errorClave.error });
 
   const loteId = Number(req.params.id);
   const lote = await prisma.loteCamara.findUnique({
@@ -529,6 +538,7 @@ camaraRouter.put("/lotes/:id", async (req, res) => {
         productoNuevo: productoNuevo.descripcion,
         pesoTotalNuevoKg: pesoTotalKg,
         costoNuevoKg: costoNetoKg,
+        motivo,
         usuarioId,
       },
     });

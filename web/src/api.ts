@@ -196,6 +196,7 @@ export interface CorreccionLoteCamara {
   productoNuevo: string;
   pesoTotalNuevoKg: number;
   costoNuevoKg: number;
+  motivo: string | null;
   usuario: Usuario;
   creadoEn: string;
 }
@@ -1967,6 +1968,8 @@ export const api = {
         pesoTotalKg: number;
         costoNetoKg: number;
         usuarioId: number;
+        motivo: string;
+        clave: string;
       }
     ) => put<{ lote: LoteCamara; cajas: CajaCamara[] }>(`/api/camara/lotes/${id}`, data),
     anularLote: (id: number, usuarioId: number, clave: string, motivo: string) =>
