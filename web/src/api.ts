@@ -536,6 +536,8 @@ export interface Proveedor {
   activo: boolean;
 }
 
+export type MedioPagoGasto = "efectivo" | "transferencia" | "tarjeta";
+
 export interface Gasto {
   id: number;
   fecha: string;
@@ -543,6 +545,8 @@ export interface Gasto {
   concepto: string | null;
   descripcion: string | null;
   monto: number;
+  medioPago: MedioPagoGasto;
+  sesionCajaId: number | null;
   usuarioId: number;
   usuario: Usuario;
 }
@@ -820,6 +824,8 @@ export interface SesionCaja {
   motivoAjusteFondo: string | null;
   usuarioAutorizoFondoId: number | null;
   usuarioAutorizoFondo?: Usuario | null;
+  totalTerminalTarjetas: number | null;
+  observacionesCierre: string | null;
 }
 
 export interface RetiroCaja {
@@ -853,6 +859,8 @@ export interface ArqueoCaja {
   billetes5000: number;
   billetes10000: number;
   billetes20000: number;
+  monedas1: number;
+  monedas5: number;
   monedas10: number;
   monedas50: number;
   monedas100: number;
@@ -866,6 +874,8 @@ export interface DesgloseEfectivo {
   billetes5000: number;
   billetes10000: number;
   billetes20000: number;
+  monedas1: number;
+  monedas5: number;
   monedas10: number;
   monedas50: number;
   monedas100: number;
@@ -908,6 +918,12 @@ export interface ResumenSesion {
   totalAjustesEfectivo: number;
   totalAjustesTarjeta: number;
   arqueo: ArqueoCaja | null;
+  // Gastos pagados con la plata de esta sesión (ver Gasto.sesionCajaId) —
+  // gastosPorMedio desglosa por efectivo/transferencia/tarjeta;
+  // totalGastosEfectivo es la parte que ya se restó de efectivoEsperado.
+  gastosPorMedio: Record<string, number>;
+  totalGastos: number;
+  totalGastosEfectivo: number;
   efectivoEsperado: number;
   diferencia: number | null;
 }
@@ -919,6 +935,8 @@ export interface Cuadratura {
     totalVentas: number;
     totalPorMedio: Record<string, number>;
     ventasPorMedio: Record<string, number>;
+    totalGastos: number;
+    totalGastosEfectivo: number;
     totalRetiros: number;
     totalIngresos: number;
     totalAjustesEfectivo: number;
@@ -1646,7 +1664,13 @@ export const api = {
     resumenSesion: (id: number) => get<ResumenSesion>(`/api/caja/sesiones/${id}/resumen`),
     cerrarSesion: (
       id: number,
-      data: { efectivoContado: number; usuarioId: number; desgloseEfectivo?: DesgloseEfectivo }
+      data: {
+        efectivoContado: number;
+        usuarioId: number;
+        desgloseEfectivo?: DesgloseEfectivo;
+        totalTerminalTarjetas?: number;
+        observacionesCierre?: string;
+      }
     ) => post<ResumenSesion>(`/api/caja/sesiones/${id}/cerrar`, data),
     ventasAbiertasDeSesion: (id: number) => get<Venta[]>(`/api/caja/sesiones/${id}/ventas-abiertas`),
     dividirSesion: (id: number, data: { corte: string; usuarioId: number; clave: string }) =>
@@ -1833,6 +1857,7 @@ export const api = {
       concepto?: string;
       descripcion: string;
       monto: number;
+      medioPago?: MedioPagoGasto;
       usuarioId: number;
     }) => post<Gasto>("/api/gastos", data),
     eliminar: (id: number) => del<void>(`/api/gastos/${id}`),

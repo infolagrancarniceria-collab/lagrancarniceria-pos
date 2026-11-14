@@ -115,6 +115,10 @@ const crearGastoSchema = z.object({
   concepto: z.string().trim().optional(),
   descripcion: z.string().trim().min(1, "Falta el nombre del gasto"),
   monto: z.number().positive("El monto debe ser mayor a 0"),
+  // A pedido del usuario, para que el cierre de caja pueda restar del
+  // efectivo esperado los gastos pagados en efectivo (ver
+  // Gasto.medioPago/sesionCajaId en el schema).
+  medioPago: z.enum(["efectivo", "transferencia", "tarjeta"]).default("efectivo"),
   usuarioId: z.number().int().positive(),
 });
 
@@ -123,10 +127,15 @@ gastosRouter.post("/", async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.issues[0].message });
   }
-  const { fecha, categoria, concepto, descripcion, monto, usuarioId } = parsed.data;
+  const { fecha, categoria, concepto, descripcion, monto, medioPago, usuarioId } = parsed.data;
 
   const usuario = await validarUsuario(usuarioId);
   if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
+
+  // Solo se liga a la caja abierta cuando se carga en tiempo real (sin una
+  // fecha pasada a mano) — un gasto con fecha atrasada no debe restarse del
+  // efectivo esperado de HOY, que es de otro día.
+  const sesionAbierta = !fecha ? await prisma.sesionCaja.findFirst({ where: { estado: "abierta" } }) : null;
 
   const gasto = await prisma.gasto.create({
     data: {
@@ -134,6 +143,8 @@ gastosRouter.post("/", async (req, res) => {
       concepto: concepto || null,
       descripcion: descripcion || null,
       monto,
+      medioPago,
+      sesionCajaId: sesionAbierta?.id ?? null,
       usuarioId,
       ...(parsearFechaSoloDia(fecha) ? { fecha: parsearFechaSoloDia(fecha)! } : {}),
     },
