@@ -14,11 +14,17 @@ on:
       - prisma/**
       - .github/workflows/build-installer.yml
 
+# Necesario para poder crear el tag de versión y el Release al final.
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -53,3 +59,35 @@ jobs:
           name: instalador-windows
           path: release/*.exe
           if-no-files-found: error
+
+      # Calcula la próxima versión a partir del último tag "vX.Y.Z" (empieza
+      # en v0.1.0 si todavía no existe ninguno) y sube un número de PATCH en
+      # cada build — así cada instalador queda identificado con un número
+      # que siempre sube, sin tener que acordarse de editarlo a mano.
+      - name: Calcular próxima versión
+        id: version
+        shell: bash
+        run: |
+          git fetch --tags
+          latest=$(git tag -l 'v*' | sort -t. -k1.2,1n -k2,2n -k3,3n | tail -n1)
+          if [ -z "$latest" ]; then
+            next="v0.1.0"
+          else
+            version="${latest#v}"
+            IFS='.' read -r major minor patch <<< "$version"
+            next="v${major}.${minor}.$((patch + 1))"
+          fi
+          echo "Próxima versión: $next"
+          echo "tag=$next" >> "$GITHUB_OUTPUT"
+          echo "fecha=$(date +%d-%m-%Y)" >> "$GITHUB_OUTPUT"
+
+      - name: Publicar Release con el instalador
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.tag }} — ${{ steps.version.outputs.fecha }}
+          body: |
+            Instalador generado automáticamente desde el commit ${{ github.sha }}.
+
+            ${{ github.event.head_commit.message }}
+          files: release/*.exe
