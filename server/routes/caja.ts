@@ -177,7 +177,7 @@ cajaRouter.post("/sesiones", async (req, res) => {
   res.status(201).json(sesion);
 });
 
-async function calcularResumenSesion(sesionId: number) {
+export async function calcularResumenSesion(sesionId: number) {
   const ventas = await prisma.venta.findMany({
     where: { sesionCajaId: sesionId, estado: "pagada" },
     include: { pagos: true },
@@ -317,8 +317,19 @@ async function calcularResumenSesion(sesionId: number) {
   }
   const totalGastosEfectivo = gastosPorMedio.efectivo;
 
+  // N° de la primera y la última venta pagada de la sesión — a pedido del
+  // usuario, para poder cotejar rápido contra el talonario/rollo físico
+  // ("Boleta inicial"/"Boleta final" de la planilla de arqueo en papel) sin
+  // tener que ir a buscar el detalle venta por venta. null si no hubo
+  // ninguna venta en la sesión.
+  const idsVentas = ventas.map((v) => v.id);
+  const boletaInicial = idsVentas.length > 0 ? Math.min(...idsVentas) : null;
+  const boletaFinal = idsVentas.length > 0 ? Math.max(...idsVentas) : null;
+
   return {
     cantidadVentas: ventas.length,
+    boletaInicial,
+    boletaFinal,
     totalVentas,
     cantidadVentasLocal,
     totalVentasLocal,

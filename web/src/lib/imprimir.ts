@@ -191,3 +191,16 @@ export async function imprimirControlPrecios() {
   await imprimirConRespaldo(obtenerImpresoraPedidosWeb(), TAMANO_A4_MICRONES);
   setTimeout(() => activarPaginaRuta(false), 500);
 }
+
+// Cerrar caja ("hoja grande"): mismo caso que la cuadratura — el reporte
+// completo en A4. A diferencia de la cuadratura, esta pantalla TAMBIÉN
+// puede imprimirse en formato boleta angosta (imprimirSilencioso, 80mm —
+// ver CerrarCaja.tsx), así que el botón de hoja grande es una función
+// aparte en vez de reusar imprimirCuadraturaCaja tal cual, aunque hagan lo
+// mismo — para no quedar atados entre sí si el día de mañana cambia algo
+// puntual de una de las dos pantallas.
+export async function imprimirCierreCaja() {
+  activarPaginaRuta(true);
+  await imprimirConRespaldo(obtenerImpresoraPedidosWeb(), TAMANO_A4_MICRONES);
+  setTimeout(() => activarPaginaRuta(false), 500);
+}

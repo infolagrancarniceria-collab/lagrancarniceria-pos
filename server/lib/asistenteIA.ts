@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "../db";
 import { rangoFechasDesdeTexto, calcularReporteVentas, calcularReporteDespachos } from "../routes/reportes";
 import { calcularReporteGastos } from "../routes/gastos";
-import { calcularReporteAnulaciones } from "../routes/caja";
+import { calcularReporteAnulaciones, calcularResumenSesion } from "../routes/caja";
 import { calcularReporteMargenes } from "../routes/productos";
 
 // Herramientas de solo lectura: el asistente las ejecuta directo, nunca
@@ -337,6 +337,18 @@ export const herramientas: Anthropic.Tool[] = [
     name: "ventas_mayoristas_pendientes",
     description: "Ventas por mayor (desde la cámara frigorífica) que todavía están pendientes de pago.",
     input_schema: { type: "object", properties: {} },
+  },
+  {
+    name: "analizar_cierre_caja",
+    description:
+      "Trae el detalle completo de UNA sesión de caja (igual que la pantalla Cerrar caja/Cuadratura, pero con cada venta, retiro, ingreso, gasto y corrección por separado) — usar cuando la persona pregunta por qué no cuadró el efectivo esperado contra lo contado, o por una diferencia rara entre la venta total y el efectivo esperado. Da el sesionId si la persona lo menciona (ej. 'sesión 42'); si no, da la fecha de apertura de esa caja y se busca la sesión de ese día.",
+    input_schema: {
+      type: "object",
+      properties: {
+        sesionId: { type: "integer", description: "Id de la sesión de caja, si se conoce" },
+        fecha: { type: "string", description: "Fecha de apertura de la caja a revisar, formato YYYY-MM-DD (se usa solo si no se da sesionId)" },
+      },
+    },
   },
   {
     name: "proponer_registrar_gasto",
@@ -700,6 +712,81 @@ export async function ejecutarHerramientaLectura(nombre: string, input: Record<s
         fecha: s.fecha.toISOString(),
       }));
     }
+    case "analizar_cierre_caja": {
+      let sesion;
+      if (input.sesionId != null) {
+        sesion = await prisma.sesionCaja.findUnique({ where: { id: Number(input.sesionId) } });
+      } else {
+        const { desde, hasta } = rangoFechasDesdeTexto(
+          typeof input.fecha === "string" ? input.fecha : undefined,
+          typeof input.fecha === "string" ? input.fecha : undefined
+        );
+        sesion = await prisma.sesionCaja.findFirst({
+          where: { fechaApertura: { gte: desde, lte: hasta } },
+          orderBy: { fechaApertura: "desc" },
+        });
+      }
+      if (!sesion) return { error: "No se encontró esa sesión de caja" };
+
+      const resumen = await calcularResumenSesion(sesion.id);
+      const efectivoEsperado =
+        sesion.fondoFijoInicial +
+        resumen.totalPorMedio.efectivo +
+        resumen.totalAjustesEfectivo -
+        resumen.totalRetiros +
+        resumen.totalIngresos -
+        resumen.totalGastosEfectivo;
+      const diferencia = sesion.efectivoContado != null ? sesion.efectivoContado - efectivoEsperado : null;
+
+      const ventas = await prisma.venta.findMany({
+        where: { sesionCajaId: sesion.id, estado: "pagada" },
+        include: { pagos: true },
+        orderBy: { fecha: "asc" },
+      });
+
+      return {
+        sesionId: sesion.id,
+        fechaApertura: sesion.fechaApertura.toISOString(),
+        fechaCierre: sesion.fechaCierre?.toISOString() ?? null,
+        estado: sesion.estado,
+        fondoFijoInicial: sesion.fondoFijoInicial,
+        boletaInicial: resumen.boletaInicial,
+        boletaFinal: resumen.boletaFinal,
+        totalVentas: resumen.totalVentas,
+        ventasPorMedio: resumen.ventasPorMedio,
+        // totalPorMedio.efectivo (no ventasPorMedio.efectivo) es lo que de
+        // verdad alimenta efectivoEsperado — incluye abonos de crédito/
+        // transferencia de otro día cobrados en efectivo hoy.
+        efectivoQueEntroHoy: resumen.totalPorMedio.efectivo,
+        totalRetiros: resumen.totalRetiros,
+        retiros: resumen.retiros.map((r) => ({ hora: r.fecha.toISOString(), monto: r.monto, motivo: r.motivo, autorizo: r.usuarioAutorizo?.nombre ?? null })),
+        totalIngresos: resumen.totalIngresos,
+        ingresos: resumen.ingresos.map((r) => ({ hora: r.fecha.toISOString(), monto: r.monto, motivo: r.motivo, autorizo: r.usuarioAutorizo?.nombre ?? null })),
+        totalAjustesEfectivo: resumen.totalAjustesEfectivo,
+        ajustes: resumen.ajustes.map((a) => ({
+          hora: a.fecha.toISOString(),
+          medio: a.medio,
+          direccion: a.direccion,
+          monto: a.monto,
+          motivo: a.motivo,
+          autorizo: a.usuarioAutorizo?.nombre ?? null,
+        })),
+        gastosPorMedio: resumen.gastosPorMedio,
+        totalGastosEfectivo: resumen.totalGastosEfectivo,
+        fondoFijoSugerido: sesion.fondoFijoSugerido,
+        motivoAjusteFondo: sesion.motivoAjusteFondo,
+        efectivoEsperado,
+        efectivoContado: sesion.efectivoContado,
+        diferencia,
+        ventas: ventas.map((v) => ({
+          numero: v.id,
+          hora: v.fecha.toISOString(),
+          canal: v.canal,
+          total: v.total,
+          pagos: v.pagos.map((p) => ({ medio: p.medio, monto: p.monto, cobrado: p.cobrado })),
+        })),
+      };
+    }
     default:
       return { error: `Herramienta desconocida: ${nombre}` };
   }
@@ -762,6 +849,8 @@ Sobre la cámara frigorífica: cada caja tiene una "version" que cambia cada vez
 Sobre créditos (ventas fiadas): usa creditos_pendientes primero para tener el pagoId real antes de proponer_marcar_credito_cobrado — nunca inventes un pagoId.
 
 Sobre crear un producto nuevo: usa buscar_productos primero para confirmar que el PLU que te dieron no esté ya en uso (si ya existe, avisa en vez de proponer un duplicado) y listar_categorias para tener el categoriaId real. Si no te dan la categoría, pregunta antes de asumir una.
+
+Sobre una diferencia o descuadre al cerrar caja (ej. "no me cuadra la caja del 15", "por qué la caja de hoy quedó con diferencia", o el botón "Analizar con el Asistente" desde Cerrar caja): usa analizar_cierre_caja con el sesionId (si te lo dan) o la fecha de esa caja. Con el detalle que te devuelve (cada venta con sus pagos, cada retiro/ingreso/gasto/corrección con su hora y motivo), buscá específicamente: (1) un monto puntual que coincida o explique buena parte de la diferencia (un retiro, gasto o corrección con un cero de más o de menos es la causa más común de diferencias grandes, no una acumulación de ventas chicas); (2) una venta cuyos pagos no sumen su total; (3) retiros/gastos en efectivo que parezcan fuera de lugar para ese día. Sé concreto: señalá el o los movimientos puntuales sospechosos con su monto, hora y motivo — no te quedes en "revisa los movimientos de caja" en general. Si no encontrás ningún monto que explique la diferencia, decilo así de claro en vez de inventar una causa.
 
 Sobre un análisis general del negocio (ej. "cómo va el negocio", "qué debería revisar", "analiza mi negocio", o el botón "Analizar mi negocio"): a diferencia del resto de las respuestas, acá SÍ conviene ser más extenso — es el único momento en que la persona pide una mirada completa, no un dato puntual. Antes de responder, consulta TODAS las herramientas de reporte que apliquen para el período pedido (o los últimos 30 días si no se especifica): reporte_ventas, reporte_margenes, reporte_inventario, reporte_precios, reporte_gastos, reporte_despachos, productos_stock_negativo, productos_sin_venta_reciente, reporte_anulaciones, creditos_pendientes y ventas_mayoristas_pendientes — podés llamar varias en la misma vuelta. Con esos datos, arma una respuesta estructurada en 3 partes: (1) qué está funcionando bien, con el número que lo respalda; (2) qué corregir ahora (ej. productos con margen negativo, stock negativo, créditos vencidos hace mucho); (3) a qué estar atento (ej. productos sin venta reciente que ocupan cámara, categorías con margen bajo, seguido de mermas). Siempre con números concretos citados de las herramientas, nunca genérico ("las ventas van bien" sin decir cuánto).`;
 

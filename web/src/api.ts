@@ -886,6 +886,10 @@ export interface DesgloseEfectivo {
 export interface ResumenSesion {
   sesion: SesionCaja;
   cantidadVentas: number;
+  // N° de la primera y la última venta pagada de la sesión (null si no
+  // hubo ninguna) — para cotejar contra el talonario/rollo físico.
+  boletaInicial: number | null;
+  boletaFinal: number | null;
   totalVentas: number;
   cantidadVentasLocal: number;
   totalVentasLocal: number;
