@@ -175,6 +175,19 @@ export default function CuadraturaCaja() {
                       </td>
                     </tr>
                   ))}
+                  {dia.totalGastosEfectivo > 0 && (
+                    // Antes esta resta no se mostraba en ningún lado acá —
+                    // el "Efectivo esperado" de abajo ya la descontaba, pero
+                    // al no verse esta línea, un gasto grande en efectivo
+                    // hacía que el número de abajo pareciera "salido de la
+                    // nada" (a un usuario le pasó justo esto: una
+                    // diferencia de ~$450.000 que no podía explicar porque
+                    // no tenía forma de ver que eran gastos, no un error).
+                    <tr>
+                      <td>Gastos pagados en efectivo</td>
+                      <td>−{formatoCLP(dia.totalGastosEfectivo)}</td>
+                    </tr>
+                  )}
                   <tr>
                     <td>
                       <strong>Efectivo esperado</strong>
@@ -261,6 +274,12 @@ export default function CuadraturaCaja() {
                     <tr>
                       <td>Correcciones a tarjeta</td>
                       <td>{formatoCLP(datos.totalGeneral.totalAjustesTarjeta)}</td>
+                    </tr>
+                  )}
+                  {datos.totalGeneral.totalGastosEfectivo > 0 && (
+                    <tr>
+                      <td>Gastos pagados en efectivo</td>
+                      <td>−{formatoCLP(datos.totalGeneral.totalGastosEfectivo)}</td>
                     </tr>
                   )}
                   <tr>

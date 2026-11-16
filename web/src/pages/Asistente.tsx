@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { Link, useLocation } from "react-router-dom";
 import {
   api,
   calcularMargen,
@@ -279,6 +279,7 @@ function TablaRevisionMasiva({ items }: { items: Record<string, unknown>[] }) {
 
 export default function Asistente() {
   const { usuario } = useUsuario();
+  const location = useLocation();
   const [mensajes, setMensajes] = useState<Mensaje[]>([]);
   const [historialApi, setHistorialApi] = useState<unknown[]>([]);
   const [propuesta, setPropuesta] = useState<PropuestaAsistente | null>(null);
@@ -308,6 +309,20 @@ export default function Asistente() {
       setEnviando(false);
     }
   }
+
+  // Llegada desde otra pantalla con un mensaje ya armado (ej. "Analizar con
+  // el Asistente" desde Cerrar caja, que manda el sesionId y el monto de la
+  // diferencia) — se manda solo una vez al entrar, nunca de nuevo si la
+  // persona vuelve a esta pantalla sin pasar de nuevo por ese botón.
+  const mensajeInicialEnviado = useRef(false);
+  useEffect(() => {
+    const mensajeInicial = (location.state as { mensajeInicial?: string } | null)?.mensajeInicial;
+    if (!mensajeInicial || mensajeInicialEnviado.current || !usuario) return;
+    mensajeInicialEnviado.current = true;
+    enviarTexto(mensajeInicial);
+    window.history.replaceState({}, "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [usuario]);
 
   async function enviar(e: React.FormEvent) {
     e.preventDefault();

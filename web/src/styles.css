@@ -807,6 +807,97 @@ select {
   padding-top: 0.5rem;
 }
 
+/* Cerrar caja (CerrarCaja.tsx), rediseño a pedido del usuario: la pantalla
+   anterior mostraba todo el detalle siempre abierto y se sentía "muy
+   cargada" — ahora el detalle completo (movimientos uno por uno, tarjetas,
+   créditos, gastos) y el desglose de "Venta total del día" por medio de
+   pago quedan plegados por defecto detrás de un botón, dejando a la vista
+   solo las cifras clave que se piden ver rápido. En la impresión SIEMPRE
+   se muestran completos sin importar si están plegados en pantalla en ese
+   momento — es el reporte de cierre, tiene que salir entero. */
+.seccion-opcional-cerrada {
+  display: none;
+}
+@media print {
+  .seccion-opcional-cerrada {
+    display: block;
+  }
+}
+.boton-desplegable {
+  display: block;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+}
+.boton-desplegable .recuadro-metrica-etiqueta {
+  display: inline;
+}
+.recuadro-metrica-desplegar {
+  float: right;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--color-primario);
+  text-transform: none;
+  letter-spacing: normal;
+}
+@media print {
+  .recuadro-metrica-desplegar {
+    display: none;
+  }
+}
+
+/* Panel de posibles causas de un descuadre (faltante/sobrante) al cerrar —
+   mismo tono "error" que ".recuadro-metrica.error", pero de ancho completo
+   para la lista de puntos y el botón de analizar con la IA. */
+.causas-descuadre {
+  border-radius: 10px;
+  padding: 1rem 1.2rem;
+  border: 1px solid var(--color-error);
+  background: var(--color-error-fondo);
+  margin: 0.75rem 0 1.25rem;
+}
+.causas-descuadre ul {
+  margin: 0.5rem 0;
+  padding-left: 1.3rem;
+}
+.causas-descuadre li {
+  margin: 0.3rem 0;
+}
+
+/* Cerrar caja impreso en hoja grande (A4) — mismo criterio que
+   ".cuadratura-caja": se ve en pantalla y se imprime tal cual, sin heredar
+   el ancho angosto de ".vale" pensado para el rollo térmico. */
+.cierre-caja-hoja {
+  max-width: none;
+}
+
+/* Informe de cierre en formato boleta (rollo térmico de 80mm), a pedido
+   del usuario para poder imprimirlo igual que el resto de los vales —
+   oculto en pantalla (se arma solo para el momento de imprimir, ver
+   imprimirInformeCierreBoleta en CerrarCaja.tsx) y visible al imprimir,
+   mismo mecanismo que ".vale-oculto-hasta-imprimir". */
+.informe-cierre-boleta {
+  display: none;
+}
+@media print {
+  .informe-cierre-boleta {
+    display: block;
+  }
+  /* Mientras se imprime la boleta angosta, el reporte en hoja grande no
+     debe salir también en el mismo trabajo de impresión. */
+  .cierre-caja-hoja.no-imprimir-boleta {
+    display: none !important;
+  }
+}
+.informe-cierre-boleta .lista-calculo td {
+  font-size: 0.85rem;
+}
+
 /* Aviso emergente del vuelto en efectivo — antes un window.alert() del
    navegador sin estilo; ahora un mismo lenguaje visual que el Total
    (número grande, destacado), pero en verde para que se lea como un
