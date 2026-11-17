@@ -144,15 +144,15 @@ function derivarCifras(resumen: ResumenSesion) {
   const diferenciaTerminal =
     resumen.sesion.totalTerminalTarjetas != null ? resumen.sesion.totalTerminalTarjetas - tarjetasSistema : null;
 
-  // "Saldo final" sin fondo fijo: el resultado neto de los movimientos del
-  // día solos (ventas en efectivo + abonos − gastos − retiros + ingresos ±
-  // correcciones), SIN sumarle la plata que ya estaba en el cajón al
-  // abrir — a pedido del usuario, para ver cuánto generó/movió la caja en
-  // el día en sí, aparte de cuánto debería haber en total en el cajón.
-  // "Efectivo esperado en caja" es ese mismo cálculo YA con el fondo fijo
-  // sumado (resumen.efectivoEsperado) — son dos cifras distintas a
-  // propósito, no una el detalle de la otra.
-  const saldoSinFondo = resumen.efectivoEsperado - resumen.sesion.fondoFijoInicial;
+  // "Saldo final": a diferencia de "Efectivo esperado en caja" (que es
+  // SOLO el cálculo del cajón físico, en efectivo), este considera TODOS
+  // los movimientos del día sin importar el medio de pago — venta total
+  // (efectivo + tarjeta + transferencia + crédito otorgado), gastos de
+  // cualquier medio, retiros e ingresos de caja. En dos versiones, a
+  // pedido del usuario: sin sumarle el fondo fijo con que se abrió, y con
+  // ese fondo sumado.
+  const saldoSinFondo = resumen.totalVentas - resumen.totalGastos - resumen.totalRetiros + resumen.totalIngresos;
+  const saldoConFondo = saldoSinFondo + resumen.sesion.fondoFijoInicial;
 
   return {
     ventaEfectivoHoy,
@@ -170,21 +170,27 @@ function derivarCifras(resumen: ResumenSesion) {
     tarjetasSistema,
     diferenciaTerminal,
     saldoSinFondo,
+    saldoConFondo,
   };
 }
 
 // Rediseño a pedido del usuario: la versión anterior mostraba TODO el
-// detalle siempre abierto y se sentía "muy cargada" — ahora arriba quedan
-// solo las cifras que pidió ver rápido (boleta inicial/final, fondo,
-// retiros, ingresos, saldo final, efectivo esperado), "Venta total del
-// día" tiene su propio desglose plegable por medio de pago, y todo lo
-// demás (movimientos uno por uno, tarjetas, créditos, gastos) queda
-// plegado detrás de "Ver todo el detalle". Al imprimir, ambas secciones
-// plegadas se muestran completas sin importar si están abiertas en
-// pantalla en ese momento — ver ".seccion-opcional-cerrada" en styles.css.
+// detalle siempre abierto y se sentía "muy cargada" — ahora arriba queda
+// una grilla chica con las cifras sueltas (boleta inicial/final, fondo,
+// retiros, ingresos), y tres recuadros grandes con su propio "Ver
+// desglose": "Venta total del día" (por medio de pago), "Saldo final"
+// (todos los movimientos del día, cualquier medio de pago — en dos
+// versiones, con y sin el fondo fijo) y "Efectivo esperado en caja" (solo
+// el cajón físico en efectivo — a propósito un cálculo distinto de
+// "Saldo final", no lo mismo con otro nombre). Todo lo demás (tarjetas,
+// créditos, gastos) queda plegado detrás de "Ver todo el detalle". Al
+// imprimir, todas las secciones plegadas se muestran completas sin
+// importar si están abiertas en pantalla en ese momento — ver
+// ".seccion-opcional-cerrada" en styles.css.
 function ResumenCierre({ resumen, titulo }: { resumen: ResumenSesion; titulo: string }) {
   const [verDesgloseVenta, setVerDesgloseVenta] = useState(false);
   const [verDesgloseSaldo, setVerDesgloseSaldo] = useState(false);
+  const [verDesgloseEfectivo, setVerDesgloseEfectivo] = useState(false);
   const [verDetalle, setVerDetalle] = useState(false);
   const c = derivarCifras(resumen);
 
@@ -241,19 +247,20 @@ function ResumenCierre({ resumen, titulo }: { resumen: ResumenSesion; titulo: st
         </div>
       </div>
 
-      {/* Recuadro grande con el resumen de TODOS los movimientos de caja —
-          a pedido del usuario, calcado del "SALDO FINAL" del ticket de
-          referencia. Muestra DOS versiones, a pedido del usuario: el
-          resultado neto de los movimientos del día solos ("sin fondo
-          fijo") y ese mismo resultado ya sumado al fondo con que se abrió
-          ("con fondo fijo" = efectivo esperado en caja) — son cifras
-          distintas a propósito, no una el detalle de la otra. El desglose
-          paso a paso queda detrás de "Ver desglose" en vez de siempre a
-          la vista. */}
+      {/* Recuadro grande con el resumen de TODOS los movimientos del día,
+          sin importar el medio de pago — a pedido del usuario, calcado
+          del "SALDO FINAL" del ticket de referencia. A diferencia de
+          "Efectivo esperado en caja" (que es solo el cajón físico, en
+          efectivo), acá entra la venta total (efectivo + tarjeta +
+          transferencia + crédito otorgado), los gastos de cualquier medio,
+          los retiros y los ingresos de caja. En dos versiones, a pedido
+          del usuario: sin sumarle el fondo fijo con que se abrió, y con
+          ese fondo sumado. El desglose paso a paso queda detrás de "Ver
+          desglose" en vez de siempre a la vista. */}
       <div className="recuadro-metrica" style={{ marginTop: "0.75rem" }}>
         <button type="button" className="boton-desplegable" onClick={() => setVerDesgloseSaldo((v) => !v)}>
           <span className="recuadro-metrica-desplegar">{verDesgloseSaldo ? "▲ Ocultar desglose" : "▼ Ver desglose"}</span>
-          <span className="recuadro-metrica-etiqueta">Saldo final</span>
+          <span className="recuadro-metrica-etiqueta">Saldo final (todos los movimientos, cualquier medio de pago)</span>
         </button>
         <div className="fila-inline" style={{ gap: "2.5rem", flexWrap: "wrap", marginTop: "0.3rem" }}>
           <div>
@@ -263,15 +270,74 @@ function ResumenCierre({ resumen, titulo }: { resumen: ResumenSesion; titulo: st
             </span>
           </div>
           <div>
-            <span className="ayuda">Con fondo fijo (efectivo esperado en caja)</span>
+            <span className="ayuda">Con fondo fijo</span>
             <span className="recuadro-metrica-valor" style={{ display: "block" }}>
-              {formatoCLP(resumen.efectivoEsperado)}
+              {formatoCLP(c.saldoConFondo)}
             </span>
           </div>
         </div>
         <div className={verDesgloseSaldo ? "" : "seccion-opcional-cerrada"}>
           <table className="lista-calculo" style={{ marginTop: "0.5rem" }}>
             <tbody>
+              <tr>
+                <td>+ Venta total del día (cualquier medio de pago)</td>
+                <td>{formatoCLP(resumen.totalVentas)}</td>
+              </tr>
+              <tr>
+                <td>
+                  − Gastos (cualquier medio de pago)
+                  {resumen.totalGastos === 0 && <span className="ayuda"> (sin gastos hoy)</span>}
+                </td>
+                <td>{formatoCLP(resumen.totalGastos)}</td>
+              </tr>
+              <tr>
+                <td>− Retiros durante el día</td>
+                <td>{formatoCLP(resumen.totalRetiros)}</td>
+              </tr>
+              <tr>
+                <td>+ Ingresos de caja</td>
+                <td>{formatoCLP(resumen.totalIngresos)}</td>
+              </tr>
+              <tr className="lista-calculo-total">
+                <td>= Saldo final (sin fondo fijo)</td>
+                <td>{formatoCLP(c.saldoSinFondo)}</td>
+              </tr>
+              <tr>
+                <td>+ Fondo de apertura</td>
+                <td>{formatoCLP(resumen.sesion.fondoFijoInicial)}</td>
+              </tr>
+              <tr className="lista-calculo-total">
+                <td>= Saldo final (con fondo fijo)</td>
+                <td>{formatoCLP(c.saldoConFondo)}</td>
+              </tr>
+            </tbody>
+          </table>
+          <p className="ayuda" style={{ margin: "0.3rem 0 0" }}>
+            Este saldo mezcla todos los medios de pago (incluye venta a crédito otorgada, aunque no se haya cobrado
+            todavía) — para saber cuánto debería haber físicamente en el cajón en efectivo, usa "Efectivo esperado
+            en caja" más abajo, que es un cálculo distinto.
+          </p>
+        </div>
+      </div>
+
+      {/* Recuadro grande aparte para "Efectivo esperado en caja" — a
+          diferencia de "Saldo final" (todos los medios de pago), este es
+          SOLO el cajón físico en efectivo: el número que hay que
+          encontrar al contar la plata. Mismo desglose paso a paso que
+          antes vivía en "Saldo final", antes de separarlos. */}
+      <div className="recuadro-metrica" style={{ marginTop: "0.75rem" }}>
+        <button type="button" className="boton-desplegable" onClick={() => setVerDesgloseEfectivo((v) => !v)}>
+          <span className="recuadro-metrica-desplegar">{verDesgloseEfectivo ? "▲ Ocultar desglose" : "▼ Ver desglose"}</span>
+          <span className="recuadro-metrica-etiqueta">Efectivo esperado en caja (solo efectivo)</span>
+          <span className="recuadro-metrica-valor">{formatoCLP(resumen.efectivoEsperado)}</span>
+        </button>
+        <div className={verDesgloseEfectivo ? "" : "seccion-opcional-cerrada"}>
+          <table className="lista-calculo" style={{ marginTop: "0.5rem" }}>
+            <tbody>
+              <tr>
+                <td>Fondo de apertura</td>
+                <td>{formatoCLP(resumen.sesion.fondoFijoInicial)}</td>
+              </tr>
               <tr>
                 <td>+ Ventas registradas en efectivo</td>
                 <td>{formatoCLP(c.ventaEfectivoHoy)}</td>
@@ -307,15 +373,7 @@ function ResumenCierre({ resumen, titulo }: { resumen: ResumenSesion; titulo: st
                 <td>{formatoCLP(resumen.totalAjustesEfectivo)}</td>
               </tr>
               <tr className="lista-calculo-total">
-                <td>= Saldo final (sin fondo fijo)</td>
-                <td>{formatoCLP(c.saldoSinFondo)}</td>
-              </tr>
-              <tr>
-                <td>+ Fondo de apertura</td>
-                <td>{formatoCLP(resumen.sesion.fondoFijoInicial)}</td>
-              </tr>
-              <tr className="lista-calculo-total">
-                <td>= Saldo final con fondo fijo (efectivo esperado en caja)</td>
+                <td>= Efectivo esperado en caja</td>
                 <td>{formatoCLP(resumen.efectivoEsperado)}</td>
               </tr>
             </tbody>
@@ -565,31 +623,27 @@ function InformeCierreBoleta({
         </tbody>
       </table>
 
-      <h3>Caja</h3>
+      <h3>Saldo final (todos los medios de pago)</h3>
       <table className="lista-calculo">
         <tbody>
           <tr>
-            <td>+ Venta en efectivo (+ abonos)</td>
-            <td>{formatoCLP((resumen.totalPorMedio.efectivo ?? 0))}</td>
+            <td>+ Venta total del día</td>
+            <td>{formatoCLP(resumen.totalVentas)}</td>
           </tr>
           <tr>
-            <td>− Gastos en efectivo</td>
-            <td>−{formatoCLP(c.gastosEfectivo)}</td>
+            <td>− Gastos (cualquier medio)</td>
+            <td>−{formatoCLP(resumen.totalGastos)}</td>
           </tr>
           <tr>
-            <td>Retiros</td>
+            <td>− Retiros</td>
             <td>−{formatoCLP(resumen.totalRetiros)}</td>
           </tr>
           <tr>
-            <td>Ingresos</td>
+            <td>+ Ingresos</td>
             <td>+{formatoCLP(resumen.totalIngresos)}</td>
           </tr>
-          <tr>
-            <td>± Correcciones</td>
-            <td>{formatoCLP(resumen.totalAjustesEfectivo)}</td>
-          </tr>
           <tr className="lista-calculo-total">
-            <td>Saldo final (sin fondo fijo)</td>
+            <td>= Saldo final (sin fondo fijo)</td>
             <td>{formatoCLP(c.saldoSinFondo)}</td>
           </tr>
           <tr>
@@ -597,7 +651,17 @@ function InformeCierreBoleta({
             <td>{formatoCLP(resumen.sesion.fondoFijoInicial)}</td>
           </tr>
           <tr className="lista-calculo-total">
-            <td>Saldo final con fondo fijo (efectivo esperado en caja)</td>
+            <td>= Saldo final (con fondo fijo)</td>
+            <td>{formatoCLP(c.saldoConFondo)}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Caja (solo efectivo)</h3>
+      <table className="lista-calculo">
+        <tbody>
+          <tr className="lista-calculo-total">
+            <td>Efectivo esperado en caja</td>
             <td>{formatoCLP(resumen.efectivoEsperado)}</td>
           </tr>
           {efectivoContado != null && (
