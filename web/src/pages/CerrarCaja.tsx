@@ -871,18 +871,29 @@ export default function CerrarCaja() {
                 tono={dif === 0 ? "exito" : "error"}
                 nota={dif === 0 ? "Cuadra" : dif > 0 ? "Sobra efectivo" : "Falta efectivo"}
               />
-              {faltante > 0 && (
-                <>
-                  <MetricaBox etiqueta="Faltante de efectivo" valor={formatoCLP(faltante)} tono="error" />
-                  <MetricaBox
-                    etiqueta="% de pérdida sobre ventas"
-                    valor={`${porcentajePerdida.toFixed(2)}%`}
-                    tono="error"
-                    nota="Faltante ÷ venta total del día × 100"
-                  />
-                </>
-              )}
+              <MetricaBox
+                etiqueta="Faltante de efectivo"
+                valor={formatoCLP(faltante)}
+                tono={faltante > 0 ? "error" : "exito"}
+              />
+              <MetricaBox
+                etiqueta="% de pérdida sobre ventas"
+                valor={`${porcentajePerdida.toFixed(2)}%`}
+                tono={faltante > 0 ? "error" : "exito"}
+                nota="Faltante ÷ venta total del día × 100"
+              />
             </div>
+          </div>
+
+          <div className="tarjeta">
+            <h3 style={{ marginTop: 0 }}>¿Qué significa "% de pérdida sobre ventas"?</h3>
+            <p className="ayuda" style={{ marginTop: 0 }}>
+              Es el faltante de efectivo expresado como porcentaje de la venta total del día — una forma de ver qué
+              tan grave es la diferencia en relación a lo que se vendió (un faltante de $10.000 pesa mucho más en un
+              día que vendió $50.000 que en uno que vendió $1.000.000). En{" "}
+              <Link to="/caja/cuadratura">Cuadratura de caja</Link> se puede ver este mismo porcentaje día por día y
+              acumulado para un período.
+            </p>
           </div>
 
           <div className="tarjeta">
