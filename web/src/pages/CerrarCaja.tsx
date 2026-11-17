@@ -144,17 +144,6 @@ function derivarCifras(resumen: ResumenSesion) {
   const diferenciaTerminal =
     resumen.sesion.totalTerminalTarjetas != null ? resumen.sesion.totalTerminalTarjetas - tarjetasSistema : null;
 
-  // "Saldo final": el balance de caja que dejan el fondo, la venta en
-  // efectivo (+ abonos) y los retiros/ingresos — ANTES de aplicar gastos en
-  // efectivo o correcciones de medio de pago. "Efectivo esperado" es este
-  // mismo número ya con esos dos ajustes aplicados (ver abajo), y es el que
-  // de verdad hay que encontrar al contar la caja física. Separarlos evita
-  // que una resta grande (ej. un gasto en efectivo importante) quede
-  // "escondida" dentro de un solo número sin explicación — le pasó justo
-  // esto a un usuario: no veía por qué el efectivo esperado daba tan bajo
-  // respecto a la venta, y era por gastos pagados en efectivo ese día.
-  const saldoFinal = resumen.sesion.fondoFijoInicial + (resumen.totalPorMedio.efectivo ?? 0) - resumen.totalRetiros + resumen.totalIngresos;
-
   return {
     ventaEfectivoHoy,
     ventaTarjetaHoy,
@@ -170,7 +159,6 @@ function derivarCifras(resumen: ResumenSesion) {
     gastosEfectivo,
     tarjetasSistema,
     diferenciaTerminal,
-    saldoFinal,
   };
 }
 
@@ -185,6 +173,7 @@ function derivarCifras(resumen: ResumenSesion) {
 // pantalla en ese momento — ver ".seccion-opcional-cerrada" en styles.css.
 function ResumenCierre({ resumen, titulo }: { resumen: ResumenSesion; titulo: string }) {
   const [verDesgloseVenta, setVerDesgloseVenta] = useState(false);
+  const [verDesgloseSaldo, setVerDesgloseSaldo] = useState(false);
   const [verDetalle, setVerDetalle] = useState(false);
   const c = derivarCifras(resumen);
 
@@ -198,16 +187,6 @@ function ResumenCierre({ resumen, titulo }: { resumen: ResumenSesion; titulo: st
         <MetricaBox etiqueta="Fondo fijo" valor={formatoCLP(resumen.sesion.fondoFijoInicial)} />
         <MetricaBox etiqueta="Retiros" valor={formatoCLP(resumen.totalRetiros)} />
         <MetricaBox etiqueta="Ingresos" valor={formatoCLP(resumen.totalIngresos)} />
-        <MetricaBox
-          etiqueta="Saldo final"
-          valor={formatoCLP(c.saldoFinal)}
-          nota="Fondo + venta en efectivo − retiros + ingresos"
-        />
-        <MetricaBox
-          etiqueta="Efectivo esperado en caja"
-          valor={formatoCLP(resumen.efectivoEsperado)}
-          nota="Saldo final ya con gastos en efectivo descontados y correcciones aplicadas"
-        />
       </div>
 
       <div className="recuadro-metrica">
@@ -251,6 +230,72 @@ function ResumenCierre({ resumen, titulo }: { resumen: ResumenSesion; titulo: st
         </div>
       </div>
 
+      {/* Recuadro grande con el resumen de TODOS los movimientos de caja —
+          a pedido del usuario, calcado del "SALDO FINAL" del ticket de
+          referencia. Mismo tratamiento visual que "Venta total del día":
+          el número grande es el resultado final (lo mismo que
+          "efectivo esperado"), y el desglose paso a paso queda detrás del
+          "Ver desglose" en vez de siempre a la vista. */}
+      <div className="recuadro-metrica" style={{ marginTop: "0.75rem" }}>
+        <button type="button" className="boton-desplegable" onClick={() => setVerDesgloseSaldo((v) => !v)}>
+          <span className="recuadro-metrica-desplegar">{verDesgloseSaldo ? "▲ Ocultar desglose" : "▼ Ver desglose"}</span>
+          <span className="recuadro-metrica-etiqueta">Saldo final</span>
+          <span className="recuadro-metrica-valor">{formatoCLP(resumen.efectivoEsperado)}</span>
+        </button>
+        <div className={verDesgloseSaldo ? "" : "seccion-opcional-cerrada"}>
+          <table className="lista-calculo" style={{ marginTop: "0.5rem" }}>
+            <tbody>
+              <tr>
+                <td>Fondo de apertura</td>
+                <td>{formatoCLP(resumen.sesion.fondoFijoInicial)}</td>
+              </tr>
+              <tr>
+                <td>+ Ventas registradas en efectivo</td>
+                <td>{formatoCLP(c.ventaEfectivoHoy)}</td>
+              </tr>
+              <tr>
+                <td>
+                  + Abonos recibidos en efectivo
+                  {c.abonosEfectivo === 0 && (
+                    <span className="ayuda"> (ningún crédito/transferencia se cobró en efectivo hoy)</span>
+                  )}
+                </td>
+                <td>{formatoCLP(c.abonosEfectivo)}</td>
+              </tr>
+              <tr>
+                <td>
+                  − Gastos pagados en efectivo
+                  {c.gastosEfectivo === 0 && <span className="ayuda"> (sin gastos en efectivo hoy)</span>}
+                </td>
+                <td>{formatoCLP(c.gastosEfectivo)}</td>
+              </tr>
+              <tr>
+                <td>− Retiros durante el día</td>
+                <td>{formatoCLP(resumen.totalRetiros)}</td>
+              </tr>
+              {resumen.totalIngresos > 0 && (
+                <tr>
+                  <td>+ Ingresos de caja</td>
+                  <td>{formatoCLP(resumen.totalIngresos)}</td>
+                </tr>
+              )}
+              <tr>
+                <td>± Corrección de medio de pago</td>
+                <td>{formatoCLP(resumen.totalAjustesEfectivo)}</td>
+              </tr>
+              <tr className="lista-calculo-total">
+                <td>= Saldo final (efectivo esperado en caja)</td>
+                <td>{formatoCLP(resumen.efectivoEsperado)}</td>
+              </tr>
+            </tbody>
+          </table>
+          <p className="ayuda" style={{ margin: "0.3rem 0 0" }}>
+            Ej. venta anotada en efectivo y pagada con tarjeta: se corrige acá arriba ("Corrección de medio de
+            pago"), no se resta de "Ventas registradas en efectivo".
+          </p>
+        </div>
+      </div>
+
       <button
         type="button"
         className="boton-desplegable ayuda"
@@ -259,62 +304,10 @@ function ResumenCierre({ resumen, titulo }: { resumen: ResumenSesion; titulo: st
       >
         {verDetalle
           ? "▲ Ocultar todo el detalle"
-          : "▼ Ver todo el detalle (movimientos, tarjetas, créditos, gastos)"}
+          : "▼ Ver todo el detalle (tarjetas, créditos, gastos)"}
       </button>
 
       <div className={verDetalle ? "" : "seccion-opcional-cerrada"}>
-        <h3>Movimientos en efectivo</h3>
-        <table className="lista-calculo">
-          <tbody>
-            <tr>
-              <td>Fondo de apertura</td>
-              <td>{formatoCLP(resumen.sesion.fondoFijoInicial)}</td>
-            </tr>
-            <tr>
-              <td>+ Ventas registradas en efectivo</td>
-              <td>{formatoCLP(c.ventaEfectivoHoy)}</td>
-            </tr>
-            <tr>
-              <td>
-                + Abonos recibidos en efectivo
-                {c.abonosEfectivo === 0 && (
-                  <span className="ayuda"> (ningún crédito/transferencia se cobró en efectivo hoy)</span>
-                )}
-              </td>
-              <td>{formatoCLP(c.abonosEfectivo)}</td>
-            </tr>
-            <tr>
-              <td>
-                − Gastos pagados en efectivo
-                {c.gastosEfectivo === 0 && <span className="ayuda"> (sin gastos en efectivo hoy)</span>}
-              </td>
-              <td>{formatoCLP(c.gastosEfectivo)}</td>
-            </tr>
-            <tr>
-              <td>− Retiros durante el día</td>
-              <td>{formatoCLP(resumen.totalRetiros)}</td>
-            </tr>
-            {resumen.totalIngresos > 0 && (
-              <tr>
-                <td>+ Ingresos de caja</td>
-                <td>{formatoCLP(resumen.totalIngresos)}</td>
-              </tr>
-            )}
-            <tr>
-              <td>± Corrección de medio de pago</td>
-              <td>{formatoCLP(resumen.totalAjustesEfectivo)}</td>
-            </tr>
-            <tr className="lista-calculo-total">
-              <td>= Efectivo esperado</td>
-              <td>{formatoCLP(resumen.efectivoEsperado)}</td>
-            </tr>
-          </tbody>
-        </table>
-        <p className="ayuda" style={{ marginTop: 0 }}>
-          Ej. venta anotada en efectivo y pagada con tarjeta: se corrige acá arriba ("Corrección de medio de pago"),
-          no se resta de "Ventas registradas en efectivo".
-        </p>
-
         {resumen.ingresos.length > 0 && (
           <table className="tabla">
             <caption className="ayuda" style={{ textAlign: "left" }}>
@@ -549,6 +542,14 @@ function InformeCierreBoleta({
             <td>{formatoCLP(resumen.sesion.fondoFijoInicial)}</td>
           </tr>
           <tr>
+            <td>+ Venta en efectivo (+ abonos)</td>
+            <td>{formatoCLP((resumen.totalPorMedio.efectivo ?? 0))}</td>
+          </tr>
+          <tr>
+            <td>− Gastos en efectivo</td>
+            <td>−{formatoCLP(c.gastosEfectivo)}</td>
+          </tr>
+          <tr>
             <td>Retiros</td>
             <td>−{formatoCLP(resumen.totalRetiros)}</td>
           </tr>
@@ -556,12 +557,12 @@ function InformeCierreBoleta({
             <td>Ingresos</td>
             <td>+{formatoCLP(resumen.totalIngresos)}</td>
           </tr>
-          <tr className="lista-calculo-total">
-            <td>Saldo final</td>
-            <td>{formatoCLP(c.saldoFinal)}</td>
+          <tr>
+            <td>± Correcciones</td>
+            <td>{formatoCLP(resumen.totalAjustesEfectivo)}</td>
           </tr>
           <tr className="lista-calculo-total">
-            <td>Efectivo esperado en caja</td>
+            <td>Saldo final</td>
             <td>{formatoCLP(resumen.efectivoEsperado)}</td>
           </tr>
           {efectivoContado != null && (
