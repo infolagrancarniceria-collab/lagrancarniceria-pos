@@ -13,6 +13,29 @@ function formatoFechaHora(iso: string): string {
   return new Date(iso).toLocaleString("es-CL", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
+// "Saldo final": igual que en Cerrar caja (CerrarCaja.tsx), TODOS los
+// movimientos del día sin importar el medio de pago (venta total, gastos
+// de cualquier medio, retiros, ingresos) — a diferencia de "Efectivo
+// esperado", que es solo el cajón físico en efectivo. En dos versiones:
+// sin sumar el fondo fijo con que se abrió, y con ese fondo sumado.
+function saldoFinal(dia: { totalVentas: number; totalGastos: number; totalRetiros: number; totalIngresos: number; sesion: { fondoFijoInicial: number } }) {
+  const sinFondo = dia.totalVentas - dia.totalGastos - dia.totalRetiros + dia.totalIngresos;
+  return { sinFondo, conFondo: sinFondo + dia.sesion.fondoFijoInicial };
+}
+
+// Faltante de efectivo de un día ya cerrado (0 si sobró, cuadró, o si el
+// día todavía no se cierra) — null en vez de 0 cuando el día sigue
+// abierto, para no mezclarlo con "no hubo faltante" al acumular el % de
+// pérdida del período.
+function faltanteDia(dia: { sesion: { efectivoContado: number | null }; diferencia: number | null }): number | null {
+  if (dia.sesion.efectivoContado == null) return null;
+  return Math.max(0, -(dia.diferencia ?? 0));
+}
+
+function porcentajePerdida(faltante: number, totalVentas: number): number {
+  return totalVentas > 0 ? (faltante / totalVentas) * 100 : 0;
+}
+
 // Cuadratura de caja: desglose por medio de pago (efectivo/tarjeta/crédito)
 // más retiros/ingresos y fondo fijo, para un rango de fechas — puede
 // abarcar varios días (varias sesiones de caja, una por día), en cuyo caso
@@ -63,6 +86,24 @@ export default function CuadraturaCaja() {
       setError("No se pudo imprimir — revisa la impresora configurada en Configuración → Impresoras (Pedidos web).");
     }
   }
+
+  // Acumulado del período — el faltante solo suma los días YA cerrados
+  // (un día abierto no tiene efectivo contado todavía, así que no se sabe
+  // si hubo faltante o no; contarlo como 0 inflaría el % hacia abajo de
+  // forma engañosa). La venta total sí es la de todo el período, días
+  // abiertos incluidos.
+  const faltanteAcumulado =
+    datos?.dias.reduce((s, d) => s + (faltanteDia(d) ?? 0), 0) ?? 0;
+  const pctPerdidaAcumulado = datos ? porcentajePerdida(faltanteAcumulado, datos.totalGeneral.totalVentas) : 0;
+  const saldoFinalGeneral = datos
+    ? saldoFinal({
+        totalVentas: datos.totalGeneral.totalVentas,
+        totalGastos: datos.totalGeneral.totalGastos,
+        totalRetiros: datos.totalGeneral.totalRetiros,
+        totalIngresos: datos.totalGeneral.totalIngresos,
+        sesion: { fondoFijoInicial: datos.totalGeneral.fondoFijoInicial },
+      })
+    : { sinFondo: 0, conFondo: 0 };
 
   return (
     <div>
@@ -116,6 +157,13 @@ export default function CuadraturaCaja() {
               </button>
               <table className="tabla">
                 <tbody>
+                  <tr>
+                    <td>Boleta inicial — final</td>
+                    <td>
+                      {dia.boletaInicial != null ? `N° ${dia.boletaInicial}` : "—"} —{" "}
+                      {dia.boletaFinal != null ? `N° ${dia.boletaFinal}` : "—"}
+                    </td>
+                  </tr>
                   <tr>
                     <td>Fondo fijo inicial</td>
                     <td>{formatoCLP(dia.sesion.fondoFijoInicial)}</td>
@@ -208,8 +256,26 @@ export default function CuadraturaCaja() {
                           {formatoCLP(dia.diferencia ?? 0)}
                         </td>
                       </tr>
+                      <tr>
+                        <td>% de pérdida sobre ventas</td>
+                        <td className={faltanteDia(dia) === 0 ? "exito" : "error"}>
+                          {porcentajePerdida(faltanteDia(dia) ?? 0, dia.totalVentas).toFixed(2)}%
+                        </td>
+                      </tr>
                     </>
                   )}
+                  <tr>
+                    <td>Saldo final (todos los medios, sin fondo fijo)</td>
+                    <td>{formatoCLP(saldoFinal(dia).sinFondo)}</td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <strong>Saldo final (todos los medios, con fondo fijo)</strong>
+                    </td>
+                    <td>
+                      <strong>{formatoCLP(saldoFinal(dia).conFondo)}</strong>
+                    </td>
+                  </tr>
                 </tbody>
               </table>
             </section>
@@ -294,8 +360,29 @@ export default function CuadraturaCaja() {
                     <td>Efectivo contado</td>
                     <td>{formatoCLP(datos.totalGeneral.efectivoContado)}</td>
                   </tr>
+                  <tr>
+                    <td>% de pérdida acumulado del período</td>
+                    <td className={faltanteAcumulado === 0 ? "exito" : "error"}>{pctPerdidaAcumulado.toFixed(2)}%</td>
+                  </tr>
+                  <tr>
+                    <td>Saldo final (todos los medios, sin fondo fijo)</td>
+                    <td>{formatoCLP(saldoFinalGeneral.sinFondo)}</td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <strong>Saldo final (todos los medios, con fondo fijo)</strong>
+                    </td>
+                    <td>
+                      <strong>{formatoCLP(saldoFinalGeneral.conFondo)}</strong>
+                    </td>
+                  </tr>
                 </tbody>
               </table>
+              <p className="ayuda" style={{ marginTop: "0.5rem" }}>
+                El % de pérdida acumulado solo considera los días ya cerrados del período (un día todavía abierto no
+                tiene efectivo contado, así que no se sabe si hubo faltante) — se divide por la venta total de todo
+                el período, incluidos los días abiertos.
+              </p>
             </section>
           )}
         </div>
