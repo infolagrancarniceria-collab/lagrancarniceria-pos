@@ -6,37 +6,9 @@ import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 import ModalAlerta from "../components/ModalAlerta";
 import ModalConfirmarClave from "../components/ModalConfirmarClave";
 import ModalRetiroCaja from "../components/ModalRetiroCaja";
+import MetricaBox from "../components/MetricaBox";
 import { mostrarToast } from "../lib/toast";
 import { imprimirCierreCaja, imprimirSilencioso } from "../lib/imprimir";
-
-// Recuadro de una sola cifra — a pedido del usuario, para poder
-// identificar de un vistazo qué números importan en vez de leer un
-// párrafo tras otro. "tono" decide el color: "exito"/"error" para una
-// cifra que de verdad está bien o mal (ej. si algo cuadra o no), "neutro"
-// (el default) para una cifra puramente informativa.
-function MetricaBox({
-  etiqueta,
-  valor,
-  tono = "neutro",
-  nota,
-}: {
-  etiqueta: string;
-  valor: string;
-  tono?: "exito" | "error" | "neutro";
-  nota?: string;
-}) {
-  return (
-    <div className={`recuadro-metrica${tono !== "neutro" ? ` ${tono}` : ""}`}>
-      <span className="recuadro-metrica-etiqueta">{etiqueta}</span>
-      <span className="recuadro-metrica-valor">{valor}</span>
-      {nota && (
-        <p className="ayuda recuadro-metrica-nota" style={{ margin: 0 }}>
-          {nota}
-        </p>
-      )}
-    </div>
-  );
-}
 
 // Segundo reseteo a pedido del usuario — esta vez en tres recuadros bien
 // separados: "Informes Totales" (boleta inicial/final y venta total del
@@ -114,8 +86,11 @@ function derivarCifras(resumen: ResumenSesion) {
 // que de verdad se verificó (efectivo contado a mano + lo que marca el
 // terminal de tarjetas + lo que el sistema registró en transferencias,
 // que no se verifica a mano porque ya queda marcado en la venta misma)
-// contra el "Total esperado" del resumen de movimientos. La diferencia se
-// expresa como % de utilidad o pérdida sobre la venta total del día.
+// contra el "Total esperado" del resumen de movimientos, SIN el crédito
+// simple otorgado — a pedido del usuario, ese % es solo para ver el
+// porcentaje de dinero faltante de verdad, y el crédito pendiente de
+// cobro no es un faltante (es normal que todavía no sea plata real). La
+// diferencia se expresa como % sobre la venta total del día.
 // efectivoContado va SIEMPRE bruto (antes de cualquier retiro para el
 // banco) — esa decisión se toma después de ver este número, no antes.
 function calcularVerificacion(
@@ -127,9 +102,10 @@ function calcularVerificacion(
   const transferenciaSistema = resumen.totalPorMedio.transferencia ?? 0;
   const terminalUsado = terminalTarjetas ?? c.tarjetasSistema;
   const totalReal = efectivoContadoBruto + terminalUsado + transferenciaSistema;
-  const diferencia = totalReal - c.totalEsperado;
+  const totalEsperadoVerificacion = c.totalEsperado - c.creditoOtorgado;
+  const diferencia = totalReal - totalEsperadoVerificacion;
   const porcentaje = resumen.totalVentas > 0 ? (diferencia / resumen.totalVentas) * 100 : 0;
-  return { transferenciaSistema, totalReal, diferencia, porcentaje };
+  return { transferenciaSistema, totalReal, totalEsperadoVerificacion, diferencia, porcentaje };
 }
 
 // Segundo reseteo a pedido del usuario: tres recuadros bien separados y
@@ -515,8 +491,8 @@ function InformeCierreBoleta({
                 <td>{formatoCLP(v.totalReal)}</td>
               </tr>
               <tr>
-                <td>Total esperado</td>
-                <td>{formatoCLP(c.totalEsperado)}</td>
+                <td>Total esperado (sin crédito simple pendiente)</td>
+                <td>{formatoCLP(v.totalEsperadoVerificacion)}</td>
               </tr>
               <tr className="lista-calculo-total">
                 <td>Diferencia</td>
@@ -543,7 +519,6 @@ function InformeCierreBoleta({
 function posiblesCausas(diferencia: number): string[] {
   if (diferencia < 0) {
     return [
-      "Crédito simple otorgado hoy que todavía no se cobra — es normal que reste del total esperado hasta que se pague (revisa cuánto crédito simple queda pendiente).",
       "Plata que salió del cajón sin registrarse como \"Retiro\" (ej. se pagó algo en efectivo directo de la caja, incluido un gasto familiar — eso ya no se descuenta solo, hay que registrarlo como retiro).",
       "Un vuelto entregado de más, o un error al contar el efectivo.",
       "Una venta cobrada en efectivo pero registrada con otro medio de pago (revisa las correcciones de medio de pago).",
@@ -771,9 +746,9 @@ export default function CerrarCaja() {
                 />
               </div>
               <p className="ayuda">
-                Es la diferencia (real menos esperado) expresada como porcentaje de la venta total del período — una
-                forma de ver qué tan grave es en relación a lo que se vendió. Ojo: el crédito simple otorgado hoy que
-                todavía no se cobra también resta acá, aunque no sea necesariamente un error. En{" "}
+                Es la diferencia (real menos esperado, sin contar el crédito simple pendiente de cobro) expresada
+                como porcentaje de la venta total del período — es solo el porcentaje de dinero que realmente falta
+                o sobra, no se mezcla con crédito que todavía no se cobra. En{" "}
                 <Link to="/caja/cuadratura">Cuadratura de caja</Link> se puede ver este mismo porcentaje día por día
                 y acumulado para un período.
               </p>
@@ -792,7 +767,7 @@ export default function CerrarCaja() {
                     onClick={() =>
                       navigate("/asistente", {
                         state: {
-                          mensajeInicial: `Al cerrar la caja (sesión ${cerrada.sesion.id}, del ${new Date(cerrada.sesion.fechaApertura).toLocaleDateString("es-CL")}) quedó una diferencia de ${formatoCLP(dif)} (${dif < 0 ? "falta" : "sobra"}) entre el total real (efectivo contado + terminal tarjetas + transferencia) y el total esperado del resumen de movimientos. Revisa el detalle de esa sesión y dime a qué se puede deber.`,
+                          mensajeInicial: `Al cerrar la caja (sesión ${cerrada.sesion.id}, del ${new Date(cerrada.sesion.fechaApertura).toLocaleDateString("es-CL")}) quedó una diferencia de ${formatoCLP(dif)} (${dif < 0 ? "falta" : "sobra"}) entre el total real (efectivo contado + terminal tarjetas + transferencia) y el total esperado del resumen de movimientos, sin contar el crédito simple pendiente de cobro. Revisa el detalle de esa sesión y dime a qué se puede deber.`,
                         },
                       })
                     }
@@ -946,8 +921,8 @@ export default function CerrarCaja() {
                   <td>{formatoCLP(verificacion.totalReal)}</td>
                 </tr>
                 <tr>
-                  <td>Total esperado (resumen de movimientos)</td>
-                  <td>{formatoCLP(c?.totalEsperado ?? 0)}</td>
+                  <td>Total esperado (sin crédito simple pendiente)</td>
+                  <td>{formatoCLP(verificacion.totalEsperadoVerificacion)}</td>
                 </tr>
                 <tr className="lista-calculo-total">
                   <td>Diferencia</td>
