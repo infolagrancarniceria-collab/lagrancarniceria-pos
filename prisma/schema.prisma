@@ -662,6 +662,17 @@ model RetiroCaja {
   monto  Float
   motivo String
 
+  // true solo en el retiro que se hace justo antes de cerrar la caja para
+  // ir al banco (ver "Hacer un retiro antes de cerrar" en CerrarCaja.tsx) —
+  // a pedido del usuario, esa plata sigue siendo de la empresa (solo
+  // cambia de lugar), así que NO debe restarse del "Resumen de
+  // movimientos del día" ni de la comparación real/esperado al cerrar. Un
+  // retiro normal durante el día (ej. pagarle a un proveedor) SÍ se resta
+  // — ver calcularResumenSesion (totalRetirosReales). Se marca solo, según
+  // desde dónde se registra, para no pedirle al cajero que elija una
+  // categoría cada vez.
+  esDepositoBanco Boolean @default(false)
+
   usuarioAutorizoId Int
   usuarioAutorizo   Usuario @relation(fields: [usuarioAutorizoId], references: [id])
 

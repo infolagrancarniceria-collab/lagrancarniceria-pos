@@ -6,102 +6,21 @@ import { manejarEnterComoTab } from "../hooks/useEnterNavigation";
 import ModalAlerta from "../components/ModalAlerta";
 import ModalConfirmarClave from "../components/ModalConfirmarClave";
 import ModalRetiroCaja from "../components/ModalRetiroCaja";
+import MetricaBox from "../components/MetricaBox";
 import { mostrarToast } from "../lib/toast";
 import { imprimirCierreCaja, imprimirSilencioso } from "../lib/imprimir";
 
-// Denominaciones reales de billetes y monedas chilenas en circulación — a
-// pedido del usuario, para contar la caja al cerrar billete por billete en
-// vez de escribir un solo número a ojo. El campo de cada una coincide con
-// ArqueoCaja en el servidor (ver server/routes/caja.ts). Orden descendente
-// (de mayor a menor), igual que la planilla de arqueo en papel. $5 y $1 se
-// agregaron porque la planilla los incluye, aunque casi no circulen.
-const BILLETES: { campo: keyof Desglose; valor: number }[] = [
-  { campo: "billetes20000", valor: 20000 },
-  { campo: "billetes10000", valor: 10000 },
-  { campo: "billetes5000", valor: 5000 },
-  { campo: "billetes2000", valor: 2000 },
-  { campo: "billetes1000", valor: 1000 },
-];
-const MONEDAS: { campo: keyof Desglose; valor: number }[] = [
-  { campo: "monedas500", valor: 500 },
-  { campo: "monedas100", valor: 100 },
-  { campo: "monedas50", valor: 50 },
-  { campo: "monedas10", valor: 10 },
-  { campo: "monedas5", valor: 5 },
-  { campo: "monedas1", valor: 1 },
-];
-
-type Desglose = Record<
-  | "billetes1000"
-  | "billetes2000"
-  | "billetes5000"
-  | "billetes10000"
-  | "billetes20000"
-  | "monedas1"
-  | "monedas5"
-  | "monedas10"
-  | "monedas50"
-  | "monedas100"
-  | "monedas500",
-  string
->;
-
-function desgloseVacio(): Desglose {
-  return {
-    billetes1000: "",
-    billetes2000: "",
-    billetes5000: "",
-    billetes10000: "",
-    billetes20000: "",
-    monedas1: "",
-    monedas5: "",
-    monedas10: "",
-    monedas50: "",
-    monedas100: "",
-    monedas500: "",
-  };
-}
-
-function totalDesglose(d: Desglose): number {
-  return [...BILLETES, ...MONEDAS].reduce((s, { campo, valor }) => s + (Number(d[campo]) || 0) * valor, 0);
-}
-
-// Recuadro de una sola cifra — a pedido del usuario, para poder
-// identificar de un vistazo qué números importan en vez de leer un
-// párrafo tras otro. "tono" decide el color: "exito"/"error" para una
-// cifra que de verdad está bien o mal (ej. si algo cuadra o no), "neutro"
-// (el default) para una cifra puramente informativa.
-function MetricaBox({
-  etiqueta,
-  valor,
-  tono = "neutro",
-  nota,
-}: {
-  etiqueta: string;
-  valor: string;
-  tono?: "exito" | "error" | "neutro";
-  nota?: string;
-}) {
-  return (
-    <div className={`recuadro-metrica${tono !== "neutro" ? ` ${tono}` : ""}`}>
-      <span className="recuadro-metrica-etiqueta">{etiqueta}</span>
-      <span className="recuadro-metrica-valor">{valor}</span>
-      {nota && (
-        <p className="ayuda recuadro-metrica-nota" style={{ margin: 0 }}>
-          {nota}
-        </p>
-      )}
-    </div>
-  );
-}
-
-// Reseteo a pedido del usuario — segunda vuelta de simplificación. Los
-// gastos quedaron totalmente fuera de cualquier cálculo de caja (ver
-// Gasto.esGastoNegocio y el comentario en calcularEfectivoEsperado en
-// server/routes/caja.ts): un gasto familiar que el dueño no considera
-// parte del negocio no debe descuadrar la caja. Si sale plata física por
-// cualquier motivo, debe quedar registrada como "Retiro", no como
-// "Gasto" — Gastos pasó a ser solo un registro categorizado, informativo.
+// Segundo reseteo a pedido del usuario — esta vez en tres recuadros bien
+// separados: "Informes Totales" (boleta inicial/final y venta total del
+// período, sin importar medio de pago), "Medios de Pago" (desglose de esa
+// misma venta total por efectivo/tarjeta/transferencia/crédito simple —
+// el total de este recuadro es el mismo de arriba, porque acá NO entran
+// fondo fijo, retiros ni ingresos) y "Resumen de movimientos del día"
+// (venta total + fondo fijo + abonos − retiros reales + ingresos = Total
+// esperado, el número contra el que se compara lo contado a mano). Los
+// gastos siguen totalmente fuera de cualquier cálculo de caja (ver
+// Gasto.esGastoNegocio): si sale plata física por cualquier motivo, debe
+// quedar registrada como "Retiro", no como "Gasto".
 //
 // Valores derivados del resumen que se repiten entre el cálculo rápido y el
 // detalle completo — se calculan una sola vez y se usan en los dos
@@ -124,28 +43,24 @@ function derivarCifras(resumen: ResumenSesion) {
   const creditoPagadoTarjeta = resumen.cobrosCreditoPorMedio.tarjeta ?? 0;
   const creditoPagadoTransferencia = resumen.cobrosCreditoPorMedio.transferencia ?? 0;
   const creditoCondonado = resumen.cobrosCreditoPorMedio.condonado ?? 0;
-  // "Abonos recibidos" — créditos de cualquier día (hoy u otro) que se
-  // cobraron hoy, de cualquier medio de pago. A pedido del usuario, ahora
-  // es uno de los campos rápidos ("Abonos o ingresos") y también entra en
-  // "Saldo final" como plata real que entró hoy, aparte de la venta.
+  // "Abonos recibidos" — pagos de créditos pendientes de cualquier día
+  // (hoy u otro) que se cobraron hoy, de cualquier medio de pago.
   const creditoPagadoTotal = creditoPagadoEfectivo + creditoPagadoTarjeta + creditoPagadoTransferencia;
 
   const tarjetasSistema = resumen.totalPorMedio.tarjeta ?? 0;
   const diferenciaTerminal =
     resumen.sesion.totalTerminalTarjetas != null ? resumen.sesion.totalTerminalTarjetas - tarjetasSistema : null;
 
-  // "Saldo final": a diferencia de "Efectivo esperado en caja" (que es
-  // SOLO el cálculo del cajón físico, en efectivo), este es un solo monto
-  // que considera TODOS los movimientos del día sin importar el medio de
-  // pago — el fondo fijo con que se abrió la caja, la venta total
-  // (efectivo + tarjeta + transferencia + crédito otorgado), los abonos
-  // recibidos hoy, los retiros y los ingresos de caja. Los gastos NO
-  // entran acá (a pedido del usuario — ver Gasto.esGastoNegocio: un gasto
-  // familiar que el dueño no considera parte del negocio no debe afectar
-  // ningún cálculo de caja; si sale plata física por cualquier motivo debe
-  // quedar como "Retiro").
-  const saldoFinal =
-    resumen.sesion.fondoFijoInicial + resumen.totalVentas + creditoPagadoTotal - resumen.totalRetiros + resumen.totalIngresos;
+  // "Total esperado" del resumen de movimientos: fondo fijo + venta total
+  // (efectivo + tarjeta + transferencia + crédito otorgado) + abonos
+  // recibidos − retiros REALES + ingresos. "Reales" excluye el retiro que
+  // se hace justo antes de cerrar para ir al banco (RetiroCaja.esDepositoBanco)
+  // — a pedido del usuario, esa plata sigue siendo de la empresa, solo
+  // cambia de lugar, y recién se decide cuánto retirar DESPUÉS de ver este
+  // total (ver "Hacer un retiro antes de cerrar" más abajo).
+  const totalRetirosReales = resumen.totalRetirosReales;
+  const totalEsperado =
+    resumen.sesion.fondoFijoInicial + resumen.totalVentas + creditoPagadoTotal - totalRetirosReales + resumen.totalIngresos;
 
   return {
     ventaEfectivoHoy,
@@ -161,34 +76,59 @@ function derivarCifras(resumen: ResumenSesion) {
     creditoPagadoTotal,
     tarjetasSistema,
     diferenciaTerminal,
-    saldoFinal,
+    totalRetirosReales,
+    totalEsperado,
   };
 }
 
-// Pantalla simplificada a pedido del usuario, lista cerrada de campos que
-// pidió ver: arriba una grilla chica con las cifras sueltas (venta
-// inicial/final con N° y monto, fondo fijo, retiros, abonos recibidos,
-// ingresos de caja), y tres recuadros grandes con su propio "Ver
-// desglose": "Venta total del día" (por medio de pago), "Saldo final"
-// (TODOS los movimientos del día, cualquier medio de pago, sin contar
-// gastos — en dos versiones, con y sin el fondo fijo) y "Efectivo
-// esperado en caja" (solo el cajón físico en efectivo — a propósito un
-// cálculo distinto de "Saldo final", no lo mismo con otro nombre). Todo
-// lo demás (tarjetas, créditos) queda plegado detrás de "Ver todo el
-// detalle". Al imprimir, todas las secciones plegadas se muestran
-// completas sin importar si están abiertas en pantalla en ese momento —
-// ver ".seccion-opcional-cerrada" en styles.css.
+// Comparación "real vs esperado" al cerrar — a pedido del usuario, ya no
+// se muestra un "Efectivo esperado en caja" aparte: ahora se compara lo
+// que de verdad se verificó (efectivo contado a mano + lo que marca el
+// terminal de tarjetas + lo que el sistema registró en transferencias,
+// que no se verifica a mano porque ya queda marcado en la venta misma)
+// contra el "Total esperado" del resumen de movimientos, SIN el crédito
+// simple otorgado — a pedido del usuario, ese % es solo para ver el
+// porcentaje de dinero faltante de verdad, y el crédito pendiente de
+// cobro no es un faltante (es normal que todavía no sea plata real). La
+// diferencia se expresa como % sobre la venta total del día.
+// efectivoContado va SIEMPRE bruto (antes de cualquier retiro para el
+// banco) — esa decisión se toma después de ver este número, no antes.
+function calcularVerificacion(
+  resumen: ResumenSesion,
+  c: ReturnType<typeof derivarCifras>,
+  efectivoContadoBruto: number,
+  terminalTarjetas: number | null
+) {
+  const transferenciaSistema = resumen.totalPorMedio.transferencia ?? 0;
+  const terminalUsado = terminalTarjetas ?? c.tarjetasSistema;
+  const totalReal = efectivoContadoBruto + terminalUsado + transferenciaSistema;
+  const totalEsperadoVerificacion = c.totalEsperado - c.creditoOtorgado;
+  const diferencia = totalReal - totalEsperadoVerificacion;
+  const porcentaje = resumen.totalVentas > 0 ? (diferencia / resumen.totalVentas) * 100 : 0;
+  return { transferenciaSistema, totalReal, totalEsperadoVerificacion, diferencia, porcentaje };
+}
+
+// Segundo reseteo a pedido del usuario: tres recuadros bien separados y
+// nombrados — "Informes Totales" (boleta inicial/final y venta total del
+// período), "Medios de Pago" (esa misma venta desglosada por
+// efectivo/tarjeta/transferencia/crédito simple, mismo total que arriba
+// porque acá no entran fondo fijo/retiros/ingresos) y "Resumen de
+// movimientos del día" (venta total + fondo fijo + abonos − retiros
+// reales + ingresos = Total esperado). Todo lo demás (tarjetas vs
+// terminal, créditos) queda plegado detrás de "Ver todo el detalle". Al
+// imprimir, las secciones plegadas se muestran completas sin importar si
+// están abiertas en pantalla — ver ".seccion-opcional-cerrada" en
+// styles.css.
 function ResumenCierre({ resumen, titulo }: { resumen: ResumenSesion; titulo: string }) {
-  const [verDesgloseVenta, setVerDesgloseVenta] = useState(false);
-  const [verDesgloseSaldo, setVerDesgloseSaldo] = useState(false);
-  const [verDesgloseEfectivo, setVerDesgloseEfectivo] = useState(false);
   const [verDetalle, setVerDetalle] = useState(false);
   const c = derivarCifras(resumen);
+  const retiroBancario = resumen.totalRetiroBancario;
 
   return (
     <div className="tarjeta">
       <h2>{titulo}</h2>
 
+      <h3 style={{ marginTop: 0 }}>Informes Totales</h3>
       <div className="grilla-metricas">
         <MetricaBox
           etiqueta="Venta inicial"
@@ -198,165 +138,80 @@ function ResumenCierre({ resumen, titulo }: { resumen: ResumenSesion; titulo: st
           etiqueta="Venta final"
           valor={resumen.boletaFinal != null ? `N° ${resumen.boletaFinal} — ${formatoCLP(resumen.montoBoletaFinal ?? 0)}` : "—"}
         />
-        <MetricaBox etiqueta="Fondo fijo" valor={formatoCLP(resumen.sesion.fondoFijoInicial)} />
-        <MetricaBox etiqueta="Retiros" valor={formatoCLP(resumen.totalRetiros)} />
-        <MetricaBox etiqueta="Abonos recibidos" valor={formatoCLP(c.creditoPagadoTotal)} />
-        <MetricaBox etiqueta="Ingresos de caja" valor={formatoCLP(resumen.totalIngresos)} />
-        <MetricaBox etiqueta="Saldo final" valor={formatoCLP(c.saldoFinal)} />
+        <MetricaBox etiqueta="Venta total del período" valor={formatoCLP(resumen.totalVentas)} />
       </div>
 
-      <div className="recuadro-metrica">
-        <button type="button" className="boton-desplegable" onClick={() => setVerDesgloseVenta((v) => !v)}>
-          <span className="recuadro-metrica-desplegar">{verDesgloseVenta ? "▲ Ocultar desglose" : "▼ Ver desglose"}</span>
-          <span className="recuadro-metrica-etiqueta">Venta total del día</span>
-          <span className="recuadro-metrica-valor">{formatoCLP(resumen.totalVentas)}</span>
-        </button>
-        <div className={verDesgloseVenta ? "" : "seccion-opcional-cerrada"}>
-          <table className="lista-calculo" style={{ marginTop: "0.5rem" }}>
-            <tbody>
-              <tr>
-                <td>Efectivo</td>
-                <td>{formatoCLP(c.ventaEfectivoHoy)}</td>
-              </tr>
-              <tr>
-                <td>Tarjeta</td>
-                <td>{formatoCLP(c.ventaTarjetaHoy)}</td>
-              </tr>
-              <tr>
-                <td>Transferencia</td>
-                <td>{formatoCLP(c.ventaTransferenciaHoy)}</td>
-              </tr>
-              <tr>
-                <td>Crédito otorgado</td>
-                <td>{formatoCLP(c.creditoOtorgado)}</td>
-              </tr>
-              <tr>
-                <td>Crédito pagado hoy (de cualquier día)</td>
-                <td>{formatoCLP(c.creditoPagadoTotal)}</td>
-              </tr>
-            </tbody>
-          </table>
-          {c.sumaCuatroLineas !== resumen.totalVentas && (
-            <p className="error" style={{ margin: "0.2rem 0 0" }}>
-              ⚠ Efectivo + tarjeta + transferencia + crédito otorgado suman {formatoCLP(c.sumaCuatroLineas)}, no
-              calzan con la venta total del día ({formatoCLP(resumen.totalVentas)}) — revisa si hay una venta sin
-              medio de pago asignado.
-            </p>
-          )}
-        </div>
-      </div>
+      <h3>Medios de Pago</h3>
+      <table className="lista-calculo">
+        <tbody>
+          <tr>
+            <td>Efectivo</td>
+            <td>{formatoCLP(c.ventaEfectivoHoy)}</td>
+          </tr>
+          <tr>
+            <td>Tarjeta</td>
+            <td>{formatoCLP(c.ventaTarjetaHoy)}</td>
+          </tr>
+          <tr>
+            <td>Transferencia</td>
+            <td>{formatoCLP(c.ventaTransferenciaHoy)}</td>
+          </tr>
+          <tr>
+            <td>Crédito simple</td>
+            <td>{formatoCLP(c.creditoOtorgado)}</td>
+          </tr>
+          <tr className="lista-calculo-total">
+            <td>Total</td>
+            <td>{formatoCLP(c.sumaCuatroLineas)}</td>
+          </tr>
+        </tbody>
+      </table>
+      {c.sumaCuatroLineas !== resumen.totalVentas && (
+        <p className="error" style={{ margin: "0.3rem 0 0" }}>
+          ⚠ Efectivo + tarjeta + transferencia + crédito simple suman {formatoCLP(c.sumaCuatroLineas)}, no calzan
+          con la venta total del período ({formatoCLP(resumen.totalVentas)}) — revisa si hay una venta sin medio de
+          pago asignado.
+        </p>
+      )}
 
-      {/* Recuadro grande con el resumen de TODOS los movimientos del día,
-          sin importar el medio de pago — a pedido del usuario, calcado
-          del "SALDO FINAL" del ticket de referencia. Un solo monto: el
-          fondo fijo con que se abrió, más la venta total (efectivo +
-          tarjeta + transferencia + crédito otorgado), los abonos
-          recibidos, los retiros y los ingresos de caja. El desglose paso
-          a paso queda detrás de "Ver desglose" en vez de siempre a la
-          vista. */}
-      <div className="recuadro-metrica" style={{ marginTop: "0.75rem" }}>
-        <button type="button" className="boton-desplegable" onClick={() => setVerDesgloseSaldo((v) => !v)}>
-          <span className="recuadro-metrica-desplegar">{verDesgloseSaldo ? "▲ Ocultar desglose" : "▼ Ver desglose"}</span>
-          <span className="recuadro-metrica-etiqueta">Saldo final (todos los movimientos, cualquier medio de pago)</span>
-          <span className="recuadro-metrica-valor">{formatoCLP(c.saldoFinal)}</span>
-        </button>
-        <div className={verDesgloseSaldo ? "" : "seccion-opcional-cerrada"}>
-          <table className="lista-calculo" style={{ marginTop: "0.5rem" }}>
-            <tbody>
-              <tr>
-                <td>Fondo de apertura</td>
-                <td>{formatoCLP(resumen.sesion.fondoFijoInicial)}</td>
-              </tr>
-              <tr>
-                <td>+ Venta total del día (cualquier medio de pago)</td>
-                <td>{formatoCLP(resumen.totalVentas)}</td>
-              </tr>
-              <tr>
-                <td>
-                  + Abonos recibidos
-                  {c.creditoPagadoTotal === 0 && <span className="ayuda"> (ningún crédito se cobró hoy)</span>}
-                </td>
-                <td>{formatoCLP(c.creditoPagadoTotal)}</td>
-              </tr>
-              <tr>
-                <td>− Retiros durante el día</td>
-                <td>{formatoCLP(resumen.totalRetiros)}</td>
-              </tr>
-              <tr>
-                <td>+ Ingresos de caja</td>
-                <td>{formatoCLP(resumen.totalIngresos)}</td>
-              </tr>
-              <tr className="lista-calculo-total">
-                <td>= Saldo final</td>
-                <td>{formatoCLP(c.saldoFinal)}</td>
-              </tr>
-            </tbody>
-          </table>
-          <p className="ayuda" style={{ margin: "0.3rem 0 0" }}>
-            Este saldo mezcla todos los medios de pago (incluye venta a crédito otorgada, aunque no se haya cobrado
-            todavía) y no descuenta gastos — para saber cuánto debería haber físicamente en el cajón en efectivo, usa
-            "Efectivo esperado en caja" más abajo, que es un cálculo distinto.
-          </p>
-        </div>
-      </div>
-
-      {/* Recuadro grande aparte para "Efectivo esperado en caja" — a
-          diferencia de "Saldo final" (todos los medios de pago), este es
-          SOLO el cajón físico en efectivo: el número que hay que
-          encontrar al contar la plata. Mismo desglose paso a paso que
-          antes vivía en "Saldo final", antes de separarlos. */}
-      <div className="recuadro-metrica" style={{ marginTop: "0.75rem" }}>
-        <button type="button" className="boton-desplegable" onClick={() => setVerDesgloseEfectivo((v) => !v)}>
-          <span className="recuadro-metrica-desplegar">{verDesgloseEfectivo ? "▲ Ocultar desglose" : "▼ Ver desglose"}</span>
-          <span className="recuadro-metrica-etiqueta">Efectivo esperado en caja (solo efectivo)</span>
-          <span className="recuadro-metrica-valor">{formatoCLP(resumen.efectivoEsperado)}</span>
-        </button>
-        <div className={verDesgloseEfectivo ? "" : "seccion-opcional-cerrada"}>
-          <table className="lista-calculo" style={{ marginTop: "0.5rem" }}>
-            <tbody>
-              <tr>
-                <td>Fondo de apertura</td>
-                <td>{formatoCLP(resumen.sesion.fondoFijoInicial)}</td>
-              </tr>
-              <tr>
-                <td>+ Ventas registradas en efectivo</td>
-                <td>{formatoCLP(c.ventaEfectivoHoy)}</td>
-              </tr>
-              <tr>
-                <td>
-                  + Abonos recibidos en efectivo
-                  {c.abonosEfectivo === 0 && (
-                    <span className="ayuda"> (ningún crédito/transferencia se cobró en efectivo hoy)</span>
-                  )}
-                </td>
-                <td>{formatoCLP(c.abonosEfectivo)}</td>
-              </tr>
-              <tr>
-                <td>− Retiros durante el día</td>
-                <td>{formatoCLP(resumen.totalRetiros)}</td>
-              </tr>
-              {resumen.totalIngresos > 0 && (
-                <tr>
-                  <td>+ Ingresos de caja</td>
-                  <td>{formatoCLP(resumen.totalIngresos)}</td>
-                </tr>
-              )}
-              <tr>
-                <td>± Corrección de medio de pago</td>
-                <td>{formatoCLP(resumen.totalAjustesEfectivo)}</td>
-              </tr>
-              <tr className="lista-calculo-total">
-                <td>= Efectivo esperado en caja</td>
-                <td>{formatoCLP(resumen.efectivoEsperado)}</td>
-              </tr>
-            </tbody>
-          </table>
-          <p className="ayuda" style={{ margin: "0.3rem 0 0" }}>
-            Ej. venta anotada en efectivo y pagada con tarjeta: se corrige acá arriba ("Corrección de medio de
-            pago"), no se resta de "Ventas registradas en efectivo".
-          </p>
-        </div>
-      </div>
+      <h3>Resumen de movimientos del día</h3>
+      <table className="lista-calculo">
+        <tbody>
+          <tr>
+            <td>Venta total</td>
+            <td>{formatoCLP(resumen.totalVentas)}</td>
+          </tr>
+          <tr>
+            <td>+ Fondo fijo</td>
+            <td>{formatoCLP(resumen.sesion.fondoFijoInicial)}</td>
+          </tr>
+          <tr>
+            <td>
+              + Abonos (créditos pendientes pagados)
+              {c.creditoPagadoTotal === 0 && <span className="ayuda"> (ningún crédito se cobró hoy)</span>}
+            </td>
+            <td>{formatoCLP(c.creditoPagadoTotal)}</td>
+          </tr>
+          <tr>
+            <td>− Retiros</td>
+            <td>{formatoCLP(c.totalRetirosReales)}</td>
+          </tr>
+          <tr>
+            <td>+ Ingresos</td>
+            <td>{formatoCLP(resumen.totalIngresos)}</td>
+          </tr>
+          <tr className="lista-calculo-total">
+            <td>= Total esperado</td>
+            <td>{formatoCLP(c.totalEsperado)}</td>
+          </tr>
+        </tbody>
+      </table>
+      {retiroBancario > 0 && (
+        <p className="ayuda" style={{ margin: "0.3rem 0 0" }}>
+          No incluye el retiro para depositar en el banco ({formatoCLP(retiroBancario)}) — esa plata sigue siendo de
+          la empresa, solo cambia de lugar. Se ve en "Depósito y fondo para mañana".
+        </p>
+      )}
 
       <button
         type="button"
@@ -413,8 +268,11 @@ function ResumenCierre({ resumen, titulo }: { resumen: ResumenSesion; titulo: st
               {resumen.retiros.map((r) => (
                 <tr key={r.id}>
                   <td>{new Date(r.fecha).toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" })}</td>
-                  <td>−{formatoCLP(r.monto)}</td>
-                  <td>{r.motivo}</td>
+                  <td>{r.esDepositoBanco ? "" : "−"}{formatoCLP(r.monto)}</td>
+                  <td>
+                    {r.motivo}
+                    {r.esDepositoBanco && <span className="ayuda"> (depósito a banco, no resta del resumen)</span>}
+                  </td>
                   <td>{r.usuarioAutorizo?.nombre ?? "—"}</td>
                 </tr>
               ))}
@@ -509,14 +367,15 @@ function ResumenCierre({ resumen, titulo }: { resumen: ResumenSesion; titulo: st
 // ".informe-cierre-boleta" en styles.css).
 function InformeCierreBoleta({
   resumen,
-  efectivoContado,
-  diferencia,
+  efectivoContadoBruto,
+  terminalTarjetas,
 }: {
   resumen: ResumenSesion;
-  efectivoContado: number | null;
-  diferencia: number | null;
+  efectivoContadoBruto: number | null;
+  terminalTarjetas: number | null;
 }) {
   const c = derivarCifras(resumen);
+  const v = efectivoContadoBruto != null ? calcularVerificacion(resumen, c, efectivoContadoBruto, terminalTarjetas) : null;
   return (
     <div className="vale informe-cierre-boleta">
       <h2>La Gran Carnicería</h2>
@@ -527,6 +386,8 @@ function InformeCierreBoleta({
           ? ` — cerrada ${new Date(resumen.sesion.fechaCierre).toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" })}`
           : ""}
       </p>
+
+      <h3>Informes Totales</h3>
       <table className="lista-calculo">
         <tbody>
           <tr>
@@ -545,10 +406,14 @@ function InformeCierreBoleta({
                 : "—"}
             </td>
           </tr>
+          <tr className="lista-calculo-total">
+            <td>Venta total del período</td>
+            <td>{formatoCLP(resumen.totalVentas)}</td>
+          </tr>
         </tbody>
       </table>
 
-      <h3>Venta total del día</h3>
+      <h3>Medios de Pago</h3>
       <table className="lista-calculo">
         <tbody>
           <tr>
@@ -564,71 +429,83 @@ function InformeCierreBoleta({
             <td>{formatoCLP(c.ventaTransferenciaHoy)}</td>
           </tr>
           <tr>
-            <td>Crédito otorgado</td>
+            <td>Crédito simple</td>
             <td>{formatoCLP(c.creditoOtorgado)}</td>
           </tr>
-          <tr>
-            <td>Crédito pagado hoy</td>
-            <td>{formatoCLP(c.creditoPagadoTotal)}</td>
-          </tr>
           <tr className="lista-calculo-total">
-            <td>Venta total</td>
-            <td>{formatoCLP(resumen.totalVentas)}</td>
+            <td>Total</td>
+            <td>{formatoCLP(c.sumaCuatroLineas)}</td>
           </tr>
         </tbody>
       </table>
 
-      <h3>Saldo final (todos los medios de pago)</h3>
+      <h3>Resumen de movimientos del día</h3>
       <table className="lista-calculo">
         <tbody>
           <tr>
-            <td>Fondo fijo</td>
-            <td>{formatoCLP(resumen.sesion.fondoFijoInicial)}</td>
-          </tr>
-          <tr>
-            <td>+ Venta total del día</td>
+            <td>Venta total</td>
             <td>{formatoCLP(resumen.totalVentas)}</td>
           </tr>
           <tr>
-            <td>+ Abonos recibidos</td>
+            <td>+ Fondo fijo</td>
+            <td>{formatoCLP(resumen.sesion.fondoFijoInicial)}</td>
+          </tr>
+          <tr>
+            <td>+ Abonos</td>
             <td>+{formatoCLP(c.creditoPagadoTotal)}</td>
           </tr>
           <tr>
             <td>− Retiros</td>
-            <td>−{formatoCLP(resumen.totalRetiros)}</td>
+            <td>−{formatoCLP(c.totalRetirosReales)}</td>
           </tr>
           <tr>
             <td>+ Ingresos</td>
             <td>+{formatoCLP(resumen.totalIngresos)}</td>
           </tr>
           <tr className="lista-calculo-total">
-            <td>= Saldo final</td>
-            <td>{formatoCLP(c.saldoFinal)}</td>
+            <td>= Total esperado</td>
+            <td>{formatoCLP(c.totalEsperado)}</td>
           </tr>
         </tbody>
       </table>
 
-      <h3>Caja (solo efectivo)</h3>
-      <table className="lista-calculo">
-        <tbody>
-          <tr className="lista-calculo-total">
-            <td>Efectivo esperado en caja</td>
-            <td>{formatoCLP(resumen.efectivoEsperado)}</td>
-          </tr>
-          {efectivoContado != null && (
-            <>
+      {v && (
+        <>
+          <h3>Verificación de caja</h3>
+          <table className="lista-calculo">
+            <tbody>
               <tr>
                 <td>Efectivo contado</td>
-                <td>{formatoCLP(efectivoContado)}</td>
+                <td>{formatoCLP(efectivoContadoBruto ?? 0)}</td>
+              </tr>
+              <tr>
+                <td>Terminal de tarjetas</td>
+                <td>{formatoCLP(terminalTarjetas ?? c.tarjetasSistema)}</td>
+              </tr>
+              <tr>
+                <td>Transferencia (sistema)</td>
+                <td>{formatoCLP(v.transferenciaSistema)}</td>
+              </tr>
+              <tr className="lista-calculo-total">
+                <td>Total real</td>
+                <td>{formatoCLP(v.totalReal)}</td>
+              </tr>
+              <tr>
+                <td>Total esperado (sin crédito simple pendiente)</td>
+                <td>{formatoCLP(v.totalEsperadoVerificacion)}</td>
               </tr>
               <tr className="lista-calculo-total">
                 <td>Diferencia</td>
-                <td>{formatoCLP(diferencia ?? 0)}</td>
+                <td>{formatoCLP(v.diferencia)}</td>
               </tr>
-            </>
-          )}
-        </tbody>
-      </table>
+              <tr>
+                <td>% de utilidad o pérdida</td>
+                <td>{v.porcentaje.toFixed(2)}%</td>
+              </tr>
+            </tbody>
+          </table>
+        </>
+      )}
       <p>
         Cerró: {resumen.sesion.usuarioCierre?.nombre ?? resumen.sesion.usuarioApertura?.nombre ?? "—"}
       </p>
@@ -645,14 +522,14 @@ function posiblesCausas(diferencia: number): string[] {
       "Plata que salió del cajón sin registrarse como \"Retiro\" (ej. se pagó algo en efectivo directo de la caja, incluido un gasto familiar — eso ya no se descuenta solo, hay que registrarlo como retiro).",
       "Un vuelto entregado de más, o un error al contar el efectivo.",
       "Una venta cobrada en efectivo pero registrada con otro medio de pago (revisa las correcciones de medio de pago).",
-      "Un crédito o transferencia que se cobró en efectivo pero no se marcó como abono en el sistema.",
+      "El terminal de tarjetas marca menos que lo que el sistema registró.",
     ];
   }
   return [
     "Un cliente pagó de más y no se le dio el vuelto correcto.",
     "Una venta registrada con otro medio de pago, pero cobrada en efectivo de verdad.",
     "Un ingreso de caja que no quedó registrado en el sistema.",
-    "Error al contar el efectivo (de más).",
+    "Error al contar el efectivo (de más), o el terminal de tarjetas marca más que lo que el sistema registró.",
   ];
 }
 
@@ -661,7 +538,12 @@ export default function CerrarCaja() {
   const navigate = useNavigate();
 
   const [resumen, setResumen] = useState<ResumenSesion | null>(null);
-  const [desglose, setDesglose] = useState<Desglose>(desgloseVacio());
+  // Efectivo contado — a pedido del usuario, ahora es un solo monto escrito
+  // a mano (ya no billete por billete). Va SIEMPRE bruto, antes de
+  // cualquier retiro para el banco: la cuadratura real se ve primero, y
+  // recién después se decide cuánto retirar (ver "Hacer un retiro antes de
+  // cerrar" más abajo).
+  const [efectivoContado, setEfectivoContado] = useState("");
   const [retirandoAlCierre, setRetirandoAlCierre] = useState(false);
   const [retiroAlCierre, setRetiroAlCierre] = useState(0);
   // Total del terminal de tarjetas y observaciones — igual que la planilla
@@ -682,9 +564,9 @@ export default function CerrarCaja() {
   // grande se oculta de ese trabajo de impresión puntual — ver
   // ".cierre-caja-hoja.no-imprimir-boleta" en styles.css.
   const [imprimiendoBoleta, setImprimiendoBoleta] = useState(false);
-  // % de pérdida, explicación y posibles causas del descuadre — a pedido
-  // del usuario, quedan plegados detrás de "ver más" en vez de siempre a
-  // la vista (no estaban en su lista de campos a mostrar).
+  // % de utilidad/pérdida, explicación y posibles causas del descuadre — a
+  // pedido del usuario, quedan plegados detrás de "ver más" en vez de
+  // siempre a la vista.
   const [verMasResultado, setVerMasResultado] = useState(false);
 
   async function imprimirHojaGrande() {
@@ -734,8 +616,11 @@ export default function CerrarCaja() {
       });
   }
 
-  const totalContado = totalDesglose(desglose);
+  const totalContado = Number(efectivoContado) || 0;
   const efectivoContadoFinal = Math.max(0, totalContado - retiroAlCierre);
+  const terminalTarjetasNum = terminalTarjetas.trim() ? Number(terminalTarjetas) : null;
+  const c = resumen ? derivarCifras(resumen) : null;
+  const verificacion = resumen && c ? calcularVerificacion(resumen, c, totalContado, terminalTarjetasNum) : null;
 
   async function confirmarRetiroAlCierre(monto: number, motivo: string, usuarioId: number, clave: string) {
     if (!resumen) return;
@@ -743,7 +628,14 @@ export default function CerrarCaja() {
     if (monto > disponible) {
       throw new Error(`No puedes retirar más de lo contado y disponible (${formatoCLP(disponible)}).`);
     }
-    await api.caja.registrarRetiro(resumen.sesion.id, { tipo: "retiro", monto, motivo, usuarioId, clave });
+    await api.caja.registrarRetiro(resumen.sesion.id, {
+      tipo: "retiro",
+      monto,
+      motivo,
+      usuarioId,
+      clave,
+      esDepositoBanco: true,
+    });
     setRetiroAlCierre((actual) => actual + monto);
     setRetirandoAlCierre(false);
     mostrarToast("Retiro registrado", `${formatoCLP(monto)} — ${motivo}. Queda ${formatoCLP(totalContado - retiroAlCierre - monto)} para el cierre.`);
@@ -762,19 +654,6 @@ export default function CerrarCaja() {
       const resultado = await api.caja.cerrarSesion(resumen.sesion.id, {
         efectivoContado: efectivoContadoFinal,
         usuarioId: usuario.id,
-        desgloseEfectivo: {
-          billetes1000: Number(desglose.billetes1000) || 0,
-          billetes2000: Number(desglose.billetes2000) || 0,
-          billetes5000: Number(desglose.billetes5000) || 0,
-          billetes10000: Number(desglose.billetes10000) || 0,
-          billetes20000: Number(desglose.billetes20000) || 0,
-          monedas1: Number(desglose.monedas1) || 0,
-          monedas5: Number(desglose.monedas5) || 0,
-          monedas10: Number(desglose.monedas10) || 0,
-          monedas50: Number(desglose.monedas50) || 0,
-          monedas100: Number(desglose.monedas100) || 0,
-          monedas500: Number(desglose.monedas500) || 0,
-        },
         ...(terminalTarjetas.trim() ? { totalTerminalTarjetas: Number(terminalTarjetas) } : {}),
         ...(observaciones.trim() ? { observacionesCierre: observaciones.trim() } : {}),
       });
@@ -795,9 +674,15 @@ export default function CerrarCaja() {
   }
 
   if (cerrada) {
-    const dif = cerrada.diferencia ?? 0;
-    const faltante = dif < 0 ? -dif : 0;
-    const porcentajePerdida = faltante > 0 && cerrada.totalVentas > 0 ? (faltante / cerrada.totalVentas) * 100 : 0;
+    // Efectivo contado BRUTO (antes del retiro para el banco) — se
+    // reconstruye sumando de vuelta lo que se retiró marcado
+    // esDepositoBanco, para que la verificación post-cierre dé el mismo
+    // número que se vio en vivo antes de cerrar (ver derivarCifras y
+    // calcularVerificacion más arriba).
+    const cBruto = cerrada.sesion.efectivoContado != null ? cerrada.sesion.efectivoContado + cerrada.totalRetiroBancario : 0;
+    const cCerrada = derivarCifras(cerrada);
+    const v = calcularVerificacion(cerrada, cCerrada, cBruto, cerrada.sesion.totalTerminalTarjetas);
+    const dif = v.diferencia;
     return (
       <div>
         <div className="encabezado-pantalla no-imprimir">
@@ -816,45 +701,61 @@ export default function CerrarCaja() {
           <ResumenCierre resumen={cerrada} titulo="Resumen del cierre" />
 
           <div className="tarjeta">
-            <h2>Resultado del cierre</h2>
-            <div className="grilla-metricas">
-              <MetricaBox etiqueta="Efectivo contado" valor={formatoCLP(cerrada.sesion.efectivoContado ?? 0)} />
+            <h2>Verificación de caja</h2>
+            <table className="lista-calculo">
+              <tbody>
+                <tr>
+                  <td>Efectivo contado</td>
+                  <td>{formatoCLP(cBruto)}</td>
+                </tr>
+                <tr>
+                  <td>Terminal de tarjetas</td>
+                  <td>{formatoCLP(cerrada.sesion.totalTerminalTarjetas ?? cCerrada.tarjetasSistema)}</td>
+                </tr>
+                <tr>
+                  <td>Transferencia (sistema)</td>
+                  <td>{formatoCLP(v.transferenciaSistema)}</td>
+                </tr>
+                <tr className="lista-calculo-total">
+                  <td>= Total real</td>
+                  <td>{formatoCLP(v.totalReal)}</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <div className="grilla-metricas" style={{ marginTop: "0.75rem" }}>
               <MetricaBox
-                etiqueta="Diferencia (contado − esperado)"
+                etiqueta="Diferencia (real − esperado)"
                 valor={formatoCLP(dif)}
                 tono={dif === 0 ? "exito" : "error"}
-                nota={dif === 0 ? "Cuadra" : dif > 0 ? "Sobra efectivo" : "Falta efectivo"}
+                nota={dif === 0 ? "Cuadra" : dif > 0 ? "Sobra" : "Falta"}
               />
             </div>
 
             <button type="button" className="boton-desplegable ayuda" onClick={() => setVerMasResultado((v) => !v)}>
-              {verMasResultado ? "▲ Ocultar % de pérdida y posibles causas" : "▼ Ver % de pérdida y posibles causas"}
+              {verMasResultado ? "▲ Ocultar % de utilidad/pérdida y posibles causas" : "▼ Ver % de utilidad/pérdida y posibles causas"}
             </button>
 
             <div className={verMasResultado ? "" : "seccion-opcional-cerrada"}>
               <div className="grilla-metricas" style={{ marginTop: "0.75rem" }}>
                 <MetricaBox
-                  etiqueta="Faltante de efectivo"
-                  valor={formatoCLP(faltante)}
-                  tono={faltante > 0 ? "error" : "exito"}
-                />
-                <MetricaBox
-                  etiqueta="% de pérdida sobre ventas"
-                  valor={`${porcentajePerdida.toFixed(2)}%`}
-                  tono={faltante > 0 ? "error" : "exito"}
-                  nota="Faltante ÷ venta total del día × 100"
+                  etiqueta="% de utilidad o pérdida"
+                  valor={`${v.porcentaje.toFixed(2)}%`}
+                  tono={dif < 0 ? "error" : "exito"}
+                  nota="Diferencia ÷ venta total del período × 100"
                 />
               </div>
               <p className="ayuda">
-                Es el faltante de efectivo expresado como porcentaje de la venta total del día — una forma de ver
-                qué tan grave es la diferencia en relación a lo que se vendió. En{" "}
+                Es la diferencia (real menos esperado, sin contar el crédito simple pendiente de cobro) expresada
+                como porcentaje de la venta total del período — es solo el porcentaje de dinero que realmente falta
+                o sobra, no se mezcla con crédito que todavía no se cobra. En{" "}
                 <Link to="/caja/cuadratura">Cuadratura de caja</Link> se puede ver este mismo porcentaje día por día
                 y acumulado para un período.
               </p>
 
               {dif !== 0 && (
                 <div className="causas-descuadre no-imprimir">
-                  <h3 style={{ marginTop: 0 }}>{dif < 0 ? "¿Por qué podría faltar efectivo?" : "¿Por qué podría sobrar efectivo?"}</h3>
+                  <h3 style={{ marginTop: 0 }}>{dif < 0 ? "¿Por qué podría faltar?" : "¿Por qué podría sobrar?"}</h3>
                   <ul>
                     {posiblesCausas(dif).map((causa) => (
                       <li key={causa}>{causa}</li>
@@ -866,7 +767,7 @@ export default function CerrarCaja() {
                     onClick={() =>
                       navigate("/asistente", {
                         state: {
-                          mensajeInicial: `Al cerrar la caja (sesión ${cerrada.sesion.id}, del ${new Date(cerrada.sesion.fechaApertura).toLocaleDateString("es-CL")}) quedó una diferencia de ${formatoCLP(dif)} (${dif < 0 ? "falta" : "sobra"} efectivo) entre lo esperado y lo contado. Revisa el detalle de esa sesión y dime a qué se puede deber.`,
+                          mensajeInicial: `Al cerrar la caja (sesión ${cerrada.sesion.id}, del ${new Date(cerrada.sesion.fechaApertura).toLocaleDateString("es-CL")}) quedó una diferencia de ${formatoCLP(dif)} (${dif < 0 ? "falta" : "sobra"}) entre el total real (efectivo contado + terminal tarjetas + transferencia) y el total esperado del resumen de movimientos, sin contar el crédito simple pendiente de cobro. Revisa el detalle de esa sesión y dime a qué se puede deber.`,
                         },
                       })
                     }
@@ -901,7 +802,11 @@ export default function CerrarCaja() {
           )}
         </div>
 
-        <InformeCierreBoleta resumen={cerrada} efectivoContado={cerrada.sesion.efectivoContado} diferencia={dif} />
+        <InformeCierreBoleta
+          resumen={cerrada}
+          efectivoContadoBruto={cBruto}
+          terminalTarjetas={cerrada.sesion.totalTerminalTarjetas}
+        />
 
         <button type="button" className="boton boton-primario no-imprimir" onClick={() => navigate("/caja")}>
           Volver a caja
@@ -932,53 +837,27 @@ export default function CerrarCaja() {
           <ResumenCierre resumen={resumen} titulo="Resumen antes de cerrar (reporte X)" />
         </div>
       )}
-      {resumen && <InformeCierreBoleta resumen={resumen} efectivoContado={null} diferencia={null} />}
+      {resumen && (
+        <InformeCierreBoleta resumen={resumen} efectivoContadoBruto={totalContado} terminalTarjetas={terminalTarjetasNum} />
+      )}
 
       <form onSubmit={cerrar} onKeyDown={manejarEnterComoTab} className="formulario no-imprimir">
         <h2>Conteo de efectivo al cerrar</h2>
-        <p className="ayuda">Marca cuántos billetes y monedas de cada tipo hay en la caja ahora mismo.</p>
-        <div className="fila-inline" style={{ flexWrap: "wrap", gap: "1.5rem" }}>
-          <div>
-            <strong className="ayuda">Billetes</strong>
-            <div className="fila-inline">
-              {BILLETES.map(({ campo, valor }) => (
-                <label key={campo} className="ayuda">
-                  {formatoCLP(valor)}
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    className="input-chico"
-                    value={desglose[campo]}
-                    onChange={(e) => setDesglose((d) => ({ ...d, [campo]: e.target.value }))}
-                  />
-                </label>
-              ))}
-            </div>
-          </div>
-          <div>
-            <strong className="ayuda">Monedas</strong>
-            <div className="fila-inline">
-              {MONEDAS.map(({ campo, valor }) => (
-                <label key={campo} className="ayuda">
-                  {formatoCLP(valor)}
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    className="input-chico"
-                    value={desglose[campo]}
-                    onChange={(e) => setDesglose((d) => ({ ...d, [campo]: e.target.value }))}
-                  />
-                </label>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <p style={{ fontSize: "1.2rem", margin: "0.75rem 0" }}>
-          <strong>Total contado:</strong> {formatoCLP(totalContado)}
+        <p className="ayuda">
+          Escribe el monto total contado en efectivo ahora mismo, ANTES de retirar nada para el banco — primero se ve
+          la cuadratura real, y recién después se decide cuánto retirar.
         </p>
+        <label>
+          Efectivo contado (total)
+          <input
+            type="number"
+            min="0"
+            className="input-chico"
+            value={efectivoContado}
+            onChange={(e) => setEfectivoContado(e.target.value)}
+            placeholder="0"
+          />
+        </label>
 
         <div className="acciones-formulario">
           <button type="button" onClick={() => setRetirandoAlCierre(true)} disabled={totalContado <= 0}>
@@ -1018,6 +897,47 @@ export default function CerrarCaja() {
               tono={Number(terminalTarjetas) === (resumen.totalPorMedio.tarjeta ?? 0) ? "exito" : "error"}
             />
           </div>
+        )}
+
+        {resumen && verificacion && (
+          <>
+            <h2>Verificación de caja (en vivo)</h2>
+            <table className="lista-calculo" style={{ maxWidth: "420px" }}>
+              <tbody>
+                <tr>
+                  <td>Efectivo contado</td>
+                  <td>{formatoCLP(totalContado)}</td>
+                </tr>
+                <tr>
+                  <td>Terminal de tarjetas</td>
+                  <td>{formatoCLP(terminalTarjetasNum ?? (c?.tarjetasSistema ?? 0))}</td>
+                </tr>
+                <tr>
+                  <td>Transferencia (sistema)</td>
+                  <td>{formatoCLP(verificacion.transferenciaSistema)}</td>
+                </tr>
+                <tr className="lista-calculo-total">
+                  <td>= Total real</td>
+                  <td>{formatoCLP(verificacion.totalReal)}</td>
+                </tr>
+                <tr>
+                  <td>Total esperado (sin crédito simple pendiente)</td>
+                  <td>{formatoCLP(verificacion.totalEsperadoVerificacion)}</td>
+                </tr>
+                <tr className="lista-calculo-total">
+                  <td>Diferencia</td>
+                  <td>{formatoCLP(verificacion.diferencia)}</td>
+                </tr>
+              </tbody>
+            </table>
+            <div className="grilla-metricas" style={{ maxWidth: "260px" }}>
+              <MetricaBox
+                etiqueta="% de utilidad o pérdida"
+                valor={`${verificacion.porcentaje.toFixed(2)}%`}
+                tono={verificacion.diferencia === 0 ? "exito" : verificacion.diferencia > 0 ? "exito" : "error"}
+              />
+            </div>
+          </>
         )}
 
         <h2>Observaciones</h2>

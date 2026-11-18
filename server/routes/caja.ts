@@ -274,11 +274,21 @@ export async function calcularResumenSesion(sesionId: number) {
   // durante el turno sin ser parte de ninguna venta (ej. pagarle a un
   // proveedor que llega con mercadería) — se resta del efectivo esperado
   // más abajo para que no aparezca como una diferencia de caja al cerrar.
+  // Los marcados esDepositoBanco (el retiro que se hace justo antes de
+  // cerrar para ir al banco) quedan FUERA de totalRetirosReales — a
+  // pedido del usuario, esa plata sigue siendo de la empresa, solo cambia
+  // de lugar, así que no debe restarse del "Resumen de movimientos del
+  // día" ni de la comparación real/esperado (ver RetiroCaja.esDepositoBanco
+  // y derivarCifras en CerrarCaja.tsx). totalRetiros se mantiene con la
+  // suma completa (todos los retiros) para no romper lo que ya la usaba
+  // (ej. el efectivo esperado "solo efectivo" que sigue igual que antes).
   const movimientos = await prisma.retiroCaja.findMany({ where: { sesionCajaId: sesionId }, include: { usuarioAutorizo: true } });
   const retiros = movimientos.filter((m) => m.tipo !== "ingreso");
   const ingresos = movimientos.filter((m) => m.tipo === "ingreso");
   const totalRetiros = retiros.reduce((s, r) => s + r.monto, 0);
   const totalIngresos = ingresos.reduce((s, r) => s + r.monto, 0);
+  const totalRetiroBancario = retiros.filter((r) => r.esDepositoBanco).reduce((s, r) => s + r.monto, 0);
+  const totalRetirosReales = totalRetiros - totalRetiroBancario;
 
   // Correcciones auditadas al efectivo/tarjeta calculados (ver modelo
   // AjusteCuadratura) — no tocan ningún pago ni venta real, solo corrigen
@@ -354,6 +364,8 @@ export async function calcularResumenSesion(sesionId: number) {
     totalCobrosMayorista,
     retiros,
     totalRetiros,
+    totalRetiroBancario,
+    totalRetirosReales,
     ingresos,
     totalIngresos,
     ajustes,
@@ -457,6 +469,8 @@ cajaRouter.get("/cuadratura", async (req, res) => {
         mayorista: acc.ventasPorMedio.mayorista + (dia.ventasPorMedio.mayorista ?? 0),
       },
       totalRetiros: acc.totalRetiros + dia.totalRetiros,
+      totalRetiroBancario: acc.totalRetiroBancario + dia.totalRetiroBancario,
+      totalRetirosReales: acc.totalRetirosReales + dia.totalRetirosReales,
       totalIngresos: acc.totalIngresos + dia.totalIngresos,
       totalAjustesEfectivo: acc.totalAjustesEfectivo + dia.totalAjustesEfectivo,
       totalAjustesTarjeta: acc.totalAjustesTarjeta + dia.totalAjustesTarjeta,
@@ -480,6 +494,8 @@ cajaRouter.get("/cuadratura", async (req, res) => {
       totalPorMedio: { efectivo: 0, tarjeta: 0, credito: 0, transferencia: 0, pedido_web: 0, mayorista: 0 },
       ventasPorMedio: { efectivo: 0, tarjeta: 0, credito: 0, transferencia: 0, pedido_web: 0, mayorista: 0 },
       totalRetiros: 0,
+      totalRetiroBancario: 0,
+      totalRetirosReales: 0,
       totalIngresos: 0,
       totalAjustesEfectivo: 0,
       totalAjustesTarjeta: 0,
@@ -507,6 +523,10 @@ const registrarRetiroSchema = z.object({
   motivo: z.string().trim().min(1, "Falta el motivo"),
   usuarioId: z.number().int().positive(),
   clave: z.string().trim().min(1, "Falta la clave de supervisor"),
+  // true solo para el retiro que se hace justo antes de cerrar la caja
+  // para ir al banco (ver "Hacer un retiro antes de cerrar" en
+  // CerrarCaja.tsx) — ver RetiroCaja.esDepositoBanco.
+  esDepositoBanco: z.boolean().default(false),
 });
 
 cajaRouter.post("/sesiones/:id/retiros", async (req, res) => {
@@ -515,7 +535,7 @@ cajaRouter.post("/sesiones/:id/retiros", async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.issues[0].message });
   }
-  const { tipo, monto, motivo, usuarioId, clave } = parsed.data;
+  const { tipo, monto, motivo, usuarioId, clave, esDepositoBanco } = parsed.data;
 
   const usuario = await validarUsuario(usuarioId);
   if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
@@ -537,7 +557,7 @@ cajaRouter.post("/sesiones/:id/retiros", async (req, res) => {
   }
 
   const retiro = await prisma.retiroCaja.create({
-    data: { sesionCajaId: sesionId, tipo, monto, motivo: motivo.trim(), usuarioAutorizoId: usuarioId },
+    data: { sesionCajaId: sesionId, tipo, monto, motivo: motivo.trim(), usuarioAutorizoId: usuarioId, esDepositoBanco },
     include: { usuarioAutorizo: true },
   });
 
