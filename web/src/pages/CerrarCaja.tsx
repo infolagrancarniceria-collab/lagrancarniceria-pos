@@ -135,17 +135,17 @@ function derivarCifras(resumen: ResumenSesion) {
     resumen.sesion.totalTerminalTarjetas != null ? resumen.sesion.totalTerminalTarjetas - tarjetasSistema : null;
 
   // "Saldo final": a diferencia de "Efectivo esperado en caja" (que es
-  // SOLO el cálculo del cajón físico, en efectivo), este considera TODOS
-  // los movimientos del día sin importar el medio de pago — venta total
+  // SOLO el cálculo del cajón físico, en efectivo), este es un solo monto
+  // que considera TODOS los movimientos del día sin importar el medio de
+  // pago — el fondo fijo con que se abrió la caja, la venta total
   // (efectivo + tarjeta + transferencia + crédito otorgado), los abonos
   // recibidos hoy, los retiros y los ingresos de caja. Los gastos NO
   // entran acá (a pedido del usuario — ver Gasto.esGastoNegocio: un gasto
   // familiar que el dueño no considera parte del negocio no debe afectar
   // ningún cálculo de caja; si sale plata física por cualquier motivo debe
-  // quedar como "Retiro"). En dos versiones: sin sumarle el fondo fijo con
-  // que se abrió, y con ese fondo sumado.
-  const saldoSinFondo = resumen.totalVentas + creditoPagadoTotal - resumen.totalRetiros + resumen.totalIngresos;
-  const saldoConFondo = saldoSinFondo + resumen.sesion.fondoFijoInicial;
+  // quedar como "Retiro").
+  const saldoFinal =
+    resumen.sesion.fondoFijoInicial + resumen.totalVentas + creditoPagadoTotal - resumen.totalRetiros + resumen.totalIngresos;
 
   return {
     ventaEfectivoHoy,
@@ -161,8 +161,7 @@ function derivarCifras(resumen: ResumenSesion) {
     creditoPagadoTotal,
     tarjetasSistema,
     diferenciaTerminal,
-    saldoSinFondo,
-    saldoConFondo,
+    saldoFinal,
   };
 }
 
@@ -203,6 +202,7 @@ function ResumenCierre({ resumen, titulo }: { resumen: ResumenSesion; titulo: st
         <MetricaBox etiqueta="Retiros" valor={formatoCLP(resumen.totalRetiros)} />
         <MetricaBox etiqueta="Abonos recibidos" valor={formatoCLP(c.creditoPagadoTotal)} />
         <MetricaBox etiqueta="Ingresos de caja" valor={formatoCLP(resumen.totalIngresos)} />
+        <MetricaBox etiqueta="Saldo final" valor={formatoCLP(c.saldoFinal)} />
       </div>
 
       <div className="recuadro-metrica">
@@ -248,36 +248,25 @@ function ResumenCierre({ resumen, titulo }: { resumen: ResumenSesion; titulo: st
 
       {/* Recuadro grande con el resumen de TODOS los movimientos del día,
           sin importar el medio de pago — a pedido del usuario, calcado
-          del "SALDO FINAL" del ticket de referencia. A diferencia de
-          "Efectivo esperado en caja" (que es solo el cajón físico, en
-          efectivo), acá entra la venta total (efectivo + tarjeta +
-          transferencia + crédito otorgado), los gastos de cualquier medio,
-          los retiros y los ingresos de caja. En dos versiones, a pedido
-          del usuario: sin sumarle el fondo fijo con que se abrió, y con
-          ese fondo sumado. El desglose paso a paso queda detrás de "Ver
-          desglose" en vez de siempre a la vista. */}
+          del "SALDO FINAL" del ticket de referencia. Un solo monto: el
+          fondo fijo con que se abrió, más la venta total (efectivo +
+          tarjeta + transferencia + crédito otorgado), los abonos
+          recibidos, los retiros y los ingresos de caja. El desglose paso
+          a paso queda detrás de "Ver desglose" en vez de siempre a la
+          vista. */}
       <div className="recuadro-metrica" style={{ marginTop: "0.75rem" }}>
         <button type="button" className="boton-desplegable" onClick={() => setVerDesgloseSaldo((v) => !v)}>
           <span className="recuadro-metrica-desplegar">{verDesgloseSaldo ? "▲ Ocultar desglose" : "▼ Ver desglose"}</span>
           <span className="recuadro-metrica-etiqueta">Saldo final (todos los movimientos, cualquier medio de pago)</span>
+          <span className="recuadro-metrica-valor">{formatoCLP(c.saldoFinal)}</span>
         </button>
-        <div className="fila-inline" style={{ gap: "2.5rem", flexWrap: "wrap", marginTop: "0.3rem" }}>
-          <div>
-            <span className="ayuda">Sin fondo fijo</span>
-            <span className="recuadro-metrica-valor" style={{ display: "block" }}>
-              {formatoCLP(c.saldoSinFondo)}
-            </span>
-          </div>
-          <div>
-            <span className="ayuda">Con fondo fijo</span>
-            <span className="recuadro-metrica-valor" style={{ display: "block" }}>
-              {formatoCLP(c.saldoConFondo)}
-            </span>
-          </div>
-        </div>
         <div className={verDesgloseSaldo ? "" : "seccion-opcional-cerrada"}>
           <table className="lista-calculo" style={{ marginTop: "0.5rem" }}>
             <tbody>
+              <tr>
+                <td>Fondo de apertura</td>
+                <td>{formatoCLP(resumen.sesion.fondoFijoInicial)}</td>
+              </tr>
               <tr>
                 <td>+ Venta total del día (cualquier medio de pago)</td>
                 <td>{formatoCLP(resumen.totalVentas)}</td>
@@ -298,16 +287,8 @@ function ResumenCierre({ resumen, titulo }: { resumen: ResumenSesion; titulo: st
                 <td>{formatoCLP(resumen.totalIngresos)}</td>
               </tr>
               <tr className="lista-calculo-total">
-                <td>= Saldo final (sin fondo fijo)</td>
-                <td>{formatoCLP(c.saldoSinFondo)}</td>
-              </tr>
-              <tr>
-                <td>+ Fondo de apertura</td>
-                <td>{formatoCLP(resumen.sesion.fondoFijoInicial)}</td>
-              </tr>
-              <tr className="lista-calculo-total">
-                <td>= Saldo final (con fondo fijo)</td>
-                <td>{formatoCLP(c.saldoConFondo)}</td>
+                <td>= Saldo final</td>
+                <td>{formatoCLP(c.saldoFinal)}</td>
               </tr>
             </tbody>
           </table>
@@ -601,6 +582,10 @@ function InformeCierreBoleta({
       <table className="lista-calculo">
         <tbody>
           <tr>
+            <td>Fondo fijo</td>
+            <td>{formatoCLP(resumen.sesion.fondoFijoInicial)}</td>
+          </tr>
+          <tr>
             <td>+ Venta total del día</td>
             <td>{formatoCLP(resumen.totalVentas)}</td>
           </tr>
@@ -617,16 +602,8 @@ function InformeCierreBoleta({
             <td>+{formatoCLP(resumen.totalIngresos)}</td>
           </tr>
           <tr className="lista-calculo-total">
-            <td>= Saldo final (sin fondo fijo)</td>
-            <td>{formatoCLP(c.saldoSinFondo)}</td>
-          </tr>
-          <tr>
-            <td>+ Fondo fijo</td>
-            <td>{formatoCLP(resumen.sesion.fondoFijoInicial)}</td>
-          </tr>
-          <tr className="lista-calculo-total">
-            <td>= Saldo final (con fondo fijo)</td>
-            <td>{formatoCLP(c.saldoConFondo)}</td>
+            <td>= Saldo final</td>
+            <td>{formatoCLP(c.saldoFinal)}</td>
           </tr>
         </tbody>
       </table>

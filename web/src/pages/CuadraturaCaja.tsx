@@ -13,18 +13,17 @@ function formatoFechaHora(iso: string): string {
   return new Date(iso).toLocaleString("es-CL", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
-// "Saldo final": igual que en Cerrar caja (CerrarCaja.tsx), TODOS los
-// movimientos del día sin importar el medio de pago (venta total, abonos
-// recibidos, retiros, ingresos) — a diferencia de "Efectivo esperado",
-// que es solo el cajón físico en efectivo. Los gastos NO entran acá (a
-// pedido del usuario — ver Gasto.esGastoNegocio). En dos versiones: sin
-// sumar el fondo fijo con que se abrió, y con ese fondo sumado.
+// "Saldo final": igual que en Cerrar caja (CerrarCaja.tsx), un solo monto
+// que considera el fondo fijo con que se abrió más TODOS los movimientos
+// del día sin importar el medio de pago (venta total, abonos recibidos,
+// retiros, ingresos) — a diferencia de "Efectivo esperado", que es solo
+// el cajón físico en efectivo. Los gastos NO entran acá (a pedido del
+// usuario — ver Gasto.esGastoNegocio).
 function saldoFinal(
   dia: { totalVentas: number; totalRetiros: number; totalIngresos: number; sesion: { fondoFijoInicial: number } },
   abonos: number
-) {
-  const sinFondo = dia.totalVentas + abonos - dia.totalRetiros + dia.totalIngresos;
-  return { sinFondo, conFondo: sinFondo + dia.sesion.fondoFijoInicial };
+): number {
+  return dia.sesion.fondoFijoInicial + dia.totalVentas + abonos - dia.totalRetiros + dia.totalIngresos;
 }
 
 // Abonos recibidos de verdad (créditos cobrados hoy, cualquier medio, sin
@@ -120,7 +119,7 @@ export default function CuadraturaCaja() {
         },
         datos.totalGeneral.totalAbonosCredito
       )
-    : { sinFondo: 0, conFondo: 0 };
+    : 0;
 
   return (
     <div>
@@ -282,15 +281,11 @@ export default function CuadraturaCaja() {
                     </>
                   )}
                   <tr>
-                    <td>Saldo final (todos los medios, sin fondo fijo)</td>
-                    <td>{formatoCLP(saldoFinal(dia, abonosDia(dia)).sinFondo)}</td>
-                  </tr>
-                  <tr>
                     <td>
-                      <strong>Saldo final (todos los medios, con fondo fijo)</strong>
+                      <strong>Saldo final (todos los medios de pago)</strong>
                     </td>
                     <td>
-                      <strong>{formatoCLP(saldoFinal(dia, abonosDia(dia)).conFondo)}</strong>
+                      <strong>{formatoCLP(saldoFinal(dia, abonosDia(dia)))}</strong>
                     </td>
                   </tr>
                 </tbody>
@@ -380,15 +375,11 @@ export default function CuadraturaCaja() {
                     <td className={faltanteAcumulado === 0 ? "exito" : "error"}>{pctPerdidaAcumulado.toFixed(2)}%</td>
                   </tr>
                   <tr>
-                    <td>Saldo final (todos los medios, sin fondo fijo)</td>
-                    <td>{formatoCLP(saldoFinalGeneral.sinFondo)}</td>
-                  </tr>
-                  <tr>
                     <td>
-                      <strong>Saldo final (todos los medios, con fondo fijo)</strong>
+                      <strong>Saldo final (todos los medios de pago)</strong>
                     </td>
                     <td>
-                      <strong>{formatoCLP(saldoFinalGeneral.conFondo)}</strong>
+                      <strong>{formatoCLP(saldoFinalGeneral)}</strong>
                     </td>
                   </tr>
                 </tbody>
