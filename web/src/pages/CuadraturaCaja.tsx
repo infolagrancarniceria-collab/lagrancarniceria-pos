@@ -13,14 +13,28 @@ function formatoFechaHora(iso: string): string {
   return new Date(iso).toLocaleString("es-CL", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
-// "Saldo final": igual que en Cerrar caja (CerrarCaja.tsx), TODOS los
-// movimientos del día sin importar el medio de pago (venta total, gastos
-// de cualquier medio, retiros, ingresos) — a diferencia de "Efectivo
-// esperado", que es solo el cajón físico en efectivo. En dos versiones:
-// sin sumar el fondo fijo con que se abrió, y con ese fondo sumado.
-function saldoFinal(dia: { totalVentas: number; totalGastos: number; totalRetiros: number; totalIngresos: number; sesion: { fondoFijoInicial: number } }) {
-  const sinFondo = dia.totalVentas - dia.totalGastos - dia.totalRetiros + dia.totalIngresos;
-  return { sinFondo, conFondo: sinFondo + dia.sesion.fondoFijoInicial };
+// "Saldo final": igual que en Cerrar caja (CerrarCaja.tsx), un solo monto
+// que considera el fondo fijo con que se abrió más TODOS los movimientos
+// del día sin importar el medio de pago (venta total, abonos recibidos,
+// retiros, ingresos) — a diferencia de "Efectivo esperado", que es solo
+// el cajón físico en efectivo. Los gastos NO entran acá (a pedido del
+// usuario — ver Gasto.esGastoNegocio).
+function saldoFinal(
+  dia: { totalVentas: number; totalRetiros: number; totalIngresos: number; sesion: { fondoFijoInicial: number } },
+  abonos: number
+): number {
+  return dia.sesion.fondoFijoInicial + dia.totalVentas + abonos - dia.totalRetiros + dia.totalIngresos;
+}
+
+// Abonos recibidos de verdad (créditos cobrados hoy, cualquier medio, sin
+// contar los condonados) de UN día — mismo criterio que
+// derivarCifras().creditoPagadoTotal en CerrarCaja.tsx.
+function abonosDia(dia: { cobrosCreditoPorMedio: Record<string, number> }): number {
+  return (
+    (dia.cobrosCreditoPorMedio.efectivo ?? 0) +
+    (dia.cobrosCreditoPorMedio.tarjeta ?? 0) +
+    (dia.cobrosCreditoPorMedio.transferencia ?? 0)
+  );
 }
 
 // Faltante de efectivo de un día ya cerrado (0 si sobró, cuadró, o si el
@@ -96,14 +110,16 @@ export default function CuadraturaCaja() {
     datos?.dias.reduce((s, d) => s + (faltanteDia(d) ?? 0), 0) ?? 0;
   const pctPerdidaAcumulado = datos ? porcentajePerdida(faltanteAcumulado, datos.totalGeneral.totalVentas) : 0;
   const saldoFinalGeneral = datos
-    ? saldoFinal({
-        totalVentas: datos.totalGeneral.totalVentas,
-        totalGastos: datos.totalGeneral.totalGastos,
-        totalRetiros: datos.totalGeneral.totalRetiros,
-        totalIngresos: datos.totalGeneral.totalIngresos,
-        sesion: { fondoFijoInicial: datos.totalGeneral.fondoFijoInicial },
-      })
-    : { sinFondo: 0, conFondo: 0 };
+    ? saldoFinal(
+        {
+          totalVentas: datos.totalGeneral.totalVentas,
+          totalRetiros: datos.totalGeneral.totalRetiros,
+          totalIngresos: datos.totalGeneral.totalIngresos,
+          sesion: { fondoFijoInicial: datos.totalGeneral.fondoFijoInicial },
+        },
+        datos.totalGeneral.totalAbonosCredito
+      )
+    : 0;
 
   return (
     <div>
@@ -158,10 +174,19 @@ export default function CuadraturaCaja() {
               <table className="tabla">
                 <tbody>
                   <tr>
-                    <td>Boleta inicial — final</td>
+                    <td>Venta inicial</td>
                     <td>
-                      {dia.boletaInicial != null ? `N° ${dia.boletaInicial}` : "—"} —{" "}
-                      {dia.boletaFinal != null ? `N° ${dia.boletaFinal}` : "—"}
+                      {dia.boletaInicial != null
+                        ? `N° ${dia.boletaInicial} — ${formatoCLP(dia.montoBoletaInicial ?? 0)}`
+                        : "—"}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>Venta final</td>
+                    <td>
+                      {dia.boletaFinal != null
+                        ? `N° ${dia.boletaFinal} — ${formatoCLP(dia.montoBoletaFinal ?? 0)}`
+                        : "—"}
                     </td>
                   </tr>
                   <tr>
@@ -223,22 +248,13 @@ export default function CuadraturaCaja() {
                       </td>
                     </tr>
                   ))}
-                  {dia.totalGastosEfectivo > 0 && (
-                    // Antes esta resta no se mostraba en ningún lado acá —
-                    // el "Efectivo esperado" de abajo ya la descontaba, pero
-                    // al no verse esta línea, un gasto grande en efectivo
-                    // hacía que el número de abajo pareciera "salido de la
-                    // nada" (a un usuario le pasó justo esto: una
-                    // diferencia de ~$450.000 que no podía explicar porque
-                    // no tenía forma de ver que eran gastos, no un error).
-                    <tr>
-                      <td>Gastos pagados en efectivo</td>
-                      <td>−{formatoCLP(dia.totalGastosEfectivo)}</td>
-                    </tr>
-                  )}
+                  <tr>
+                    <td>Abonos recibidos</td>
+                    <td>+{formatoCLP(abonosDia(dia))}</td>
+                  </tr>
                   <tr>
                     <td>
-                      <strong>Efectivo esperado</strong>
+                      <strong>Efectivo esperado (solo efectivo)</strong>
                     </td>
                     <td>
                       <strong>{formatoCLP(dia.efectivoEsperado)}</strong>
@@ -265,15 +281,11 @@ export default function CuadraturaCaja() {
                     </>
                   )}
                   <tr>
-                    <td>Saldo final (todos los medios, sin fondo fijo)</td>
-                    <td>{formatoCLP(saldoFinal(dia).sinFondo)}</td>
-                  </tr>
-                  <tr>
                     <td>
-                      <strong>Saldo final (todos los medios, con fondo fijo)</strong>
+                      <strong>Saldo final (todos los medios de pago)</strong>
                     </td>
                     <td>
-                      <strong>{formatoCLP(saldoFinal(dia).conFondo)}</strong>
+                      <strong>{formatoCLP(saldoFinal(dia, abonosDia(dia)))}</strong>
                     </td>
                   </tr>
                 </tbody>
@@ -323,6 +335,10 @@ export default function CuadraturaCaja() {
                     </td>
                   </tr>
                   <tr>
+                    <td>Abonos recibidos</td>
+                    <td>+{formatoCLP(datos.totalGeneral.totalAbonosCredito)}</td>
+                  </tr>
+                  <tr>
                     <td>Retiros</td>
                     <td>−{formatoCLP(datos.totalGeneral.totalRetiros)}</td>
                   </tr>
@@ -342,15 +358,9 @@ export default function CuadraturaCaja() {
                       <td>{formatoCLP(datos.totalGeneral.totalAjustesTarjeta)}</td>
                     </tr>
                   )}
-                  {datos.totalGeneral.totalGastosEfectivo > 0 && (
-                    <tr>
-                      <td>Gastos pagados en efectivo</td>
-                      <td>−{formatoCLP(datos.totalGeneral.totalGastosEfectivo)}</td>
-                    </tr>
-                  )}
                   <tr>
                     <td>
-                      <strong>Efectivo esperado</strong>
+                      <strong>Efectivo esperado (solo efectivo)</strong>
                     </td>
                     <td>
                       <strong>{formatoCLP(datos.totalGeneral.efectivoEsperado)}</strong>
@@ -365,15 +375,11 @@ export default function CuadraturaCaja() {
                     <td className={faltanteAcumulado === 0 ? "exito" : "error"}>{pctPerdidaAcumulado.toFixed(2)}%</td>
                   </tr>
                   <tr>
-                    <td>Saldo final (todos los medios, sin fondo fijo)</td>
-                    <td>{formatoCLP(saldoFinalGeneral.sinFondo)}</td>
-                  </tr>
-                  <tr>
                     <td>
-                      <strong>Saldo final (todos los medios, con fondo fijo)</strong>
+                      <strong>Saldo final (todos los medios de pago)</strong>
                     </td>
                     <td>
-                      <strong>{formatoCLP(saldoFinalGeneral.conFondo)}</strong>
+                      <strong>{formatoCLP(saldoFinalGeneral)}</strong>
                     </td>
                   </tr>
                 </tbody>

@@ -64,11 +64,16 @@ gastosRouter.put("/categorias/:id/desactivar", async (req, res) => {
 gastosRouter.get("/", async (req, res) => {
   const { desde, hasta } = rangoFechasDesdeTexto(req.query.desde, req.query.hasta);
   const categoria = typeof req.query.categoria === "string" ? req.query.categoria : undefined;
+  // A pedido del usuario: poder ver solo los gastos que de verdad son del
+  // negocio (dejando afuera los familiares/personales) para un informe más
+  // detallado — ver Gasto.esGastoNegocio.
+  const soloNegocio = req.query.soloNegocio === "true";
 
   const gastos = await prisma.gasto.findMany({
     where: {
       fecha: { gte: desde, lte: hasta },
       ...(categoria ? { categoria } : {}),
+      ...(soloNegocio ? { esGastoNegocio: true } : {}),
     },
     include: { usuario: true },
     orderBy: { fecha: "desc" },
@@ -76,9 +81,11 @@ gastosRouter.get("/", async (req, res) => {
   res.json(gastos);
 });
 
-export async function calcularReporteGastos(desdeTexto?: unknown, hastaTexto?: unknown) {
+export async function calcularReporteGastos(desdeTexto?: unknown, hastaTexto?: unknown, soloNegocio?: boolean) {
   const { desde, hasta } = rangoFechasDesdeTexto(desdeTexto, hastaTexto);
-  const gastos = await prisma.gasto.findMany({ where: { fecha: { gte: desde, lte: hasta } } });
+  const gastos = await prisma.gasto.findMany({
+    where: { fecha: { gte: desde, lte: hasta }, ...(soloNegocio ? { esGastoNegocio: true } : {}) },
+  });
 
   const totalPorCategoria: Record<string, number> = {};
   // Desglose dentro de cada categoría (ej. "Transporte" → "Transportista" /
@@ -99,7 +106,7 @@ export async function calcularReporteGastos(desdeTexto?: unknown, hastaTexto?: u
 }
 
 gastosRouter.get("/reporte", async (req, res) => {
-  res.json(await calcularReporteGastos(req.query.desde, req.query.hasta));
+  res.json(await calcularReporteGastos(req.query.desde, req.query.hasta, req.query.soloNegocio === "true"));
 });
 
 // descripcion pasó a ser obligatorio (el nombre del gasto, no una nota
@@ -115,10 +122,12 @@ const crearGastoSchema = z.object({
   concepto: z.string().trim().optional(),
   descripcion: z.string().trim().min(1, "Falta el nombre del gasto"),
   monto: z.number().positive("El monto debe ser mayor a 0"),
-  // A pedido del usuario, para que el cierre de caja pueda restar del
-  // efectivo esperado los gastos pagados en efectivo (ver
-  // Gasto.medioPago/sesionCajaId en el schema).
+  // Puramente informativo (ver Gasto.medioPago en el schema) — ya no afecta
+  // el cierre de caja.
   medioPago: z.enum(["efectivo", "transferencia", "tarjeta"]).default("efectivo"),
+  // Para separar gastos del negocio de gastos familiares/personales (ver
+  // Gasto.esGastoNegocio) — a pedido del usuario. Por default true.
+  esGastoNegocio: z.boolean().default(true),
   usuarioId: z.number().int().positive(),
 });
 
@@ -127,14 +136,14 @@ gastosRouter.post("/", async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.issues[0].message });
   }
-  const { fecha, categoria, concepto, descripcion, monto, medioPago, usuarioId } = parsed.data;
+  const { fecha, categoria, concepto, descripcion, monto, medioPago, esGastoNegocio, usuarioId } = parsed.data;
 
   const usuario = await validarUsuario(usuarioId);
   if (!usuario) return res.status(400).json({ error: "Usuario inválido" });
 
   // Solo se liga a la caja abierta cuando se carga en tiempo real (sin una
-  // fecha pasada a mano) — un gasto con fecha atrasada no debe restarse del
-  // efectivo esperado de HOY, que es de otro día.
+  // fecha pasada a mano) — puramente informativo (a qué turno corresponde),
+  // ya no afecta ningún cálculo de caja.
   const sesionAbierta = !fecha ? await prisma.sesionCaja.findFirst({ where: { estado: "abierta" } }) : null;
 
   const gasto = await prisma.gasto.create({
@@ -144,6 +153,7 @@ gastosRouter.post("/", async (req, res) => {
       descripcion: descripcion || null,
       monto,
       medioPago,
+      esGastoNegocio,
       sesionCajaId: sesionAbierta?.id ?? null,
       usuarioId,
       ...(parsearFechaSoloDia(fecha) ? { fecha: parsearFechaSoloDia(fecha)! } : {}),

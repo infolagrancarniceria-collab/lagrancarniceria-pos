@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "../db";
 import { rangoFechasDesdeTexto, calcularReporteVentas, calcularReporteDespachos } from "../routes/reportes";
 import { calcularReporteGastos } from "../routes/gastos";
-import { calcularReporteAnulaciones, calcularResumenSesion } from "../routes/caja";
+import { calcularReporteAnulaciones, calcularResumenSesion, calcularEfectivoEsperado } from "../routes/caja";
 import { calcularReporteMargenes } from "../routes/productos";
 
 // Herramientas de solo lectura: el asistente las ejecuta directo, nunca
@@ -729,13 +729,7 @@ export async function ejecutarHerramientaLectura(nombre: string, input: Record<s
       if (!sesion) return { error: "No se encontró esa sesión de caja" };
 
       const resumen = await calcularResumenSesion(sesion.id);
-      const efectivoEsperado =
-        sesion.fondoFijoInicial +
-        resumen.totalPorMedio.efectivo +
-        resumen.totalAjustesEfectivo -
-        resumen.totalRetiros +
-        resumen.totalIngresos -
-        resumen.totalGastosEfectivo;
+      const efectivoEsperado = calcularEfectivoEsperado(sesion, resumen);
       const diferencia = sesion.efectivoContado != null ? sesion.efectivoContado - efectivoEsperado : null;
 
       const ventas = await prisma.venta.findMany({
@@ -850,7 +844,7 @@ Sobre créditos (ventas fiadas): usa creditos_pendientes primero para tener el p
 
 Sobre crear un producto nuevo: usa buscar_productos primero para confirmar que el PLU que te dieron no esté ya en uso (si ya existe, avisa en vez de proponer un duplicado) y listar_categorias para tener el categoriaId real. Si no te dan la categoría, pregunta antes de asumir una.
 
-Sobre una diferencia o descuadre al cerrar caja (ej. "no me cuadra la caja del 15", "por qué la caja de hoy quedó con diferencia", o el botón "Analizar con el Asistente" desde Cerrar caja): usa analizar_cierre_caja con el sesionId (si te lo dan) o la fecha de esa caja. Con el detalle que te devuelve (cada venta con sus pagos, cada retiro/ingreso/gasto/corrección con su hora y motivo), buscá específicamente: (1) un monto puntual que coincida o explique buena parte de la diferencia (un retiro, gasto o corrección con un cero de más o de menos es la causa más común de diferencias grandes, no una acumulación de ventas chicas); (2) una venta cuyos pagos no sumen su total; (3) retiros/gastos en efectivo que parezcan fuera de lugar para ese día. Sé concreto: señalá el o los movimientos puntuales sospechosos con su monto, hora y motivo — no te quedes en "revisa los movimientos de caja" en general. Si no encontrás ningún monto que explique la diferencia, decilo así de claro en vez de inventar una causa.
+Sobre una diferencia o descuadre al cerrar caja (ej. "no me cuadra la caja del 15", "por qué la caja de hoy quedó con diferencia", o el botón "Analizar con el Asistente" desde Cerrar caja): usa analizar_cierre_caja con el sesionId (si te lo dan) o la fecha de esa caja. IMPORTANTE: los Gastos ya NO afectan el efectivo esperado (el dueño pidió sacarlos del cálculo porque antes un gasto familiar descuadraba la caja sin que correspondiera) — no los menciones como posible causa de una diferencia de efectivo, aunque el detalle te los muestre. Con el detalle que te devuelve (cada venta con sus pagos, cada retiro/ingreso/corrección con su hora y motivo), buscá específicamente: (1) un monto puntual que coincida o explique buena parte de la diferencia (un retiro o una corrección con un cero de más o de menos es la causa más común de diferencias grandes, no una acumulación de ventas chicas) — recordá que si sacaron plata física de la caja por cualquier motivo sin registrarla como "Retiro", esa plata va a faltar sin que el sistema tenga cómo explicarlo; (2) una venta cuyos pagos no sumen su total; (3) retiros que parezcan fuera de lugar para ese día. Sé concreto: señalá el o los movimientos puntuales sospechosos con su monto, hora y motivo — no te quedes en "revisa los movimientos de caja" en general. Si no encontrás ningún monto que explique la diferencia, decilo así de claro en vez de inventar una causa.
 
 Sobre un análisis general del negocio (ej. "cómo va el negocio", "qué debería revisar", "analiza mi negocio", o el botón "Analizar mi negocio"): a diferencia del resto de las respuestas, acá SÍ conviene ser más extenso — es el único momento en que la persona pide una mirada completa, no un dato puntual. Antes de responder, consulta TODAS las herramientas de reporte que apliquen para el período pedido (o los últimos 30 días si no se especifica): reporte_ventas, reporte_margenes, reporte_inventario, reporte_precios, reporte_gastos, reporte_despachos, productos_stock_negativo, productos_sin_venta_reciente, reporte_anulaciones, creditos_pendientes y ventas_mayoristas_pendientes — podés llamar varias en la misma vuelta. Con esos datos, arma una respuesta estructurada en 3 partes: (1) qué está funcionando bien, con el número que lo respalda; (2) qué corregir ahora (ej. productos con margen negativo, stock negativo, créditos vencidos hace mucho); (3) a qué estar atento (ej. productos sin venta reciente que ocupan cámara, categorías con margen bajo, seguido de mermas). Siempre con números concretos citados de las herramientas, nunca genérico ("las ventas van bien" sin decir cuánto).`;
 

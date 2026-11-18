@@ -548,6 +548,10 @@ export interface Gasto {
   monto: number;
   medioPago: MedioPagoGasto;
   sesionCajaId: number | null;
+  // Gasto del negocio vs familiar/personal — ver Gasto.esGastoNegocio en
+  // el schema. Ya no afecta el cierre de caja, solo sirve para filtrar
+  // reportes.
+  esGastoNegocio: boolean;
   usuarioId: number;
   usuario: Usuario;
 }
@@ -886,10 +890,12 @@ export interface DesgloseEfectivo {
 export interface ResumenSesion {
   sesion: SesionCaja;
   cantidadVentas: number;
-  // N° de la primera y la última venta pagada de la sesión (null si no
-  // hubo ninguna) — para cotejar contra el talonario/rollo físico.
+  // N° y monto de la primera y la última venta pagada de la sesión (null
+  // si no hubo ninguna) — para cotejar contra el talonario/rollo físico.
   boletaInicial: number | null;
   boletaFinal: number | null;
+  montoBoletaInicial: number | null;
+  montoBoletaFinal: number | null;
   totalVentas: number;
   cantidadVentasLocal: number;
   totalVentasLocal: number;
@@ -942,6 +948,9 @@ export interface Cuadratura {
     ventasPorMedio: Record<string, number>;
     totalGastos: number;
     totalGastosEfectivo: number;
+    // Abonos recibidos de verdad (créditos cobrados, cualquier medio, sin
+    // contar condonados) — para "Saldo final" (ver CerrarCaja.tsx).
+    totalAbonosCredito: number;
     totalRetiros: number;
     totalIngresos: number;
     totalAjustesEfectivo: number;
@@ -1841,18 +1850,20 @@ export const api = {
     actualizar: () => post<ResultadoActualizarBalanza>("/api/balanza/actualizar", {}, 90000),
   },
   gastos: {
-    listar: (params: { desde?: string; hasta?: string; categoria?: string } = {}) => {
+    listar: (params: { desde?: string; hasta?: string; categoria?: string; soloNegocio?: boolean } = {}) => {
       const qs = new URLSearchParams();
       if (params.desde) qs.set("desde", params.desde);
       if (params.hasta) qs.set("hasta", params.hasta);
       if (params.categoria) qs.set("categoria", params.categoria);
+      if (params.soloNegocio) qs.set("soloNegocio", "true");
       const query = qs.toString();
       return get<Gasto[]>(`/api/gastos${query ? `?${query}` : ""}`);
     },
-    reporte: (desde?: string, hasta?: string) => {
+    reporte: (desde?: string, hasta?: string, soloNegocio?: boolean) => {
       const qs = new URLSearchParams();
       if (desde) qs.set("desde", desde);
       if (hasta) qs.set("hasta", hasta);
+      if (soloNegocio) qs.set("soloNegocio", "true");
       const query = qs.toString();
       return get<ReporteGastos>(`/api/gastos/reporte${query ? `?${query}` : ""}`);
     },
@@ -1863,6 +1874,7 @@ export const api = {
       descripcion: string;
       monto: number;
       medioPago?: MedioPagoGasto;
+      esGastoNegocio?: boolean;
       usuarioId: number;
     }) => post<Gasto>("/api/gastos", data),
     eliminar: (id: number) => del<void>(`/api/gastos/${id}`),

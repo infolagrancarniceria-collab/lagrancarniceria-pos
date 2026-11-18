@@ -14,12 +14,14 @@ async function cerrarSesion(sesionCajaId: number) {
   await prisma.sesionCaja.update({ where: { id: sesionCajaId }, data: { estado: "cerrada" } });
 }
 
-// A pedido del usuario, calcando la planilla de arqueo en papel del local
-// ("- Gastos pagados en efectivo"): antes el sistema no sabía con qué medio
-// se pagó cada gasto, así que nunca se restaban del efectivo esperado,
-// aunque hayan salido de verdad del cajón.
+// A pedido del usuario: los gastos quedan ligados a la sesión abierta y se
+// siguen pudiendo ver por medio de pago (gastosPorMedio/totalGastos), pero
+// YA NO se restan del efectivo esperado — un gasto familiar que el dueño no
+// considera parte del negocio descuadraba la caja sin que correspondiera.
+// Si sale plata física del cajón por cualquier motivo, debe quedar como un
+// "Retiro" (RetiroCaja) para que el efectivo esperado siga siendo exacto.
 describe("Gastos pagados en efectivo y el cierre de caja", () => {
-  it("un gasto cargado con una caja abierta se liga a esa sesión y se resta del efectivo esperado", async () => {
+  it("un gasto cargado con una caja abierta se liga a esa sesión pero NO se resta del efectivo esperado", async () => {
     const { usuario, sesionCaja } = await crearFixturesBasicas();
 
     const gasto = await api.post("/api/gastos").send({
@@ -37,7 +39,7 @@ describe("Gastos pagados en efectivo y el cierre de caja", () => {
     expect(resumen.body.gastosPorMedio.efectivo).toBe(8000);
     expect(resumen.body.totalGastos).toBe(8000);
     expect(resumen.body.totalGastosEfectivo).toBe(8000);
-    expect(resumen.body.efectivoEsperado).toBe(sesionCaja.fondoFijoInicial - 8000);
+    expect(resumen.body.efectivoEsperado).toBe(sesionCaja.fondoFijoInicial);
 
     await cerrarSesion(sesionCaja.id);
   });
