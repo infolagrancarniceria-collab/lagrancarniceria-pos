@@ -31,6 +31,10 @@ export default function Gastos() {
   const [reporte, setReporte] = useState<ReporteGastos | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
+  // Para un informe más detallado viendo solo lo que de verdad es un gasto
+  // del negocio (dejando afuera lo familiar/personal) — a pedido del
+  // usuario, ver Gasto.esGastoNegocio.
+  const [soloNegocio, setSoloNegocio] = useState(false);
 
   // Categorías de gasto — a pedido del usuario, ahora se "generan" a
   // propósito (lista manejada, ver CategoriaGasto) en vez de ser un campo
@@ -45,11 +49,15 @@ export default function Gastos() {
   const [concepto, setConcepto] = useState("");
   const [descripcion, setDescripcion] = useState("");
   const [monto, setMonto] = useState("");
-  // Con qué plata se pagó — a pedido del usuario, para que el cierre de
-  // caja pueda restar del efectivo esperado los gastos que de verdad
-  // salieron del cajón (ver Gasto.medioPago en el schema). "efectivo" por
-  // default porque es lo más común en los gastos chicos del día a día.
+  // Con qué plata se pagó — puramente informativo (ver Gasto.medioPago en
+  // el schema), ya no afecta el cierre de caja. "efectivo" por default
+  // porque es lo más común en los gastos chicos del día a día.
   const [medioPago, setMedioPago] = useState<MedioPagoGasto>("efectivo");
+  // Gasto del negocio vs familiar/personal — a pedido del usuario (su papá
+  // no quiere que gastos familiares se mezclen con los del negocio en los
+  // reportes). Tildado por default: la gran mayoría de los gastos sí son
+  // del negocio.
+  const [esGastoNegocio, setEsGastoNegocio] = useState(true);
   const [guardando, setGuardando] = useState(false);
   const [categoriaAbierta, setCategoriaAbierta] = useState<string | null>(null);
 
@@ -58,8 +66,8 @@ export default function Gastos() {
   }
 
   function cargar() {
-    api.gastos.listar({ desde, hasta }).then(setGastos).catch((e) => setError(e.message));
-    api.gastos.reporte(desde, hasta).then(setReporte).catch((e) => setError(e.message));
+    api.gastos.listar({ desde, hasta, soloNegocio }).then(setGastos).catch((e) => setError(e.message));
+    api.gastos.reporte(desde, hasta, soloNegocio).then(setReporte).catch((e) => setError(e.message));
   }
 
   useEffect(() => {
@@ -70,7 +78,7 @@ export default function Gastos() {
   useEffect(() => {
     cargar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [desde, hasta]);
+  }, [desde, hasta, soloNegocio]);
 
   async function crearCategoria() {
     if (!nuevaCategoriaNombre.trim()) return;
@@ -125,6 +133,7 @@ export default function Gastos() {
         descripcion: descripcion.trim(),
         monto: montoNum,
         medioPago,
+        esGastoNegocio,
         usuarioId: usuario.id,
       });
       setMensaje("Gasto registrado");
@@ -135,6 +144,7 @@ export default function Gastos() {
       setConcepto("");
       setDescripcion("");
       setMonto("");
+      setEsGastoNegocio(true);
       cargar();
     } catch (e) {
       setError((e as Error).message);
@@ -190,6 +200,10 @@ export default function Gastos() {
         </label>
         <label>
           Hasta <input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} />
+        </label>
+        <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <input type="checkbox" checked={soloNegocio} onChange={(e) => setSoloNegocio(e.target.checked)} />
+          Mostrar solo gastos del negocio
         </label>
       </div>
 
@@ -317,6 +331,10 @@ export default function Gastos() {
               </option>
             ))}
           </select>
+          <label style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+            <input type="checkbox" checked={esGastoNegocio} onChange={(e) => setEsGastoNegocio(e.target.checked)} />
+            Gasto del negocio
+          </label>
           <button type="submit" className="boton boton-primario" disabled={guardando}>
             {guardando ? "Guardando..." : "Registrar"}
           </button>
@@ -353,6 +371,7 @@ export default function Gastos() {
             <th>Descripción</th>
             <th>Monto</th>
             <th>Medio</th>
+            <th>Negocio</th>
             <th>Registrado por</th>
             <th></th>
           </tr>
@@ -366,6 +385,7 @@ export default function Gastos() {
               <td>{g.descripcion ?? "—"}</td>
               <td>{formatoCLP(g.monto)}</td>
               <td>{ETIQUETAS_MEDIO_PAGO[g.medioPago]}</td>
+              <td>{g.esGastoNegocio ? "✓" : "—"}</td>
               <td>{g.usuario.nombre}</td>
               <td>
                 <button type="button" className="boton-quitar-item" title="Eliminar" onClick={() => eliminar(g.id)}>
@@ -376,7 +396,7 @@ export default function Gastos() {
           ))}
           {gastos.length === 0 && (
             <tr>
-              <td colSpan={8}>No hay gastos registrados en este período.</td>
+              <td colSpan={9}>No hay gastos registrados en este período.</td>
             </tr>
           )}
         </tbody>

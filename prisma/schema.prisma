@@ -93,23 +93,29 @@ model Gasto {
   descripcion String?
   monto       Float
 
-  // Con qué plata se pagó — a pedido del usuario, para poder restar del
-  // efectivo esperado en el cierre de caja los gastos que de verdad
-  // salieron del cajón (antes no se sabía, así que el cierre no calzaba con
-  // la planilla de arqueo en papel). Por default "efectivo" porque la
-  // mayoría de los gastos chicos del día a día se pagan así; se puede
-  // cambiar al cargar el gasto. Los gastos ya cargados antes de este campo
-  // quedan con ese mismo default, que es la mejor suposición posible sin
-  // poder preguntarle a nadie cómo se pagó cada uno en su momento.
+  // Con qué plata se pagó — puramente informativo (calcularResumenSesion en
+  // server/routes/caja.ts ya NO resta los gastos del efectivo esperado, a
+  // pedido del usuario: un gasto familiar que el dueño no considera parte
+  // del negocio descuadraba la caja sin que correspondiera). Por default
+  // "efectivo" porque la mayoría de los gastos chicos del día a día se
+  // pagan así; se puede cambiar al cargar el gasto.
   medioPago String @default("efectivo") // "efectivo" | "transferencia" | "tarjeta"
 
-  // Sesión de caja abierta al momento de cargar el gasto — null si se
-  // cargó sin ninguna caja abierta, o con una fecha pasada a mano (ver
-  // POST /gastos, fecha opcional): ahí no corresponde restarlo del
-  // efectivo esperado de HOY. Null en todos los gastos cargados antes de
-  // este campo (no hay cómo reconstruir a cuál sesión correspondían).
+  // Sesión de caja que estaba abierta al cargar el gasto — puramente
+  // informativo (a qué turno corresponde), ya no afecta ningún cálculo de
+  // caja. Null si se cargó sin ninguna caja abierta, o con una fecha
+  // pasada a mano (ver POST /gastos, fecha opcional). Null en todos los
+  // gastos cargados antes de este campo.
   sesionCajaId Int?
   sesionCaja   SesionCaja? @relation(fields: [sesionCajaId], references: [id])
+
+  // Para separar gastos del negocio de gastos familiares/personales que el
+  // dueño no quiere mezclar en los reportes del negocio — a pedido del
+  // usuario. Por default true: la gran mayoría de los gastos cargados son
+  // del negocio, y todos los cargados antes de este campo también lo eran
+  // (no había forma de cargar uno "no negocio" todavía). Se puede
+  // destildar al cargar un gasto puntual, y filtrar por esto en Gastos.tsx.
+  esGastoNegocio Boolean @default(true)
 
   usuarioId Int
   usuario   Usuario @relation(fields: [usuarioId], references: [id])

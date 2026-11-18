@@ -317,19 +317,27 @@ export async function calcularResumenSesion(sesionId: number) {
   }
   const totalGastosEfectivo = gastosPorMedio.efectivo;
 
-  // N° de la primera y la última venta pagada de la sesión — a pedido del
-  // usuario, para poder cotejar rápido contra el talonario/rollo físico
-  // ("Boleta inicial"/"Boleta final" de la planilla de arqueo en papel) sin
-  // tener que ir a buscar el detalle venta por venta. null si no hubo
-  // ninguna venta en la sesión.
-  const idsVentas = ventas.map((v) => v.id);
-  const boletaInicial = idsVentas.length > 0 ? Math.min(...idsVentas) : null;
-  const boletaFinal = idsVentas.length > 0 ? Math.max(...idsVentas) : null;
+  // N° y monto de la primera y la última venta pagada de la sesión — a
+  // pedido del usuario, para poder cotejar rápido contra el talonario/rollo
+  // físico ("Venta inicial"/"Venta final" de la planilla de arqueo en
+  // papel). null si no hubo ninguna venta en la sesión.
+  let ventaInicial: { numero: number; monto: number } | null = null;
+  let ventaFinal: { numero: number; monto: number } | null = null;
+  for (const v of ventas) {
+    if (!ventaInicial || v.id < ventaInicial.numero) ventaInicial = { numero: v.id, monto: v.total };
+    if (!ventaFinal || v.id > ventaFinal.numero) ventaFinal = { numero: v.id, monto: v.total };
+  }
+  const boletaInicial = ventaInicial?.numero ?? null;
+  const boletaFinal = ventaFinal?.numero ?? null;
+  const montoBoletaInicial = ventaInicial?.monto ?? null;
+  const montoBoletaFinal = ventaFinal?.monto ?? null;
 
   return {
     cantidadVentas: ventas.length,
     boletaInicial,
     boletaFinal,
+    montoBoletaInicial,
+    montoBoletaFinal,
     totalVentas,
     cantidadVentasLocal,
     totalVentasLocal,
@@ -358,19 +366,34 @@ export async function calcularResumenSesion(sesionId: number) {
   };
 }
 
+// Efectivo esperado en caja: SOLO movimientos de efectivo (fondo, venta +
+// abonos en efectivo, correcciones, retiros, ingresos) — a pedido del
+// usuario, los gastos (sección Gastos) ya NO se restan de acá. Antes sí se
+// restaban, pero el dueño no quiere que un gasto familiar (que su papá no
+// considera parte del negocio) afecte la cuadratura de la caja: si sale
+// plata física del cajón por cualquier motivo, debe quedar registrada como
+// un "Retiro", no como un "Gasto" — Gastos pasó a ser solo un registro
+// categorizado, sin ningún efecto en este cálculo.
+export function calcularEfectivoEsperado(
+  sesion: { fondoFijoInicial: number },
+  resumen: { totalPorMedio: Record<string, number>; totalAjustesEfectivo: number; totalRetiros: number; totalIngresos: number }
+): number {
+  return (
+    sesion.fondoFijoInicial +
+    resumen.totalPorMedio.efectivo +
+    resumen.totalAjustesEfectivo -
+    resumen.totalRetiros +
+    resumen.totalIngresos
+  );
+}
+
 cajaRouter.get("/sesiones/:id/resumen", async (req, res) => {
   const id = Number(req.params.id);
   const sesion = await prisma.sesionCaja.findUnique({ where: { id } });
   if (!sesion) return res.status(404).json({ error: "Sesión no encontrada" });
 
   const resumen = await calcularResumenSesion(id);
-  const efectivoEsperado =
-    sesion.fondoFijoInicial +
-    resumen.totalPorMedio.efectivo +
-    resumen.totalAjustesEfectivo -
-    resumen.totalRetiros +
-    resumen.totalIngresos -
-    resumen.totalGastosEfectivo;
+  const efectivoEsperado = calcularEfectivoEsperado(sesion, resumen);
 
   res.json({
     sesion,
@@ -400,13 +423,7 @@ cajaRouter.get("/cuadratura", async (req, res) => {
   const dias = await Promise.all(
     sesiones.map(async (sesion) => {
       const resumen = await calcularResumenSesion(sesion.id);
-      const efectivoEsperado =
-        sesion.fondoFijoInicial +
-        resumen.totalPorMedio.efectivo +
-        resumen.totalAjustesEfectivo -
-        resumen.totalRetiros +
-        resumen.totalIngresos -
-        resumen.totalGastosEfectivo;
+      const efectivoEsperado = calcularEfectivoEsperado(sesion, resumen);
       return {
         sesion,
         ...resumen,
@@ -445,6 +462,15 @@ cajaRouter.get("/cuadratura", async (req, res) => {
       totalAjustesTarjeta: acc.totalAjustesTarjeta + dia.totalAjustesTarjeta,
       totalGastos: acc.totalGastos + dia.totalGastos,
       totalGastosEfectivo: acc.totalGastosEfectivo + dia.totalGastosEfectivo,
+      // Abonos recibidos de verdad (créditos cobrados, cualquier medio,
+      // SIN contar los condonados — esos no son plata real) — a pedido
+      // del usuario, para "Saldo final" (ver CerrarCaja.tsx): ya no resta
+      // gastos, mezcla todos los medios de pago y SÍ suma los abonos.
+      totalAbonosCredito:
+        acc.totalAbonosCredito +
+        (dia.cobrosCreditoPorMedio.efectivo ?? 0) +
+        (dia.cobrosCreditoPorMedio.tarjeta ?? 0) +
+        (dia.cobrosCreditoPorMedio.transferencia ?? 0),
       efectivoEsperado: acc.efectivoEsperado + dia.efectivoEsperado,
       efectivoContado: acc.efectivoContado + (dia.sesion.efectivoContado ?? 0),
     }),
@@ -459,6 +485,7 @@ cajaRouter.get("/cuadratura", async (req, res) => {
       totalAjustesTarjeta: 0,
       totalGastos: 0,
       totalGastosEfectivo: 0,
+      totalAbonosCredito: 0,
       efectivoEsperado: 0,
       efectivoContado: 0,
     }
@@ -657,13 +684,7 @@ cajaRouter.post("/sesiones/:id/cerrar", async (req, res) => {
 
   const sesionActualizada = await prisma.sesionCaja.findUnique({ where: { id } });
   const resumen = await calcularResumenSesion(id);
-  const efectivoEsperado =
-    sesionActualizada!.fondoFijoInicial +
-    resumen.totalPorMedio.efectivo +
-    resumen.totalAjustesEfectivo -
-    resumen.totalRetiros +
-    resumen.totalIngresos -
-    resumen.totalGastosEfectivo;
+  const efectivoEsperado = calcularEfectivoEsperado(sesionActualizada!, resumen);
 
   res.json({
     sesion: sesionActualizada,
