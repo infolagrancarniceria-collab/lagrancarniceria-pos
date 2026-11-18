@@ -839,6 +839,10 @@ export interface RetiroCaja {
   tipo: "retiro" | "ingreso";
   monto: number;
   motivo: string;
+  // true solo en el retiro para ir al banco justo antes de cerrar — no
+  // resta del "Resumen de movimientos del día" (ver RetiroCaja.esDepositoBanco
+  // en el schema).
+  esDepositoBanco: boolean;
   usuarioAutorizoId: number;
   usuarioAutorizo?: Usuario;
   fecha: string;
@@ -923,6 +927,11 @@ export interface ResumenSesion {
   totalCobrosMayorista: number;
   retiros: RetiroCaja[];
   totalRetiros: number;
+  // Retiros marcados esDepositoBanco (el retiro justo antes de cerrar para
+  // ir al banco) vs el resto ("reales", que sí restan del "Resumen de
+  // movimientos del día" — ver derivarCifras en CerrarCaja.tsx).
+  totalRetiroBancario: number;
+  totalRetirosReales: number;
   ingresos: RetiroCaja[];
   totalIngresos: number;
   ajustes: AjusteCuadratura[];
@@ -952,6 +961,8 @@ export interface Cuadratura {
     // contar condonados) — para "Saldo final" (ver CerrarCaja.tsx).
     totalAbonosCredito: number;
     totalRetiros: number;
+    totalRetiroBancario: number;
+    totalRetirosReales: number;
     totalIngresos: number;
     totalAjustesEfectivo: number;
     totalAjustesTarjeta: number;
@@ -1691,7 +1702,14 @@ export const api = {
       post<{ sesionAnterior: ResumenSesion; sesionActual: ResumenSesion }>(`/api/caja/sesiones/${id}/dividir`, data),
     registrarRetiro: (
       sesionId: number,
-      data: { tipo: "retiro" | "ingreso"; monto: number; motivo: string; usuarioId: number; clave: string }
+      data: {
+        tipo: "retiro" | "ingreso";
+        monto: number;
+        motivo: string;
+        usuarioId: number;
+        clave: string;
+        esDepositoBanco?: boolean;
+      }
     ) => post<RetiroCaja>(`/api/caja/sesiones/${sesionId}/retiros`, data),
     registrarAjusteCuadratura: (
       sesionId: number,
