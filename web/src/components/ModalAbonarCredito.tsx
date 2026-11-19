@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, codigoCliente, formatoCLP, type Cliente, type MedioCobro, type PagoVenta } from "../api";
 import SelectorCliente from "./SelectorCliente";
+import ComprobantePagoCredito from "./ComprobantePagoCredito";
+import { imprimirSilencioso } from "../lib/imprimir";
 
 interface Props {
   usuarioId: number;
@@ -24,6 +26,18 @@ export default function ModalAbonarCredito({ usuarioId, onCerrar }: Props) {
   const [cobrandoId, setCobrandoId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
+  // Pago recién cobrado, guardado solo para imprimir el boucher en
+  // segundo plano — a pedido del usuario, igual que el vale de una venta
+  // normal (ver ".vale-oculto-hasta-imprimir" en styles.css y el mismo
+  // mecanismo en PuntoDeVenta.tsx), para que el cajero se quede en este
+  // modal listo para cobrar al siguiente cliente en vez de tener que
+  // apretar un botón de imprimir aparte.
+  const [pagoParaImprimir, setPagoParaImprimir] = useState<PagoVenta | null>(null);
+
+  useEffect(() => {
+    if (!pagoParaImprimir) return;
+    imprimirSilencioso().finally(() => setPagoParaImprimir(null));
+  }, [pagoParaImprimir]);
 
   function cargarCreditos() {
     if (!clienteSeleccionado) return;
@@ -47,8 +61,9 @@ export default function ModalAbonarCredito({ usuarioId, onCerrar }: Props) {
     setMensaje(null);
     setCobrandoId(pago.id);
     try {
-      await api.caja.cobrarCredito(pago.id, { medioCobro, usuarioId });
-      setMensaje(`Cobro registrado: ${formatoCLP(pago.monto)}.`);
+      const pagoActualizado = await api.caja.cobrarCredito(pago.id, { medioCobro, usuarioId });
+      setMensaje(`Cobro registrado: ${formatoCLP(pago.monto)} — imprimiendo boucher...`);
+      setPagoParaImprimir(pagoActualizado);
       cargarCreditos();
     } catch (e) {
       setError((e as Error).message);
@@ -137,6 +152,10 @@ export default function ModalAbonarCredito({ usuarioId, onCerrar }: Props) {
             Cerrar
           </button>
         </div>
+      </div>
+
+      <div className="vale-oculto-hasta-imprimir">
+        {pagoParaImprimir && <ComprobantePagoCredito pago={pagoParaImprimir} onCerrar={() => {}} />}
       </div>
     </div>
   );
