@@ -91,6 +91,17 @@ type LineaFacturaCamara = z.infer<typeof lineaFacturaCamaraSchema>;
 // caja) — compartida entre la entrada de un solo producto (POST /cajas) y
 // la entrada de una factura completa con varias líneas (POST
 // /cajas/factura), para no duplicar esta parte en los dos lugares.
+//
+// A pedido del usuario: el stock de venta (Producto.stockActual) sube de
+// inmediato al entrar la factura a cámara, igual que ya hacía "Ingreso de
+// mercadería" en modo "Por unidad" — antes había que ADEMÁS hacer "Salida
+// de cajas" → "sala de venta" para que el stock reflejara lo recién
+// comprado, y si ese segundo paso no se hacía (o se demoraba), el stock de
+// venta quedaba desactualizado y descuadraba contra la mercadería real. Ver
+// el comentario en POST /cajas/:id/salida: ahora destino "sala_venta" ya NO
+// vuelve a sumar (sería contarlo dos veces) — el resto de los destinos que
+// sacan plata física del total (merma, donación, producción, mayorista)
+// SÍ restan, porque esa mercadería deja de estar disponible para vender.
 async function crearLoteYCajas(
   tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0],
   linea: LineaFacturaCamara,
@@ -156,6 +167,20 @@ async function crearLoteYCajas(
     });
     creadas.push(caja);
   }
+
+  await tx.producto.update({ where: { id: productoId }, data: { stockActual: { increment: pesoTotalReal } } });
+  await tx.movimientoInventario.create({
+    data: {
+      productoId,
+      usuarioId,
+      tipo: "entrada",
+      motivo: "entrada_camara",
+      cantidad: pesoTotalReal,
+      costoUnitario: costoNetoKg,
+      proveedorId: proveedorId ?? undefined,
+      numeroFactura: numeroFactura ?? undefined,
+    },
+  });
   return creadas;
 }
 
@@ -406,6 +431,20 @@ camaraRouter.post("/cajas/:id/anular-entrada", async (req, res) => {
         claveIdempotencia: randomUUID(),
       },
     });
+    // La entrada sumó este peso a Producto.stockActual (ver crearLoteYCajas)
+    // — al anularla, se resta de vuelta. El gate de arriba ya garantiza que
+    // la caja sigue intacta (saldoKg === pesoInicialKg), así que no hay
+    // riesgo de restar algo que ya se vendió/sacó por otro lado.
+    await tx.producto.update({ where: { id: caja.productoId }, data: { stockActual: { decrement: caja.pesoInicialKg } } });
+    await tx.movimientoInventario.create({
+      data: {
+        productoId: caja.productoId,
+        usuarioId,
+        tipo: "salida",
+        motivo: "entrada_anulada",
+        cantidad: caja.pesoInicialKg,
+      },
+    });
     return { caja: cajaActualizada, movimiento };
   });
 
@@ -579,6 +618,39 @@ camaraRouter.put("/lotes/:id", async (req, res) => {
       });
       cajas.push(cajaActualizada);
     }
+
+    // La entrada original ya sumó lote.pesoTotalKg a Producto.stockActual
+    // (ver crearLoteYCajas) — la corrección ajusta esa suma a lo nuevo. Si
+    // además cambió el producto, se resta del producto viejo y se suma al
+    // nuevo (dos movimientos) en vez de un solo delta.
+    if (productoId !== lote.productoId) {
+      await tx.producto.update({ where: { id: lote.productoId }, data: { stockActual: { decrement: lote.pesoTotalKg } } });
+      await tx.movimientoInventario.create({
+        data: { productoId: lote.productoId, usuarioId, tipo: "salida", motivo: "correccion_entrada", cantidad: lote.pesoTotalKg },
+      });
+      await tx.producto.update({ where: { id: productoId }, data: { stockActual: { increment: pesoTotalKg } } });
+      await tx.movimientoInventario.create({
+        data: { productoId, usuarioId, tipo: "entrada", motivo: "correccion_entrada", cantidad: pesoTotalKg },
+      });
+    } else {
+      const delta = Math.round((pesoTotalKg - lote.pesoTotalKg) * 1000) / 1000;
+      if (delta !== 0) {
+        await tx.producto.update({
+          where: { id: productoId },
+          data: { stockActual: { increment: delta } },
+        });
+        await tx.movimientoInventario.create({
+          data: {
+            productoId,
+            usuarioId,
+            tipo: delta > 0 ? "entrada" : "salida",
+            motivo: "correccion_entrada",
+            cantidad: Math.abs(delta),
+          },
+        });
+      }
+    }
+
     return { lote: loteActualizado, cajas };
   });
 
@@ -631,6 +703,18 @@ camaraRouter.post("/lotes/:id/anular", async (req, res) => {
           motivo,
           usuarioId,
           claveIdempotencia: randomUUID(),
+        },
+      });
+      // Misma razón que /cajas/:id/anular-entrada: la entrada ya sumó este
+      // peso a Producto.stockActual, así que anularla lo resta de vuelta.
+      await tx.producto.update({ where: { id: caja.productoId }, data: { stockActual: { decrement: caja.pesoInicialKg } } });
+      await tx.movimientoInventario.create({
+        data: {
+          productoId: caja.productoId,
+          usuarioId,
+          tipo: "salida",
+          motivo: "entrada_anulada",
+          cantidad: caja.pesoInicialKg,
         },
       });
       actualizadas.push(cajaActualizada);
@@ -969,17 +1053,20 @@ camaraRouter.post("/cajas/:id/salida", async (req, res) => {
       },
     });
 
-    // Solo "sala de venta" hace que el producto quede disponible para
-    // vender en Caja — el resto (producción, merma, donación, mayorista)
-    // son salidas de cámara que no suman al stock vendible general.
-    if (destino === "sala_venta") {
-      await tx.producto.update({ where: { id: caja.productoId }, data: { stockActual: { increment: pesoKg } } });
+    // Producto.stockActual ya sumó este peso al entrar la factura a cámara
+    // (ver crearLoteYCajas) — "sala de venta" es solo mover la mercadería
+    // del cajón frío al mostrador, no cambia cuánto hay en total, así que
+    // no toca el stock de nuevo (sumarlo acá sería contarlo dos veces). El
+    // resto de los destinos (producción, merma, donación, mayorista, otro)
+    // SÍ sacan la mercadería del total disponible para vender — se resta.
+    if (destino !== "sala_venta") {
+      await tx.producto.update({ where: { id: caja.productoId }, data: { stockActual: { decrement: pesoKg } } });
       await tx.movimientoInventario.create({
         data: {
           productoId: caja.productoId,
           usuarioId,
-          tipo: "entrada",
-          motivo: "entrada_camara",
+          tipo: "salida",
+          motivo: destino === "mayorista" ? "venta_mayorista" : destino,
           cantidad: pesoKg,
         },
       });
@@ -1150,6 +1237,18 @@ camaraRouter.post("/mayoristas/:id/anular", async (req, res) => {
         referenciaId: salida.id,
         usuarioId,
         claveIdempotencia: randomUUID(),
+      },
+    });
+    // La salida a mayorista restó este peso de Producto.stockActual (ver
+    // POST /cajas/:id/salida) — al anularla, se suma de vuelta.
+    await tx.producto.update({ where: { id: caja.productoId }, data: { stockActual: { increment: salida.cantidadKg } } });
+    await tx.movimientoInventario.create({
+      data: {
+        productoId: caja.productoId,
+        usuarioId,
+        tipo: "entrada",
+        motivo: "venta_mayorista_anulada",
+        cantidad: salida.cantidadKg,
       },
     });
     return { caja: cajaActualizada, salida: salidaAnulada, movimiento: movimientoReversion };
@@ -1426,6 +1525,14 @@ camaraRouter.post("/cajas/:id/confirmar-falta", async (req, res) => {
         usuarioId,
         claveIdempotencia: claveIdempotencia || randomUUID(),
       },
+    });
+    // Un faltante confirmado por conteo es una pérdida real — ya no está
+    // disponible para vender, se resta de Producto.stockActual igual que
+    // cualquier otra salida que no sea "sala de venta".
+    const pesoPerdido = Math.max(caja.saldoKg, 0.001);
+    await tx.producto.update({ where: { id: caja.productoId }, data: { stockActual: { decrement: pesoPerdido } } });
+    await tx.movimientoInventario.create({
+      data: { productoId: caja.productoId, usuarioId, tipo: "salida", motivo: "ajuste", cantidad: pesoPerdido },
     });
     return { caja: cajaActualizada, movimiento };
   });

@@ -147,7 +147,7 @@ describe("Venta Mayorista — línea que sale de una caja de Cámara", () => {
     });
   });
 
-  it("descuenta la caja de cámara (no Producto.stockActual) y crea el MovimientoCamara correspondiente", async () => {
+  it("descuenta la caja de cámara Y Producto.stockActual, y crea el MovimientoCamara correspondiente", async () => {
     const caja = await crearCajaCamara(usuarioId, producto.id, 16.24);
     const stockAntes = (await prisma.producto.findUnique({ where: { id: producto.id } }))!.stockActual;
 
@@ -171,7 +171,7 @@ describe("Venta Mayorista — línea que sale de una caja de Cámara", () => {
     expect(confirmar.status).toBe(200);
 
     const productoDespues = await prisma.producto.findUnique({ where: { id: producto.id } });
-    expect(productoDespues?.stockActual).toBe(stockAntes); // sin cambios
+    expect(productoDespues?.stockActual).toBeCloseTo(stockAntes - 16.24, 5);
 
     const cajaDespues = await prisma.cajaCamara.findUnique({ where: { id: caja.id } });
     expect(cajaDespues?.saldoKg).toBe(0);
@@ -198,8 +198,9 @@ describe("Venta Mayorista — línea que sale de una caja de Cámara", () => {
     expect(item.body.error).toMatch(/disponibles/);
   });
 
-  it("al anular una venta confirmada con línea de cámara, devuelve el peso a la caja", async () => {
+  it("al anular una venta confirmada con línea de cámara, devuelve el peso a la caja Y a Producto.stockActual", async () => {
     const caja = await crearCajaCamara(usuarioId, producto.id, 10);
+    const stockAntes = (await prisma.producto.findUnique({ where: { id: producto.id } }))!.stockActual;
     const venta = await api.post("/api/caja/ventas/mayorista").send({ usuarioId });
     await api.post(`/api/caja/ventas/${venta.body.id}/items/mayorista`).send({
       usuarioId,
@@ -215,6 +216,8 @@ describe("Venta Mayorista — línea que sale de una caja de Cámara", () => {
 
     const cajaAntesDeAnular = await prisma.cajaCamara.findUnique({ where: { id: caja.id } });
     expect(cajaAntesDeAnular?.saldoKg).toBe(6); // 10 - 4
+    const stockDespuesDeConfirmar = await prisma.producto.findUnique({ where: { id: producto.id } });
+    expect(stockDespuesDeConfirmar?.stockActual).toBeCloseTo(stockAntes - 4, 5);
 
     const cancelar = await api
       .post(`/api/caja/ventas/${venta.body.id}/cancelar`)
@@ -224,6 +227,9 @@ describe("Venta Mayorista — línea que sale de una caja de Cámara", () => {
     const cajaDespues = await prisma.cajaCamara.findUnique({ where: { id: caja.id } });
     expect(cajaDespues?.saldoKg).toBe(10); // devuelto completo
     expect(cajaDespues?.estado).toBe("en_camara");
+
+    const stockDespuesDeAnular = await prisma.producto.findUnique({ where: { id: producto.id } });
+    expect(stockDespuesDeAnular?.stockActual).toBeCloseTo(stockAntes, 5); // devuelto completo
   });
 });
 

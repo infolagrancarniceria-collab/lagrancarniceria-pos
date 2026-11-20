@@ -36,7 +36,11 @@ import ParMargen from "../components/ParMargen";
 // servidor, una por cada endpoint existente) — unificar el modelo de
 // datos habría significado tocar cómo cámara maneja lotes/vencimiento,
 // mucho más riesgo por una ganancia que es puramente de qué tan fácil es
-// encontrar la pantalla correcta.
+// encontrar la pantalla correcta. Los dos modos sí suman de inmediato a
+// Producto.stockActual al cargar la factura (a pedido del usuario — antes
+// "Por kilo" solo entraba a cámara y había que ADEMÁS hacer "Salida de
+// cajas" a sala de venta para que el stock de venta reflejara la compra;
+// ver el comentario en crearLoteYCajas, server/routes/camara.ts).
 type Modo = "kilo" | "unidad";
 
 // --- Modo "Por kilo" (carne fresca → cámara) ---

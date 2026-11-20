@@ -396,8 +396,18 @@ model MovimientoInventario {
   usuarioId Int
   usuario   Usuario @relation(fields: [usuarioId], references: [id])
 
-  tipo   String // "entrada" | "salida"
-  motivo String // entrada: "compra" | "ajuste" | "regalo_revertido" — salida: "venta" | "descarte" | "ajuste" | "regalo_pedido_web"
+  tipo String // "entrada" | "salida"
+  // entrada: "compra" | "ajuste" | "regalo_revertido" | "entrada_camara" |
+  //   "venta_anulada" | "venta_mayorista_anulada" | "correccion_entrada"
+  // salida: "venta" | "descarte" | "ajuste" | "regalo_pedido_web" |
+  //   "entrada_anulada" | "merma" | "donacion" | "produccion" | "otro" |
+  //   "venta_mayorista" | "correccion_entrada"
+  // Los de cámara (entrada_camara, entrada_anulada, merma, donacion,
+  // producción, otro, venta_mayorista(_anulada), correccion_entrada) ver
+  // server/routes/camara.ts — Producto.stockActual sube al entrar una
+  // factura a cámara, no al moverla después a "sala de venta" (eso ya no
+  // cambia el stock, para no contarlo dos veces).
+  motivo String
 
   cantidad Float
 

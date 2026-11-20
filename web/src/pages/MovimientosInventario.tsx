@@ -9,6 +9,18 @@ const etiquetasMotivo: Record<string, string> = {
   descarte: "Descarte / merma",
   ajuste: "Ajuste",
   venta_anulada: "Devolución (venta anulada)",
+  // Cámara (ver server/routes/camara.ts): entra al cargar una factura "por
+  // kilo", sale por cualquier destino que no sea "sala de venta" (esa no
+  // cambia el stock, ya se contó al entrar).
+  entrada_camara: "Entrada a cámara (factura)",
+  entrada_anulada: "Entrada anulada",
+  correccion_entrada: "Corrección de entrada",
+  merma: "Merma",
+  donacion: "Donación",
+  produccion: "Consumo en producción",
+  otro: "Otra salida de cámara",
+  venta_mayorista: "Venta por mayor",
+  venta_mayorista_anulada: "Devolución (venta por mayor anulada)",
 };
 
 export default function MovimientosInventario() {
