@@ -1870,7 +1870,7 @@ cajaRouter.post("/ventas/:id/confirmar", async (req, res) => {
   for (const item of itemsDeCamara) {
     cantidadPorCajaCamara.set(item.cajaCamaraId!, (cantidadPorCajaCamara.get(item.cajaCamaraId!) ?? 0) + item.cantidad);
   }
-  const cajasCamaraADescontar: { cajaId: number; saldoActual: number; pesoKg: number }[] = [];
+  const cajasCamaraADescontar: { cajaId: number; productoId: number; saldoActual: number; pesoKg: number }[] = [];
   for (const [cajaCamaraId, pesoKg] of cantidadPorCajaCamara) {
     const caja = await prisma.cajaCamara.findUnique({ where: { id: cajaCamaraId } });
     if (!caja) return res.status(400).json({ error: "Una de las cajas de cámara de esta venta ya no existe" });
@@ -1880,7 +1880,7 @@ cajaRouter.post("/ventas/:id/confirmar", async (req, res) => {
     if (pesoKg > caja.saldoKg + EPSILON_KG_MAYORISTA) {
       return res.status(400).json({ error: `La caja de cámara #${cajaCamaraId} solo tiene ${caja.saldoKg} kg disponibles` });
     }
-    cajasCamaraADescontar.push({ cajaId: caja.id, saldoActual: caja.saldoKg, pesoKg });
+    cajasCamaraADescontar.push({ cajaId: caja.id, productoId: caja.productoId, saldoActual: caja.saldoKg, pesoKg });
   }
 
   // No se bloquea por falta de stock (ver agregarItemAVenta) — el stock
@@ -1961,11 +1961,13 @@ cajaRouter.post("/ventas/:id/confirmar", async (req, res) => {
         ]
       : []),
     // Venta Mayorista: las líneas que salen de una caja puntual de Cámara
-    // descuentan esa caja (no Producto.stockActual) y dejan el mismo
-    // registro de MovimientoCamara que dejaría una Salida de cámara normal
-    // con destino "mayorista" — mismo criterio de esCompleta/tipo que usa
-    // POST /cajas/:id/salida en camara.ts.
-    ...cajasCamaraADescontar.flatMap(({ cajaId, saldoActual, pesoKg }) => {
+    // descuentan esa caja y dejan el mismo registro de MovimientoCamara que
+    // dejaría una Salida de cámara normal con destino "mayorista" — mismo
+    // criterio de esCompleta/tipo que usa POST /cajas/:id/salida en
+    // camara.ts. También descuentan Producto.stockActual: esa mercadería ya
+    // estaba contada ahí desde que entró la factura a cámara (ver
+    // crearLoteYCajas) y ahora sale de verdad, igual que cualquier venta.
+    ...cajasCamaraADescontar.flatMap(({ cajaId, productoId, saldoActual, pesoKg }) => {
       const esCompleta = pesoKg >= saldoActual - EPSILON_KG_MAYORISTA;
       const nuevoSaldo = esCompleta ? 0 : Math.round((saldoActual - pesoKg) * 1000) / 1000;
       return [
@@ -1986,6 +1988,10 @@ cajaRouter.post("/ventas/:id/confirmar", async (req, res) => {
             usuarioId,
             claveIdempotencia: randomUUID(),
           },
+        }),
+        prisma.producto.update({ where: { id: productoId }, data: { stockActual: { decrement: pesoKg } } }),
+        prisma.movimientoInventario.create({
+          data: { productoId, usuarioId, tipo: "salida", motivo: "venta_mayorista", cantidad: pesoKg },
         }),
       ];
     }),
@@ -2052,8 +2058,9 @@ cajaRouter.post("/ventas/:id/cancelar", async (req, res) => {
 
   if (venta.estado === "pagada") {
     const itemsActivos = venta.items.filter((i) => !i.anulado);
-    // Venta Mayorista: las líneas con cajaCamaraId descontaron esa caja al
-    // confirmar (no Producto.stockActual) — se devuelven aparte, más abajo.
+    // Venta Mayorista: las líneas con cajaCamaraId descontaron esa caja Y
+    // Producto.stockActual al confirmar — ambos se devuelven aparte, más
+    // abajo.
     const itemsDeSalaVenta = itemsActivos.filter((i) => i.cajaCamaraId == null);
     const itemsDeCamara = itemsActivos.filter((i) => i.cajaCamaraId != null);
 
@@ -2086,7 +2093,7 @@ cajaRouter.post("/ventas/:id/cancelar", async (req, res) => {
     for (const item of itemsDeCamara) {
       cantidadPorCajaCamara.set(item.cajaCamaraId!, (cantidadPorCajaCamara.get(item.cajaCamaraId!) ?? 0) + item.cantidad);
     }
-    const cajasCamaraADevolver: { cajaId: number; saldoActual: number; pesoInicialKg: number; pesoKg: number }[] = [];
+    const cajasCamaraADevolver: { cajaId: number; productoId: number; saldoActual: number; pesoInicialKg: number; pesoKg: number }[] = [];
     for (const [cajaCamaraId, pesoKg] of cantidadPorCajaCamara) {
       const caja = await prisma.cajaCamara.findUnique({ where: { id: cajaCamaraId } });
       if (!caja) return res.status(400).json({ error: "Una de las cajas de cámara de esta venta ya no existe" });
@@ -2103,7 +2110,7 @@ cajaRouter.post("/ventas/:id/cancelar", async (req, res) => {
           error: `La caja de cámara #${cajaCamaraId} tuvo movimientos después de esta venta — no se puede anular directamente, corrígelo con un ajuste manual en Cámara`,
         });
       }
-      cajasCamaraADevolver.push({ cajaId: caja.id, saldoActual: caja.saldoKg, pesoInicialKg: caja.pesoInicialKg, pesoKg });
+      cajasCamaraADevolver.push({ cajaId: caja.id, productoId: caja.productoId, saldoActual: caja.saldoKg, pesoInicialKg: caja.pesoInicialKg, pesoKg });
     }
 
     await prisma.$transaction([
@@ -2120,7 +2127,7 @@ cajaRouter.post("/ventas/:id/cancelar", async (req, res) => {
           data: { saldoUnidades: { increment: d.cantidad } },
         })
       ),
-      ...cajasCamaraADevolver.flatMap(({ cajaId, saldoActual, pesoInicialKg, pesoKg }) => {
+      ...cajasCamaraADevolver.flatMap(({ cajaId, productoId, saldoActual, pesoInicialKg, pesoKg }) => {
         const nuevoSaldo = Math.min(pesoInicialKg, Math.round((saldoActual + pesoKg) * 1000) / 1000);
         const nuevoEstado = nuevoSaldo >= pesoInicialKg - 0.0005 ? "en_camara" : "parcial";
         return [
@@ -2141,6 +2148,10 @@ cajaRouter.post("/ventas/:id/cancelar", async (req, res) => {
               usuarioId,
               claveIdempotencia: randomUUID(),
             },
+          }),
+          prisma.producto.update({ where: { id: productoId }, data: { stockActual: { increment: pesoKg } } }),
+          prisma.movimientoInventario.create({
+            data: { productoId, usuarioId, tipo: "entrada", motivo: "venta_mayorista_anulada", cantidad: pesoKg },
           }),
         ];
       }),

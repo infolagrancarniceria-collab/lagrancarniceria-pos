@@ -157,10 +157,10 @@ export default function Inventario() {
         </label>
       </div>
       <p className="ayuda">
-        Para revisar las cámaras de frío contra lo que hay físicamente, usa{" "}
-        <Link to="/camara/existencias">Existencias de cámara</Link> (agrupado por familia) — si una caja lleva mucho
-        sin salida, ahí mismo avisa para no dejarla sin revisar. Esta pantalla es el stock que se vende en el mesón
-        (Producto.stockActual), no el de cámara.
+        El stock de acá (Producto.stockActual) ya suma lo que está en cámara (cajas frías) y lo que está en el
+        mesón — sube de inmediato al cargar una factura. Para ver el detalle de qué caja específica (lote, peso,
+        vencimiento) compone ese total, usa <Link to="/camara/existencias">Existencias de cámara</Link> (agrupado
+        por familia) — si una caja lleva mucho sin salida, ahí mismo avisa para no dejarla sin revisar.
       </p>
       <p className="ayuda">
         Para ver las compras y los movimientos de este período (no el stock actual), ve a{" "}
